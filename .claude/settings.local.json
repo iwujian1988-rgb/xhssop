@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(unzip *)",
+      "Bash(npx create-next-app@latest xhs-workbench --typescript --tailwind --eslint --app --src-dir --no-import-alias --turbopack)",
+      "Bash(npm install *)",
+      "Bash(mkdir -p \"D:/claude_work/waiyuxhssop/xhs-workbench/src/data\")",
+      "Bash(cp \"D:/claude_work/waiyuxhssop/skill_extracted/xhs_note_skill_v1_0/data/\"*.yml \"D:/claude_work/waiyuxhssop/xhs-workbench/src/data/\")",
+      "Bash(npx tsc *)",
+      "Bash(npx next *)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:3000)",
+      "Bash(curl -s http://localhost:3001)",
+      "Bash(curl -s http://localhost:4000)",
+      "Bash(netstat -ano)",
+      "Bash(curl -s http://localhost:4000/data/products.yml)",
+      "Bash(node -e \"const y = require\\('js-yaml'\\); console.log\\(typeof y.load\\)\")",
+      "Bash(taskkill //F //PID 8216)",
+      "Bash(curl -s http://localhost:5000)",
+      "Bash(curl -s -o /dev/null -w \"%{http_code}\" http://localhost:4000)",
+      "Bash(npx tsx *)"
+    ]
+  }
+}

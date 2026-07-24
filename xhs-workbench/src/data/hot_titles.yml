@@ -1,0 +1,21 @@
+hot_titles:
+- id: medical_template_change_fail
+  source_title: 模板背熟了，题目一变又不会了
+  extracted_structure: '[备考材料] 背熟了，[考试场景变化] 还是不会'
+  suitable_title_template: effort_failed
+  notes: 适合迁移到背范文、背句型、刷题无效等主题。
+- id: not_a_but_b_standard
+  source_title: 最怕的不是你不会答，是你答得太标准
+  extracted_structure: 最怕的不是 [表面问题]，而是 [真实问题]
+  suitable_title_template: not_a_but_b
+  notes: 适合反常识和误区纠正。
+- id: how_to_make_alive
+  source_title: 医患沟通题，如何答出活人感？
+  extracted_structure: '[具体题型/场景]，如何写出/答出 [更高水平感]？'
+  suitable_title_template: not_a_but_b
+  notes: 适合 B2 感、活人感、不是翻译腔等表达。
+- id: checklist_ready
+  source_title: 30 天备考表，我整理好了
+  extracted_structure: '[具体资料/计划/清单]，我整理好了'
+  suitable_title_template: checklist_ready
+  notes: 适合清单、计划、资料目录。

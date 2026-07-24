@@ -1,0 +1,157 @@
+page_templates:
+  pain_breakdown:
+    name: 痛点拆解型
+    suitable_for:
+    - 努力无效
+    - 背了但不会用
+    - 写作卡住
+    - CLB7 卡住
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 问题是什么
+      P3: 为什么会这样
+      P4: 常见错误做法
+      P5: 正确做法 / 小例子
+      P6: 资料包如何解决
+      P7: 适合谁
+    recommended_single_page_formats:
+    - conclusion_bullets
+    - wrong_right
+    - example_list
+  list_value:
+    name: 清单干货型
+    suitable_for:
+    - 替换词
+    - 高频句型
+    - 连接词
+    - 备考清单
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 为什么这个清单重要
+      P3: 清单 1
+      P4: 清单 2
+      P5: 怎么用
+      P6: 完整资料里有什么
+      P7: 适合谁
+    recommended_single_page_formats:
+    - conclusion_bullets
+    - table
+    - steps
+  table_compare:
+    name: 表格对照型
+    suitable_for:
+    - TEF vs TCF
+    - 普通表达 vs B2 表达
+    - 错误写法 vs 优化写法
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 先给结论
+      P3: 对照表 1
+      P4: 对照表 2
+      P5: 怎么判断自己适合哪边
+      P6: 资料包对应模块
+      P7: 收口
+    recommended_single_page_formats:
+    - table
+    - wrong_right
+    - conclusion_bullets
+  sample_showcase:
+    name: 样张展示型
+    suitable_for:
+    - 范文拆解
+    - 检查清单
+    - 主题观点库
+    - 资料目录
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 先说不要怎么用
+      P3: 样张 1
+      P4: 样张 2
+      P5: 样张 3 / 标注解释
+      P6: 完整资料结构
+      P7: 适合谁
+    recommended_single_page_formats:
+    - sample_annotation
+    - conclusion_bullets
+  case_review:
+    name: 案例复盘型
+    suitable_for:
+    - 过来人案例
+    - 第三方帖子经验
+    - 失败复盘
+    - 备考误区
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 案例背景
+      P3: 踩坑点 1
+      P4: 踩坑点 2
+      P5: 调整方式
+      P6: 资料包如何整理
+      P7: 适合谁
+    recommended_single_page_formats:
+    - conclusion_bullets
+    - wrong_right
+  roadmap:
+    name: 攻略路径型
+    suitable_for:
+    - 30 天计划
+    - 学习路径
+    - 资料使用顺序
+    - 备考安排
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 适合谁
+      P3: 第 1 阶段
+      P4: 第 2 阶段
+      P5: 第 3 阶段
+      P6: 配套资料怎么用
+      P7: 收尾
+    recommended_single_page_formats:
+    - steps
+    - conclusion_bullets
+  mistake_compare:
+    name: 错题对照型
+    suitable_for:
+    - 错题对照
+    - 扣分点
+    - 错误写法 vs 优化写法
+    - 中式表达
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 先说明为什么会扣分/不像目标水平
+      P3: 错误写法 1 + 优化写法
+      P4: 错误写法 2 + 优化写法
+      P5: 错误写法 3 + 优化写法
+      P6: 资料包里的错题/对照模块
+      P7: 适合谁 + 使用提醒
+    recommended_single_page_formats:
+    - wrong_right
+    - table
+    - conclusion_bullets
+  plan_calendar:
+    name: 计划日历型
+    suitable_for:
+    - 30 天计划
+    - CLB7 路径
+    - 阶段备考
+    - 资料使用顺序
+    page_count: 7
+    structure:
+      P1: 封面
+      P2: 适合谁/目标是什么
+      P3: 第 1 阶段：基础摸底与材料准备
+      P4: 第 2 阶段：专项训练
+      P5: 第 3 阶段：模考与复盘
+      P6: 资料包如何按阶段使用
+      P7: 收尾提醒 + 适合人群
+    recommended_single_page_formats:
+    - steps
+    - conclusion_bullets
+    - table

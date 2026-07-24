@@ -1,0 +1,130 @@
+products:
+  delf_b2_writing:
+    name: DELF B2 写作资料包
+    public_name_options:
+    - DELF B2 写作资料包
+    - B2 写作范文句型训练包
+    - DELF B2 写作提分讲义
+    core_audience:
+    - DELF B2 考生
+    - B1 到 B2 过渡阶段
+    - 背范文但不会迁移的人
+    - 写作写不出 B2 感的人
+    - 临考前想系统整理写作的人
+    preset_selling_points:
+    - id: 20_essays
+      name: 20 篇多主题范文
+      suitable_angles:
+      - 范文拆解
+      - 范文不是整篇背
+      - 多主题备考
+    - id: 240_replacements
+      name: 240 条 B2 替换词
+      suitable_angles:
+      - 普通词换 B2 表达
+      - important 替换
+      - 写作不够高级
+    - id: 100_sentence_patterns
+      name: 100 条实用句法
+      suitable_angles:
+      - 观点展开
+      - 让步转折
+      - 句子结构升级
+    - id: topic_opinions
+      name: 主题观点库
+      suitable_angles:
+      - 观点空
+      - 不知道写什么立场
+    - id: mistake_contrast
+      name: 错题对照
+      suitable_angles:
+      - 普通写法 vs B2 写法
+      - 看着没错但不像 B2
+    - id: writing_checklist
+      name: 写作检查清单
+      suitable_angles:
+      - 考前检查
+      - 写完自查
+    seo_keywords:
+      core:
+      - DELF B2
+      - DELF B2 写作
+      - 法语 B2
+      - 法语写作
+      long_tail:
+      - DELF B2 写作范文
+      - DELF B2 写作模板
+      - 法语 B2 作文
+      - 法语写作替换词
+      - DELF B2 production écrite
+    default_tags:
+    - '#DELFB2'
+    - '#法语B2'
+    - '#法语写作'
+    - '#法语作文'
+    - '#法语考试'
+    - '#DELF备考'
+  tef_tcf_canada:
+    name: TEF/TCF Canada 备考资料包
+    public_name_options:
+    - TEF/TCF Canada 备考资料包
+    - 法语移民 CLB7 备考规划包
+    - TEF/TCF Canada 30 天备考讲义
+    core_audience:
+    - 加拿大移民申请人
+    - 目标 CLB7 的法语考生
+    - 不知道选 TEF 还是 TCF 的人
+    - 备考时间短的上班族
+    preset_selling_points:
+    - id: exam_comparison
+      name: TEF/TCF 选考对比
+      suitable_angles:
+      - TEF 还是 TCF
+      - 选考避坑
+    - id: 30_day_plan
+      name: 30 天备考日历
+      suitable_angles:
+      - 30 天怎么安排
+      - 不要每天瞎刷题
+    - id: clb7_path
+      name: CLB7 目标路径
+      suitable_angles:
+      - 目标 CLB7
+      - 加拿大移民法语加分
+    - id: writing_patterns
+      name: 写作高分句型
+      suitable_angles:
+      - TEF/TCF 写作
+      - 输出训练
+    - id: case_review
+      name: 过来人案例
+      suitable_angles:
+      - 失败复盘
+      - 备考路径调整
+    - id: exam_day_tips
+      name: 临场避坑
+      suitable_angles:
+      - 考前注意
+      - 流程避坑
+    seo_keywords:
+      core:
+      - TEF Canada
+      - TCF Canada
+      - 加拿大移民
+      - CLB7
+      long_tail:
+      - TEF Canada 和 TCF Canada 区别
+      - 加拿大移民法语考试
+      - TEF/TCF 30 天备考
+      - CLB7 备考
+      - TEF 写作
+      - TCF 写作
+    default_tags:
+    - '#TEFCanada'
+    - '#TCFCanada'
+    - '#加拿大移民'
+    - '#法语移民'
+    - '#CLB7'
+    - '#法语考试'
+    - '#TEF备考'
+    - '#TCF备考'

@@ -1,0 +1,174 @@
+cover_templates:
+  white_blue_pain:
+    name: 白底蓝字痛点型
+    purpose: 点击
+    similarity_mode: high_similarity_allowed
+    description: 用户感知接近竞品白底蓝字经验贴，但不复制原图、账号标识、原文。
+    suitable_content:
+    - 痛点
+    - 努力无效
+    - 反常识
+    - 备考误区
+    canvas:
+      ratio: '3:4'
+      size: 1080x1440
+    layout_rules:
+      background: 纯白或极浅蓝
+      title_position: 中部偏上
+      title_lines: 2-4 行
+      title_font_style: 粗体大字
+      title_color: 深蓝
+      decoration:
+      - 浅蓝引号
+      - 底部右划提示
+      footer: 右划看全文
+    variable_fields:
+    - 主标题
+    - 断行
+    - 小标签
+    - 底部提示
+    locked_fields:
+    - 白底
+    - 蓝色主标题
+    - 大留白
+    - 2-4 行大标题结构
+    forbidden:
+    - 不要换成资料清单型
+    - 不要加复杂插画
+    - 不要堆多个商品卖点
+    - 不要让生图模型直接生成中文
+  list_poster:
+    name: 资料清单型
+    purpose: 收藏 + 转化
+    suitable_content:
+    - 替换词
+    - 高频句型
+    - 备考清单
+    - 30 天计划
+    - 资料目录
+    canvas:
+      ratio: '3:4'
+      size: 1080x1440
+    layout_rules:
+      background: 浅色底，可用低饱和色块
+      title_position: 顶部 20%-35% 区域
+      content_position: 中下部清单卡片
+      title_lines: 2-3 行
+      content_density: 中高，能看出资料感
+    locked_fields:
+    - 大标题 + 清单预览
+    - 数字感或条目感
+    forbidden:
+    - 不要变成纯金句封面
+    - 不要只放一句话没有清单
+  table_compare:
+    name: 表格对照型
+    purpose: 收藏 + 搜索
+    suitable_content:
+    - 普通表达 vs B2 表达
+    - TEF vs TCF
+    - 错误写法 vs 优化写法
+    - 低效备考 vs 高效备考
+    canvas:
+      ratio: '3:4'
+      size: 1080x1440
+    layout_rules:
+      background: 白底或浅色卡片
+      title_position: 顶部
+      table_position: 中下部
+      table_columns: 2
+      emphasis: 关键词加粗或蓝色标注
+    locked_fields:
+    - 顶部标题 + 下方表格
+    - 两列对照
+    forbidden:
+    - 不要只有段落没有表格
+  document_sample:
+    name: 文档样张型
+    purpose: 展示质量 + 转化
+    suitable_content:
+    - 范文拆解
+    - 写作检查清单
+    - 主题观点库
+    - 资料目录
+    - 样张展示
+    canvas:
+      ratio: '3:4'
+      size: 1080x1440
+    layout_rules:
+      background: 白底或浅灰文档背景
+      title_position: 顶部或左上
+      sample_position: 中部文档卡片
+      highlight: 蓝色划线、高亮框或批注
+    locked_fields:
+    - 文档/讲义截图感
+    - 样张露出
+    forbidden:
+    - 不要做成纯海报
+    - 不要过度装饰
+  case_review:
+    name: 案例复盘型
+    purpose: 信任
+    suitable_content:
+    - 过来人案例
+    - 失败复盘
+    - 备考误区
+    - 第三方帖子经验
+    canvas:
+      ratio: '3:4'
+      size: 1080x1440
+    layout_rules:
+      background: 浅色文档或聊天复盘感
+      title_position: 顶部
+      content_position: 中部复盘卡片
+      emphasis: 关键句标注
+    locked_fields:
+    - 案例标题 + 复盘摘要
+    forbidden:
+    - 不要伪造真实聊天记录
+  mistake_compare:
+    name: 错题对照型
+    purpose: 收藏 + 避坑
+    suitable_content:
+    - 常见错误
+    - 错误写法 vs 优化写法
+    - 扣分点
+    - 中式表达
+    canvas:
+      ratio: '3:4'
+      size: 1080x1440
+    layout_rules:
+      background: 白底或浅蓝底
+      title_position: 顶部
+      content_position: 中下部两列/上下对照卡片
+      emphasis: 错误项用醒目标注，优化项用蓝色或高亮标注
+    locked_fields:
+    - 标题 + 错误/正确对照
+    - 必须能看出避坑价值
+    forbidden:
+    - 不要伪造考试评分
+    - 不要承诺必过
+    - 不要混入 TEF/TCF 术语到 DELF 链路
+  plan_table:
+    name: 计划表型
+    purpose: 收藏 + 执行
+    suitable_content:
+    - 30 天计划
+    - 备考日历
+    - 阶段路径
+    - CLB7 路径
+    canvas:
+      ratio: '3:4'
+      size: 1080x1440
+    layout_rules:
+      background: 浅色底，可有日历/进度条组件
+      title_position: 顶部 15%-30% 区域
+      content_position: 中下部时间轴/计划表
+      content_density: 中等偏高，但必须可读
+    locked_fields:
+    - 标题 + 计划表/时间轴
+    - 数字时间感
+    forbidden:
+    - 不要写成单纯鸡汤
+    - 不要承诺 30 天必过
+    - 不要让 AI 生成文字

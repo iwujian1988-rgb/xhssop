@@ -1,0 +1,47 @@
+copy_formats:
+  conclusion_bullets:
+    name: 结论 + 3 条 bullet
+    structure:
+    - 页标题
+    - 一句核心结论
+    - 3 条 bullet
+    word_limit:
+      page_title: 6-14 字
+      conclusion: 20-40 字
+      bullet: 8-22 字
+  wrong_right:
+    name: 错误 / 正确对照
+    structure:
+    - 普通写法
+    - 问题说明
+    - 优化写法
+    - 为什么更好
+    word_limit:
+      explanation: 20-50 字
+  table:
+    name: 表格型
+    structure:
+    - 表头
+    - 3-6 行对照
+    - 一句使用提醒
+    word_limit:
+      table_cell: 每格 4-18 字
+      reminder: 15-35 字
+  sample_annotation:
+    name: 样张标注型
+    structure:
+    - 样张片段
+    - 标注 1
+    - 标注 2
+    - 标注 3
+    word_limit:
+      annotation: 每条 8-24 字
+  steps:
+    name: 步骤型
+    structure:
+    - 阶段标题
+    - 步骤 1
+    - 步骤 2
+    - 步骤 3
+    word_limit:
+      step: 每步 10-24 字

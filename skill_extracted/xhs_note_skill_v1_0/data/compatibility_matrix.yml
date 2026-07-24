@@ -1,0 +1,38 @@
+compatibility_matrix:
+  principle: v1 不做任意组合。先选商品，再选链路；后续封面母版、标题母版、内页结构只能从链路允许列表中选择。
+  global_forbidden:
+  - 考试必过
+  - 官方保证
+  - 内部题库
+  - 保分
+  - 押中原题
+  product_forbidden_terms:
+    delf_b2_writing:
+    - CLB7
+    - 加拿大移民
+    - TEF Canada
+    - TCF Canada
+    tef_tcf_canada:
+    - DELF B2 production écrite
+    - DELF B2 范文
+    - B2 写作资料包
+  state_required_fields:
+    before_content:
+    - product_id
+    - chain_id
+    before_cover_generation:
+    - product_id
+    - chain_id
+    - content_source_type
+    - content_core
+    - cover_template_id
+    - title_template_id
+    before_page_generation:
+    - selected_variant_id
+    before_caption_generation:
+    - page_scripts
+  content_volume_rules:
+    knowledge_point_minimum: 必须有具体对照、例句、清单或样张。只有标签不得生成。
+    short_content_action: 内容量不足时，先要求补充；不要硬凑 P1-P7。可降级为 P1-P5，但必须明确标记。
+  title_hot_title_rule: 爆款标题不是平级自由入口。必须先归类到 title_template_id，再在该骨架下生成 3 个变体。
+  visual_rule: 封面母版决定整套视觉风格；内页结构只决定内容组织方式，不能导致视觉断裂。

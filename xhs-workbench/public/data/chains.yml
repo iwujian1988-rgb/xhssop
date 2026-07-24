@@ -1,0 +1,236 @@
+chains:
+  delf_b2_formula_migration:
+    name: DELF B2｜背范文不会迁移
+    version_scope: v1_core
+    product_id: delf_b2_writing
+    content_intent: 背了范文，换题/换主题还是不会写；重点讲范文拆解和表达迁移。
+    allowed_content_source_types:
+    - preset_selling_point
+    - knowledge_point
+    - third_party_post
+    recommended_product_points:
+    - 20_essays
+    - 100_sentence_patterns
+    - topic_opinions
+    allowed_cover_templates:
+    - white_blue_pain
+    - document_sample
+    allowed_title_templates:
+    - effort_failed
+    - not_a_but_b
+    - dont_only
+    allowed_page_templates:
+    - pain_breakdown
+    - sample_showcase
+    example_cover_titles:
+    - '范文背熟了
+
+      换题还是不会写？'
+    - '不是范文没背够
+
+      是不会拆出来用'
+    required_inputs:
+    - 具体痛点或原帖内容
+    - 至少 1 个可展示例子：范文片段/句型/迁移前后对照
+    forbidden_terms:
+    - CLB7
+    - 加拿大移民
+    - TEF Canada
+    - TCF Canada
+    conflict_notes:
+    - 不要把 DELF B2 写作写成 TEF/TCF Canada 移民备考。
+  delf_b2_expression_upgrade:
+    name: DELF B2｜普通表达升级 B2 表达
+    version_scope: v1_core
+    product_id: delf_b2_writing
+    content_intent: important / problème / je pense que 等普通表达升级为更像 B2 的表达。
+    allowed_content_source_types:
+    - preset_selling_point
+    - knowledge_point
+    recommended_product_points:
+    - 240_replacements
+    - mistake_contrast
+    allowed_cover_templates:
+    - table_compare
+    - list_poster
+    - document_sample
+    allowed_title_templates:
+    - dont_only
+    - mistake_warning
+    - checklist_ready
+    allowed_page_templates:
+    - table_compare
+    - list_value
+    example_cover_titles:
+    - '别再把
+
+      important 写到底'
+    - '这些词没错
+
+      但不像 B2'
+    required_inputs:
+    - 至少 3 组普通表达 → B2 表达对照
+    forbidden_terms:
+    - CLB7
+    - 加拿大移民
+    - TEF Canada
+    - TCF Canada
+    conflict_notes:
+    - 如果只有一个单词 important 的替换，不足以生成 7 页；要求补充更多对照，或生成短图文。
+  delf_b2_sentence_patterns:
+    name: DELF B2｜写作模板 / 句法库
+    version_scope: v1_core
+    product_id: delf_b2_writing
+    content_intent: 开头句、观点句、让步句、转折句、总结句等可迁移句法。
+    allowed_content_source_types:
+    - preset_selling_point
+    - knowledge_point
+    recommended_product_points:
+    - 100_sentence_patterns
+    - writing_checklist
+    allowed_cover_templates:
+    - list_poster
+    - document_sample
+    - white_blue_pain
+    allowed_title_templates:
+    - checklist_ready
+    - exam_rescue
+    - dont_only
+    allowed_page_templates:
+    - list_value
+    - sample_showcase
+    example_cover_titles:
+    - 'B2 写作
+
+      这 12 句真能救急'
+    - '别再整篇背模板
+
+      先拆这几类句子'
+    required_inputs:
+    - 至少 5 条句型或 3 类句型功能
+    forbidden_terms:
+    - CLB7
+    - 加拿大移民
+    - TEF Canada
+    - TCF Canada
+    conflict_notes:
+    - 不能写成保证提分；只能说用于整理思路和表达。
+  delf_b2_mistake_contrast:
+    name: DELF B2｜错题对照 / 扣分点
+    version_scope: v1_core
+    product_id: delf_b2_writing
+    content_intent: 常见中式表达、低级表达、逻辑断裂、看似没错但不像 B2 的写法。
+    allowed_content_source_types:
+    - preset_selling_point
+    - knowledge_point
+    - third_party_post
+    recommended_product_points:
+    - mistake_contrast
+    - writing_checklist
+    - 240_replacements
+    allowed_cover_templates:
+    - mistake_compare
+    - table_compare
+    - white_blue_pain
+    allowed_title_templates:
+    - mistake_warning
+    - dont_only
+    - not_a_but_b
+    allowed_page_templates:
+    - mistake_compare
+    - table_compare
+    - pain_breakdown
+    example_cover_titles:
+    - 'B2 写作
+
+      这几种写法很掉分'
+    - '这些句子没大错
+
+      但不像 B2'
+    required_inputs:
+    - 至少 2-3 组错误写法 → 优化写法对照
+    forbidden_terms:
+    - CLB7
+    - 加拿大移民
+    - TEF Canada
+    - TCF Canada
+    conflict_notes:
+    - 不要制造虚假评分标准；不要假装官方判卷意见。
+  tef_tcf_exam_choice:
+    name: TEF/TCF Canada｜TEF 还是 TCF 选考
+    version_scope: v1_core
+    product_id: tef_tcf_canada
+    content_intent: 帮助用户理解 TEF Canada 和 TCF Canada 的差异与选择逻辑。
+    allowed_content_source_types:
+    - preset_selling_point
+    - knowledge_point
+    - third_party_post
+    recommended_product_points:
+    - exam_comparison
+    - exam_day_tips
+    allowed_cover_templates:
+    - table_compare
+    - list_poster
+    allowed_title_templates:
+    - compare_choice
+    - checklist_ready
+    allowed_page_templates:
+    - table_compare
+    - list_value
+    example_cover_titles:
+    - 'TEF 还是 TCF？
+
+      先看这 5 个差异'
+    - '加拿大法语考试
+
+      别选完才后悔'
+    required_inputs:
+    - 至少 3 个 TEF/TCF 对比维度
+    forbidden_terms:
+    - DELF B2 production écrite
+    - DELF B2 范文
+    - B2 写作资料包
+    conflict_notes:
+    - 不要把 TEF/TCF 写成 DELF；不要承诺更容易拿分，只能说明选择参考。
+  tef_tcf_30_day_clb7:
+    name: TEF/TCF Canada｜30 天备考 / CLB7 路径
+    version_scope: v1_core
+    product_id: tef_tcf_canada
+    content_intent: 30 天备考安排、CLB7 目标拆解、阶段任务和资料使用顺序。
+    allowed_content_source_types:
+    - preset_selling_point
+    - knowledge_point
+    - third_party_post
+    recommended_product_points:
+    - 30_day_plan
+    - clb7_path
+    - writing_patterns
+    allowed_cover_templates:
+    - plan_table
+    - list_poster
+    - document_sample
+    allowed_title_templates:
+    - roadmap_planning
+    - exam_rescue
+    - checklist_ready
+    - effort_failed
+    allowed_page_templates:
+    - plan_calendar
+    - roadmap
+    - list_value
+    example_cover_titles:
+    - 'TEF/TCF Canada
+
+      30 天冲 CLB7 怎么排'
+    - '别再每天瞎刷题
+
+      CLB7 要这样拆'
+    required_inputs:
+    - 目标分数/CLB7 场景
+    - 至少 3 个阶段任务或 1 张计划表
+    forbidden_terms:
+    - DELF B2 production écrite
+    - DELF B2 范文
+    - B2 写作资料包
+    conflict_notes:
+    - 不要承诺 30 天必过；不要把 CLB7 和 DELF B2 混用。

@@ -1,0 +1,133 @@
+title_templates:
+  effort_failed:
+    name: 努力无效型
+    reference_examples:
+    - 模板背熟了，题目一变又不会了
+    - 题刷了很多，分数还是上不去
+    structure:
+      formula: '[已做努力] + [场景变化/目标变化] + [结果仍失败]'
+      psychological_hook: 用户已经努力过，但结果没有变好
+    suitable_content:
+    - 背范文但不会迁移
+    - 刷题但 CLB7 卡住
+    - 句型背了但不会写
+    - 学了很多但不会用
+    output_rules:
+      cover_title:
+        max_lines: 4
+        tone: 扎心、直接、口语化
+      xhs_title:
+        formula: '[核心搜索词] + [封面钩子完整句]'
+    example_mapping:
+      delf_b2_writing:
+        source: 模板背熟了，题目一变又不会了
+        mapping:
+          模板: 范文
+          题目一变: 换题 / 换主题
+          不会了: 不会写 / 不会展开
+        sample_cover_titles:
+        - '范文背熟了
+
+          换题还是不会写？'
+        - '范文背很多
+
+          还是写不出？'
+  not_a_but_b:
+    name: 反常识型
+    reference_examples:
+    - 最怕的不是 A，而是 B
+    - 考官最烦的不是你不会答，是你答得太标准
+    structure:
+      formula: 最怕/最容易扣分的不是 [表面问题]，而是 [真正问题]
+      psychological_hook: 推翻用户原来的理解
+    suitable_content:
+    - 不是语法错，而是表达低级
+    - 不是刷题少，而是规划错
+    - 不是没背范文，而是不会拆
+  dont_only:
+    name: 别再型
+    reference_examples:
+    - 别再只会 XXX 了
+    - 别再整篇背模板了
+    structure:
+      formula: 别再 + [低效做法/低级表达]
+      psychological_hook: 提醒用户停止错误动作
+    suitable_content:
+    - important 替换
+    - 整篇背范文
+    - 只刷题不复盘
+  compare_choice:
+    name: 对比选择型
+    reference_examples:
+    - A 还是 B？先看这 5 个差异
+    - 到底选 A 还是 B？
+    structure:
+      formula: '[选项 A] 还是 [选项 B]？先看 [数字] 个差异'
+      psychological_hook: 帮助用户做选择
+    suitable_content:
+    - TEF vs TCF
+    - 两种备考路径
+    - 普通写法 vs B2 写法
+  checklist_ready:
+    name: 清单领取型
+    reference_examples:
+    - XX 表，我整理好了
+    - XX 清单，照着做
+    structure:
+      formula: '[具体资料/清单/计划]，我整理好了'
+      psychological_hook: 降低用户整理成本
+    suitable_content:
+    - 30 天计划
+    - 替换词清单
+    - 写作检查清单
+    - 高频句型
+  mistake_warning:
+    name: 错误提醒型
+    reference_examples:
+    - 这些句子没大错，但不像 B2
+    - 这个写法看着没错，但很难高分
+    structure:
+      formula: '[内容] 没大错，但 [不符合目标水平/不利于得分]'
+      psychological_hook: 指出用户意识不到的问题
+    suitable_content:
+    - 错题对照
+    - 普通写法 vs B2 写法
+    - 低级表达
+  exam_rescue:
+    name: 考前急救型
+    reference_examples:
+    - 考前 10 天，这份清单先看完
+    - B2 写作临考前，先别乱背了
+    structure:
+      formula: '[考试/任务] + [临近时间/紧迫场景] + [先做这个]'
+      psychological_hook: 临近考试时降低决策成本
+    suitable_content:
+    - 考前清单
+    - 高频句型
+    - 写作检查清单
+    - 30 天/10 天计划
+    output_rules:
+      cover_title:
+        max_lines: 4
+        tone: 直接、有紧迫感、不制造虚假焦虑
+      xhs_title:
+        formula: '[核心搜索词] + [考前/短期场景] + [具体资料]'
+  roadmap_planning:
+    name: 路径规划型
+    reference_examples:
+    - 30 天冲 CLB7，别再每天瞎刷题
+    - TEF/TCF Canada 30 天怎么排
+    structure:
+      formula: '[目标] + [时间/路径] + [不要低效动作/怎么安排]'
+      psychological_hook: 把混乱备考变成可执行路径
+    suitable_content:
+    - 30 天备考
+    - CLB7 路径
+    - 资料使用顺序
+    - 阶段计划
+    output_rules:
+      cover_title:
+        max_lines: 4
+        tone: 具体、路径感强
+      xhs_title:
+        formula: '[核心搜索词] + [时间计划] + [目标]'
