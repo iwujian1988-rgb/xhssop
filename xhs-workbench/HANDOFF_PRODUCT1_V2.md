@@ -24,7 +24,7 @@
 - 封面/内页用 **代码渲染（HTML/CSS）** 或 **AI 文生图**（第三方 `zexapi.com`）。
 - 导出：`html-to-image`（DOM→PNG）+ `file-saver` + `jszip`。
 - 法语校验：`nspell` + `dictionary-fr`（Hunspell 词典）。
-- **注意：当前工作目录不是 git 仓库**（`git status` 报 not a repository），改动没有版本控制，务必谨慎，改前建议自行备份或初始化 git。
+- **已初始化 git**：仓库根在 `D:\claude_work\waiyuxhssop`（不是 `xhs-workbench` 子目录）。基线提交 `3f0ae84`（master），183 文件；`.env*` / `node_modules` / `.next` 已排除。改完请自行 commit，别再丢状态。
 
 ---
 
@@ -152,7 +152,6 @@ cardId → renderer → 渲染方式（`code`=纯代码渲染，`hybrid`=代码�
 3. **法语正确性仍部分依赖 LLM**：词典硬校验只能确定性抓「拼写/拼接」类，语法/语域/搭配仍靠 LLM+返修，量大偶尔漏。
 4. **11–15 及全部模板未做完整浏览器验收**：本轮只对 06 做了完整浏览器实测 + 用 06 的内页验证了共用组件；其余模板的封面在真实浏览器里的裁切/对齐**尚未逐一目检**（代码层已套同款方案，理论低风险，但缺证据）。
 5. **`compatibility_matrix.yml` 跨商品禁用词未强制执行**：`route.ts` 没接这个规则，商品2 接入后有串味风险。
-6. **无 git 版本控制**：改动无法回滚。
 
 ---
 
@@ -170,9 +169,6 @@ cardId → renderer → 渲染方式（`code`=纯代码渲染，`hybrid`=代码�
 ### P2 — 商品2 接入（详见第 9 节）
 - [ ] 生成 `tef_tcf_canada` 的 `product_facts.json`。
 - [ ] 用商品2 跑一遍全流程验收。
-
-### 工程
-- [ ] 初始化 git，纳入版本控制。
 
 ---
 
@@ -225,3 +221,4 @@ Array.from(document.querySelectorAll('article')).map(el => ({
 - 用户对 token 消耗敏感，**优先用 API 直连脚本测内容生成**（快、便宜），只在需要验证「真实像素级版式/导出」时才开浏览器。
 - 版式类 bug 的统一解法就是 `useAutoFitScale` + 「字号和间距一起随 --fit-scale 缩放」，别再回退到按字数猜字号。
 - 法语拼写/例句问题：用户说「这些你改吧」——遇到确定性拼写错误直接修，别只报告。
+- **仓库已存档**：基线 `3f0ae84`。改完请 commit；密钥在 `.env.local`，永远不要入库。
