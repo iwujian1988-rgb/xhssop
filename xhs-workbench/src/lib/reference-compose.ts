@@ -77,54 +77,73 @@ export function isRetryableComposeError(error: Error): boolean {
 
 export async function generateTopics(input: GenerateTopicsInput): Promise<MigratedTopic[]> {
   const templatePrompt = getCoverTemplatePrompt(input.card.renderer_id);
-  const result = await callOpenAICompatibleJson([
-    {
-      role: 'system',
-      content: [
-        '你是资深小红书法语学习内容主编。任务不是套模板，而是像真人编辑一样，从竞品成功机制出发迁移选题。',
-        '只返回JSON。必须给出3个真正不同、值得发布、可以由当前商品或正确科普内容支撑的选题。',
-        '人群、场景、痛点、内容和商品承接必须构成一条自然关系，禁止随机拼接。',
-        '不要把商品资料里没有的内容说成商品自带；AI可以原创正确的科普、例句和练习。',
-        '商品1考试名称只能写DELF B2，绝不能写DALF；商品2只能写TEF/TCF Canada。',
-        '任何给用户看的字段都不许出现AU-001、CH-085等内部ID，也不要出现括号里的内部标签。',
-        '商品事实可用于判断，但选题表述必须像真人编辑说话，简洁、具体，避免“实现跃迁、四合一、全局观”等企划腔。',
-        templatePrompt,
-      ].join('\n'),
-    },
-    {
-      role: 'user',
-      content: JSON.stringify({
-        product_id: input.productId,
-        optional_direction: input.direction,
-        competitor_creative_card: input.card,
-        product_map_material: input.productContext,
-        output_schema: {
-          topics: [{
-            id: 'topic_1',
-            topic: '一句话选题',
-            audience: '具体人群和阶段',
-            scene: '具体使用场景',
-            pain: '具体行为或卡点',
-            content_promise: '用户点开后实际得到什么',
-            product_bridge: '如何自然连接商品；不需要强卖',
-            why_this_reference_fits: '为什么适合当前高密度资料封面',
-            novelty: '与常规法语清单有什么不同',
-            search_terms: ['用于检索本地知识库的关键词'],
-            content_source_plan: {
-              knowledge_base: '优先从商品里找什么',
-              ai_original: '知识库不足时AI可以原创什么',
-            },
-          }],
-        },
-      }),
-    },
-  ], { maxTokens: 3000, retries: 3 });
-  const root = asRecord(result);
-  const topics: MigratedTopic[] = Array.isArray(root.topics)
-    ? root.topics.map(normalizeTopic).filter((topic): topic is MigratedTopic => topic !== null)
-    : [];
-  if (topics.length < 3) throw new Error('AI没有返回3个可用迁移选题');
-  return topics.slice(0, 3);
+
+  // 选题 LLM 输出概率性偶发空（resource_10 等模板重跑 3 次仍空），原实现一次失败
+  // 就抛错。这里加 topics-level 重试：最多调 3 次，跨调用按 topic 文本去重，凑够 3
+  // 个为止；只要拿到 ≥1 个就不抛。prompt 没动，只是绕过 LLM 随机性。
+  const collected: MigratedTopic[] = [];
+  const seenTopics = new Set<string>();
+  const MAX_TOPIC_CALLS = 3;
+
+  for (let call = 0; call < MAX_TOPIC_CALLS && collected.length < 3; call += 1) {
+    const result = await callOpenAICompatibleJson([
+      {
+        role: 'system',
+        content: [
+          '你是资深小红书法语学习内容主编。任务不是套模板，而是像真人编辑一样，从竞品成功机制出发迁移选题。',
+          '只返回JSON。必须给出3个真正不同、值得发布、可以由当前商品或正确科普内容支撑的选题。',
+          '人群、场景、痛点、内容和商品承接必须构成一条自然关系，禁止随机拼接。',
+          '不要把商品资料里没有的内容说成商品自带；AI可以原创正确的科普、例句和练习。',
+          '商品1考试名称只能写DELF B2，绝不能写DALF；商品2只能写TEF/TCF Canada。',
+          '任何给用户看的字段都不许出现AU-001、CH-085等内部ID，也不要出现括号里的内部标签。',
+          '商品事实可用于判断，但选题表述必须像真人编辑说话，简洁、具体，避免“实现跃迁、四合一、全局观”等企划腔。',
+          templatePrompt,
+        ].join('\n'),
+      },
+      {
+        role: 'user',
+        content: JSON.stringify({
+          product_id: input.productId,
+          optional_direction: input.direction,
+          competitor_creative_card: input.card,
+          product_map_material: input.productContext,
+          output_schema: {
+            topics: [{
+              id: 'topic_1',
+              topic: '一句话选题',
+              audience: '具体人群和阶段',
+              scene: '具体使用场景',
+              pain: '具体行为或卡点',
+              content_promise: '用户点开后实际得到什么',
+              product_bridge: '如何自然连接商品；不需要强卖',
+              why_this_reference_fits: '为什么适合当前高密度资料封面',
+              novelty: '与常规法语清单有什么不同',
+              search_terms: ['用于检索本地知识库的关键词'],
+              content_source_plan: {
+                knowledge_base: '优先从商品里找什么',
+                ai_original: '知识库不足时AI可以原创什么',
+              },
+            }],
+          },
+        }),
+      },
+    ], { maxTokens: 3000, retries: 3 });
+    const root = asRecord(result);
+    const topics: MigratedTopic[] = Array.isArray(root.topics)
+      ? root.topics.map(normalizeTopic).filter((topic): topic is MigratedTopic => topic !== null)
+      : [];
+    for (const topic of topics) {
+      const key = topic.topic.trim();
+      if (key && !seenTopics.has(key)) {
+        seenTopics.add(key);
+        collected.push(topic);
+        if (collected.length >= 3) break;
+      }
+    }
+  }
+
+  if (collected.length < 1) throw new Error(`AI ${MAX_TOPIC_CALLS} 次调用均未返回可用选题`);
+  return collected.slice(0, 3);
 }
 
 export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceDrivenDraft> {
