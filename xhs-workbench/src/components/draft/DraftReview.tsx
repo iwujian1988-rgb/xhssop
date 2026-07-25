@@ -8,15 +8,18 @@ import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { buildReferenceImagePrompt, referenceImageNegativePrompt } from '@/lib/reference-image-prompt';
 import type { CompetitorCreativeCard, GeneratedInnerPage, ReferenceDrivenDraft } from '@/types/reference-workflow';
 
-export function DraftReview({ draft, card }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard }) {
+export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; presetCoverImageUrl?: string | null }) {
   const coverNodeRef = useRef<HTMLDivElement | null>(null);
   const innerRefs = useRef(new Map<number, HTMLElement>());
-  const [coverImageUrl, setCoverImageUrl] = useState<string | null>(null);
+  const [generatedCoverImageUrl, setGeneratedCoverImageUrl] = useState<string | null>(null);
   const [exportBusy, setExportBusy] = useState<'' | 'cover' | 'all'>('');
   const [exportMsg, setExportMsg] = useState('');
 
   const spec = card ? getCoverTemplateSpec(card.renderer_id) : undefined;
   const isImageCover = !!card && spec?.renderMode === 'image_to_image';
+  // When the cover image is pre-generated (batch runner server-side generation),
+  // use it directly instead of showing the manual generate button.
+  const coverImageUrl = presetCoverImageUrl ?? generatedCoverImageUrl;
   const safeTitle = (draft.selected_title || '小红书笔记').replace(/[\\/:*?"<>|]/g, '').slice(0, 40);
 
   async function handleExportCover() {
@@ -63,7 +66,7 @@ export function DraftReview({ draft, card }: { draft: ReferenceDrivenDraft; card
     <section className="grid gap-5 xl:grid-cols-[minmax(420px,680px)_minmax(0,1fr)]">
       <div className="border border-neutral-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between"><h2 className="font-black">3. 动态封面成品</h2><span className="text-xs text-neutral-500">复用参考视觉母版</span></div>
-        <div ref={coverNodeRef}><DynamicDirectoryCover draft={draft} card={card} onImageReady={setCoverImageUrl} /></div>
+        <div ref={coverNodeRef}><DynamicDirectoryCover draft={draft} card={card} presetImageUrl={presetCoverImageUrl} onImageReady={setGeneratedCoverImageUrl} /></div>
         <div className="mt-3 flex items-center gap-2">
           <button className="flex-1 border border-neutral-900 bg-neutral-900 px-3 py-2 text-xs font-bold text-white disabled:bg-neutral-400 disabled:border-neutral-400" disabled={!!exportBusy} onClick={handleExportCover}>{exportBusy === 'cover' ? '导出中...' : '导出封面'}</button>
           <button className="flex-1 border border-neutral-300 bg-white px-3 py-2 text-xs font-bold text-neutral-900 disabled:opacity-50" disabled={!!exportBusy} onClick={handleExportAll}>{exportBusy === 'all' ? '打包中...' : '打包下载全部（封面+内页）'}</button>
@@ -86,9 +89,14 @@ export function DraftReview({ draft, card }: { draft: ReferenceDrivenDraft; card
 function BriefFact({ label, value }: { label: string; value: string }) { return <div className="border-l-2 border-neutral-900 pl-3"><div className="text-xs font-bold text-neutral-400">{label}</div><div className="mt-1 text-sm leading-relaxed">{value}</div></div>; }
 function Check({ label, ok }: { label: string; ok: boolean }) { return <div className={ok ? 'text-green-700' : 'text-red-700'}>{ok ? '通过' : '未通过'} · {label}</div>; }
 
-function DynamicDirectoryCover({ draft, card, onImageReady }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; onImageReady?: (url: string | null) => void }) {
+function DynamicDirectoryCover({ draft, card, presetImageUrl, onImageReady }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; presetImageUrl?: string | null; onImageReady?: (url: string | null) => void }) {
   const spec = card ? getCoverTemplateSpec(card.renderer_id) : undefined;
-  if (card && spec?.renderMode === 'image_to_image') return <ReferenceImageGenerator draft={draft} card={card} onImageReady={onImageReady} />;
+  if (card && spec?.renderMode === 'image_to_image') {
+    if (presetImageUrl) {
+      return <div><img className="aspect-[3/4] w-full object-cover shadow-xl" src={presetImageUrl} alt={draft.cover.title} /><div className="mt-3 text-xs font-bold text-green-700">服务端已生成封面（请核对文字准确性）</div></div>;
+    }
+    return <ReferenceImageGenerator draft={draft} card={card} onImageReady={onImageReady} />;
+  }
   return <ReferenceCoverRenderer renderer={card?.renderer_id || 'parchment_dense_directory'} payload={draft.cover} referenceImage={card?.reference_image} />;
 }
 

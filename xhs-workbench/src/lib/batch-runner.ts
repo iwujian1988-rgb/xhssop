@@ -2,6 +2,7 @@ import { type AiUsageSummary } from '@/lib/ai-client';
 import { composeWithRetry } from '@/lib/compose-with-retry';
 import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
+import { generateCoverImageWithRetry } from '@/lib/cover-image';
 import { loadProductFacts } from '@/lib/product-facts-loader';
 import { compactProductContext, retrieveProductFacts } from '@/lib/product-fact-retrieval';
 import {
@@ -92,14 +93,31 @@ async function runBatch(batchId: string): Promise<void> {
       continue;
     }
 
-    // Image-to-image templates need server-side image generation. The actual
-    // generation step is added in a later commit; for now the runner records
-    // the draft and leaves cover_image_url undefined. Image generation hooks
-    // in here once commit 8 lands generateCoverImageWithRetry.
+    // Image-to-image templates: server-side image generation. Failure here
+    // turns the job into a corpse even though compose succeeded - the cover
+    // image is part of the deliverable for these templates.
     const spec = getCoverTemplateSpec(card.renderer_id);
+    let coverImageUrl: string | undefined;
     if (spec?.renderMode === 'image_to_image') {
-      // placeholder: image step is wired up by the cover-image module
-      // (intentional no-op until that lands; the draft is still a success).
+      const imageResult = await generateCoverImageWithRetry(card, outcome.draft.cover);
+      if (!imageResult.ok) {
+        await saveJob(batchId, {
+          ...job,
+          status: 'failed',
+          attempts: outcome.attempts,
+          draft: outcome.draft,
+          failure: {
+            stage: 'image' as BatchJobFailureStage,
+            message: imageResult.error,
+            attempts: 1,
+            usage: outcome.usage,
+          },
+          usage: outcome.usage,
+          finished_at: new Date().toISOString(),
+        });
+        continue;
+      }
+      coverImageUrl = imageResult.url;
     }
 
     await saveJob(batchId, {
@@ -107,6 +125,7 @@ async function runBatch(batchId: string): Promise<void> {
       status: 'success',
       attempts: outcome.attempts,
       draft: outcome.draft,
+      cover_image_url: coverImageUrl,
       usage: outcome.usage,
       finished_at: new Date().toISOString(),
     });

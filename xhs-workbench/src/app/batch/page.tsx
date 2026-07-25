@@ -281,7 +281,7 @@ export default function BatchPage() {
                             </div>
                             <button className="border border-neutral-300 bg-white px-3 py-1.5 text-xs font-bold" onClick={() => toggleExpand(job.id)}>{expanded ? '收起' : '展开预览'}</button>
                           </div>
-                          {expanded ? <div className="mt-4 border-t border-neutral-200 pt-4"><DraftReview draft={job.draft} card={card} /></div> : null}
+                          {expanded ? <div className="mt-4 border-t border-neutral-200 pt-4"><DraftReview draft={job.draft} card={card} presetCoverImageUrl={job.cover_image_url} /></div> : null}
                         </div>
                       );
                     })}
