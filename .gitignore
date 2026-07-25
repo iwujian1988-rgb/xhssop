@@ -17,6 +17,9 @@ build/
 # temp / debug artifacts
 tmp-*.png
 
+# batch runner state (jobs/corpses - local user data)
+xhs-workbench/data/batches/
+
 # os
 .DS_Store
 Thumbs.db
