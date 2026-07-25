@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 import { getRecentAiUsage, resetRecentAiUsage } from '@/lib/ai-client';
-import { formatBatchId, formatJobId, createBatch, listBatches, loadAllJobs, loadBatch, saveJob, type Batch, type BatchJob } from '@/lib/batch-store';
+import { formatBatchId, formatJobId, createBatch, deleteJob, listBatches, loadAllJobs, loadBatch, saveJob, type Batch, type BatchJob } from '@/lib/batch-store';
 import { getActiveRunner, startBatchRunner } from '@/lib/batch-runner';
 import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
@@ -29,6 +29,11 @@ interface RetryFailedBody {
   batch_id: string;
 }
 
+interface DeleteJobBody {
+  batch_id: string;
+  job_id: string;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -39,6 +44,8 @@ export async function POST(request: Request) {
         return await handleRun(body as RunBody);
       case 'retry_failed':
         return await handleRetryFailed(body as RetryFailedBody);
+      case 'delete_job':
+        return await handleDeleteJob(body as DeleteJobBody);
       default:
         return error(`未知 action: ${body?.action ?? '(missing)'}`, 400);
     }
@@ -153,6 +160,13 @@ async function handleRetryFailed(body: RetryFailedBody) {
   const outcome = await startBatchRunner(body.batch_id);
   if (!outcome.started) return NextResponse.json({ started: false, reason: outcome.reason }, { status: 409 });
   return NextResponse.json({ started: true, reset_count: failedJobs.length });
+}
+
+async function handleDeleteJob(body: DeleteJobBody) {
+  if (!body.batch_id) return error('batch_id 不能为空', 400);
+  if (!body.job_id) return error('job_id 不能为空', 400);
+  await deleteJob(body.batch_id, body.job_id);
+  return NextResponse.json({ deleted: true });
 }
 
 function clamp(value: number, min: number, max: number) {

@@ -159,3 +159,12 @@ export async function loadAllJobs(batchId: string): Promise<BatchJob[]> {
   }
   return jobs.sort((a, b) => a.seq - b.seq);
 }
+
+export async function deleteJob(batchId: string, jobId: string): Promise<void> {
+  const batch = await loadBatch(batchId);
+  batch.jobs = batch.jobs.filter(job => job.id !== jobId);
+  await writeJsonAtomic(batchFilePath(batchId), batch);
+  await fs.unlink(jobFilePath(batchId, jobId)).catch((cause: unknown) => {
+    if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
+  });
+}
