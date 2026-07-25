@@ -30,6 +30,23 @@ export interface ComposeDraftInput {
   evidence: ReturnType<typeof retrieveProductFacts>;
 }
 
+export type ComposeFailureStage = 'core' | 'editorial' | 'audit' | 'unknown';
+
+export function classifyComposeError(error: Error | null): ComposeFailureStage {
+  const message = error?.message || '';
+  if (message.startsWith('标题或封面返修后仍未达标')) return 'core';
+  if (message.startsWith('内页或正文返修后仍未达标')) return 'editorial';
+  if (message.startsWith('法语与考试事实审校未通过')) return 'audit';
+  return 'unknown';
+}
+
+export function isRetryableComposeError(error: Error): boolean {
+  const message = error.message;
+  if (/请求失败：4\d\d/.test(message)) return false;
+  if (message.includes('缺少 OPENAI_API_KEY')) return false;
+  return true;
+}
+
 export async function generateTopics(input: GenerateTopicsInput): Promise<MigratedTopic[]> {
   const templatePrompt = getCoverTemplatePrompt(input.card.renderer_id);
   const result = await callOpenAICompatibleJson([

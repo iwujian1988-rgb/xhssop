@@ -4,7 +4,8 @@ import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { loadProductFacts } from '@/lib/product-facts-loader';
 import { compactProductContext, retrieveProductFacts } from '@/lib/product-fact-retrieval';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
-import { composeDraft, generateTopics } from '@/lib/reference-compose';
+import { composeWithRetry } from '@/lib/compose-with-retry';
+import { generateTopics } from '@/lib/reference-compose';
 import type { ProductId } from '@/types/data';
 import type { ReferenceWorkflowRequest } from '@/types/reference-workflow';
 
@@ -34,13 +35,20 @@ export async function POST(request: Request) {
 
     if (!body.topic) return error('请先选择迁移选题', 400);
     const evidence = retrieveProductFacts(facts, body.topic);
-    const draft = await composeDraft({
+    const outcome = await composeWithRetry({
       productId: body.product_id,
       card,
       topic: body.topic,
       evidence,
     });
-    return NextResponse.json({ card, draft, usage: getRecentAiUsage() });
+    if (!outcome.ok) {
+      const retried = outcome.failure.attempts - 1;
+      return error(
+        `${outcome.failure.message}（已自动重试${retried}次仍失败，阶段：${outcome.failure.stage}）`,
+        500,
+      );
+    }
+    return NextResponse.json({ card, draft: outcome.draft, usage: outcome.usage });
   } catch (cause) {
     console.error('reference studio failed:', cause);
     return error(cause instanceof Error ? cause.message : '笔记生成失败', 500);
