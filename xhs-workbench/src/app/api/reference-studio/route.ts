@@ -43,10 +43,11 @@ export async function POST(request: Request) {
     }, body.max_attempts ? { maxAttempts: body.max_attempts } : undefined);
     if (!outcome.ok) {
       const retried = outcome.failure.attempts - 1;
-      return error(
-        `${outcome.failure.message}（已自动重试${retried}次仍失败，阶段：${outcome.failure.stage}）`,
-        500,
-      );
+      // 必须带 usage：失败前已经烧了几万 token，尸体池/benchmark 要靠这个数。
+      return NextResponse.json({
+        error: `${outcome.failure.message}（已自动重试${retried}次仍失败，阶段：${outcome.failure.stage}）`,
+        usage: outcome.failure.usage,
+      }, { status: 500 });
     }
     return NextResponse.json({ card, draft: outcome.draft, usage: outcome.usage });
   } catch (cause) {
