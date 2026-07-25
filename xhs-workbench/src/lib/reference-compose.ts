@@ -2,7 +2,7 @@ import { callOpenAICompatibleJson } from '@/lib/ai-client';
 import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getDenseDirectoryTitleFormulas } from '@/lib/full-title-formula-catalog';
 import { collectFrenchCheckTargets, findSuspiciousFrenchTokens } from '@/lib/french-spellcheck';
-import { getCoverTemplatePrompt, getCoverTemplateSpec } from '@/lib/cover-template-specs';
+import { getCoverTemplatePrompt, getCoverTemplateSpec, type CoverTemplateSpec } from '@/lib/cover-template-specs';
 import { retrieveProductFacts } from '@/lib/product-fact-retrieval';
 import { normalizeDenseDirectoryCover, validateReferenceDraft } from '@/lib/reference-workflow-validation';
 import type { ProductId } from '@/types/data';
@@ -13,6 +13,34 @@ import type {
   TitleCandidate,
   UnifiedContentBrief,
 } from '@/types/reference-workflow';
+
+type NormalizedCover = ReturnType<typeof normalizeDenseDirectoryCover>;
+
+const FLEXIBLE_CAPACITY_FAMILIES = new Set<CoverTemplateSpec['family']>([
+  'directory', 'document', 'offer', 'experience', 'pain', 'roadmap', 'phrase', 'table', 'book',
+]);
+
+export function autoFixCoverCapacity(cover: NormalizedCover, spec: CoverTemplateSpec): { cover: NormalizedCover; events: string[] } {
+  const flexible = FLEXIBLE_CAPACITY_FAMILIES.has(spec.family);
+  const maxSections = flexible ? spec.sectionCount + 1 : spec.sectionCount;
+  const maxItems = flexible ? spec.itemsPerSection + 2 : spec.itemsPerSection;
+  const events: string[] = [];
+  const sections = cover.sections.map(section => ({ ...section, items: section.items.map(item => ({ ...item })) }));
+
+  for (const section of sections) {
+    if (section.items.length > maxItems) {
+      events.push(`分组「${section.heading}」${section.items.length}条→截断为${maxItems}条`);
+      section.items = section.items.slice(0, maxItems);
+    }
+  }
+  while (sections.length > maxSections) {
+    const last = sections.pop()!;
+    const target = sections[sections.length - 1];
+    target.items = [...target.items, ...last.items].slice(0, maxItems);
+    events.push(`分组超上限，「${last.heading}」并入「${target.heading}」`);
+  }
+  return { cover: { ...cover, sections }, events };
+}
 
 export type ProductCard = NonNullable<ReturnType<typeof getCompetitorCreativeCard>>;
 
@@ -168,7 +196,17 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   const allowedTitleFormulas = getDenseDirectoryTitleFormulas(input.topic.topic);
   const allowedTitleFormulaIds = new Set(allowedTitleFormulas.map(item => item.id));
   let titleCandidates = normalizeTitles(core.title_candidates, allowedTitleFormulaIds);
-  let cover = ensureCoverIdentity(normalizeDenseDirectoryCover(core.cover), input.card.renderer_id);
+  const autofixEvents: string[] = [];
+  const applyAutoFix = (currentCover: NormalizedCover): NormalizedCover => {
+    if (!spec) return currentCover;
+    const result = autoFixCoverCapacity(currentCover, spec);
+    if (result.events.length) {
+      autofixEvents.push(...result.events);
+      console.info(`[autofix] card=${input.card.id} events=${JSON.stringify(result.events)}`);
+    }
+    return result.cover;
+  };
+  let cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(core.cover), input.card.renderer_id));
   titleCandidates = ensureTitleCandidateMix(titleCandidates, allowedTitleFormulas, cover.title);
   let selectedTitle = chooseSafeTitle(core.selected_title, titleCandidates, cover.title);
   ({ titleCandidates, selectedTitle } = syncTitlesWithCoverCounts(titleCandidates, selectedTitle, cover));
@@ -186,11 +224,14 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     });
     const repaired = asRecord(repairResult);
     titleCandidates = normalizeTitles(repaired.title_candidates, allowedTitleFormulaIds);
-    cover = ensureCoverIdentity(normalizeDenseDirectoryCover(repaired.cover), input.card.renderer_id);
+    cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(repaired.cover), input.card.renderer_id));
     titleCandidates = ensureTitleCandidateMix(titleCandidates, allowedTitleFormulas, cover.title);
     selectedTitle = chooseSafeTitle(repaired.selected_title, titleCandidates, cover.title);
     ({ titleCandidates, selectedTitle } = syncTitlesWithCoverCounts(titleCandidates, selectedTitle, cover));
     coreIssues = getCoreIssues(titleCandidates, cover, input.card.renderer_id);
+  }
+  if (autofixEvents.length) {
+    console.info(`[autofix-summary] card=${input.card.id} count=${autofixEvents.length} events=${JSON.stringify(autofixEvents)}`);
   }
   if (coreIssues.length) throw new Error(`标题或封面返修后仍未达标：${coreIssues.join(', ')}`);
 
