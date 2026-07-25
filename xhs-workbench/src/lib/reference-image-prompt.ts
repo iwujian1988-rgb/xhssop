@@ -53,6 +53,17 @@ function pickOne(items: string[]) {
   return items[Math.floor(Math.random() * items.length)] || '';
 }
 
+// 内部目录 ID（CH-085 / AU-001 / JF-011 / GRAM-0001 等）绝不能进入文生图 prompt，
+// 否则图像模型会一五一十地把它们画到封面上。item.note 经常带这种 ID，组装 prompt 前先剥。
+function stripInternalIds(text: string): string {
+  return text
+    .replace(/[（(]\s*[A-Z]{2,4}-\d{2,4}\s*[）)]/g, '')
+    .replace(/\b[A-Z]{2,4}-\d{2,4}\b/g, '')
+    .replace(/[（(]\s*[）)]/g, '')
+    .replace(/\s{2,}/g, ' ')
+    .trim();
+}
+
 export function buildReferenceImagePrompt(card: CompetitorCreativeCard, cover: DenseDirectoryCoverPayload) {
   const core = TEMPLATE_CORE[card.renderer_id];
   if (!core) throw new Error(`模板 ${card.renderer_id} 尚未配置文生图提示词`);
@@ -62,7 +73,10 @@ export function buildReferenceImagePrompt(card: CompetitorCreativeCard, cover: D
 
   const content = cover.sections.map((section, index) => [
     `${index + 1}. ${section.heading}`,
-    ...section.items.map(item => `- ${item.primary}${item.secondary ? `｜${item.secondary}` : ''}${item.note ? `（${item.note}）` : ''}`),
+    ...section.items.map(item => {
+      const note = item.note ? stripInternalIds(item.note) : '';
+      return `- ${item.primary}${item.secondary ? `｜${item.secondary}` : ''}${note ? `（${note}）` : ''}`;
+    }),
   ].join('\n')).join('\n');
 
   return [
