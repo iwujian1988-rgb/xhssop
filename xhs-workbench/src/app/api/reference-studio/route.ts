@@ -40,7 +40,7 @@ export async function POST(request: Request) {
       card,
       topic: body.topic,
       evidence,
-    });
+    }, body.max_attempts ? { maxAttempts: body.max_attempts } : undefined);
     if (!outcome.ok) {
       const retried = outcome.failure.attempts - 1;
       return error(

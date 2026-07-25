@@ -150,4 +150,5 @@ export interface ReferenceWorkflowRequest {
   reference_card_id: string;
   direction?: string;
   topic?: MigratedTopic;
+  max_attempts?: number;
 }
