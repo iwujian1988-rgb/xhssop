@@ -135,7 +135,7 @@ async function runBatch(batchId: string): Promise<void> {
 }
 
 function emptyUsage(): AiUsageSummary {
-  return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0 };
+  return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0, autofix_count: 0, autofix_events: [] };
 }
 
 export type { Batch, BatchJob };

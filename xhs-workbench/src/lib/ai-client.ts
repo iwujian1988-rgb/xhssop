@@ -17,16 +17,27 @@ export interface AiUsageSummary {
   completion_tokens: number;
   total_tokens: number;
   calls: number;
+  autofix_count: number;
+  autofix_events: string[];
 }
 
-let recentUsage: AiUsageSummary = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0 };
+let recentUsage: AiUsageSummary = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0, autofix_count: 0, autofix_events: [] };
 
 export function resetRecentAiUsage() {
-  recentUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0 };
+  recentUsage = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0, autofix_count: 0, autofix_events: [] };
 }
 
 export function getRecentAiUsage(): AiUsageSummary {
-  return { ...recentUsage };
+  return { ...recentUsage, autofix_events: [...recentUsage.autofix_events] };
+}
+
+// autofix 是 composeDraft 内部的确定性容量修复（截断/合并），不走 LLM。
+// 但和 LLM usage 一样属于「这次 compose 的消耗」，挂进 AiUsageSummary 方便
+// 上层（benchmark / 尸体池）一并读取。
+export function recordAutofixEvents(events: string[]) {
+  if (!events.length) return;
+  recentUsage.autofix_count += events.length;
+  recentUsage.autofix_events.push(...events);
 }
 
 export async function callOpenAICompatibleJson(messages: AiMessage[], options: AiCallOptions = {}): Promise<unknown> {

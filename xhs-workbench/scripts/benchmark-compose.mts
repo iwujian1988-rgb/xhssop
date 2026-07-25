@@ -11,7 +11,14 @@ const DEFAULT_CARDS = [
   'resource_09_notebook_warning',
 ];
 
-interface UsageSummary { prompt_tokens: number; completion_tokens: number; total_tokens: number; calls: number }
+interface UsageSummary {
+  prompt_tokens: number;
+  completion_tokens: number;
+  total_tokens: number;
+  calls: number;
+  autofix_count?: number;
+  autofix_events?: string[];
+}
 interface Topic { id: string; topic: string; [key: string]: unknown }
 
 interface SampleResult {
@@ -21,6 +28,7 @@ interface SampleResult {
   attempts: number;
   totalTokens: number;
   durationMs: number;
+  autofixCount: number;
   errorMessage?: string;
 }
 
@@ -34,6 +42,9 @@ interface BenchmarkReport {
   stageBreakdown: Record<string, number>;
   avgTokens: number;
   avgDurationMs: number;
+  autofixTriggeredCount: number;     // 样本中至少触发 1 次 autofix 的数量
+  autofixSavedCount: number;         // 成功且 autofix 触发：没有 autofix 就会失败的样本
+  totalAutofixEvents: number;        // 触发的 autofix 事件总次数
 }
 
 async function postJson(body: Record<string, unknown>): Promise<{ ok: boolean; status: number; json: any }> {
@@ -69,6 +80,7 @@ async function composeOnce(cardId: string, topic: Topic, maxAttempts: number): P
   const durationMs = Date.now() - start;
   const usage: UsageSummary | undefined = result.json?.usage;
   const totalTokens = usage?.total_tokens || 0;
+  const autofixCount = usage?.autofix_count || 0;
 
   if (result.ok) {
     return {
@@ -78,6 +90,7 @@ async function composeOnce(cardId: string, topic: Topic, maxAttempts: number): P
       attempts: 1, // server doesn't return attempts yet; infer below
       totalTokens,
       durationMs,
+      autofixCount,
     };
   }
   const errorMessage: string = result.json?.error || '未知错误';
@@ -90,6 +103,7 @@ async function composeOnce(cardId: string, topic: Topic, maxAttempts: number): P
     attempts: attemptsMatch ? Number(attemptsMatch[1]) + 1 : 1,
     totalTokens,
     durationMs,
+    autofixCount,
     errorMessage: errorMessage.slice(0, 240),
   };
 }
@@ -103,6 +117,10 @@ function aggregate(cardId: string, maxAttempts: number, samples: SampleResult[])
   }
   const totalTokens = samples.reduce((sum, s) => sum + s.totalTokens, 0);
   const totalDuration = samples.reduce((sum, s) => sum + s.durationMs, 0);
+  const autofixTriggeredCount = samples.filter(s => s.autofixCount > 0).length;
+  // autofix 触发且最终成功 = autofix 救活的样本（没 autofix 就会失败）
+  const autofixSavedCount = samples.filter(s => s.autofixCount > 0 && s.ok).length;
+  const totalAutofixEvents = samples.reduce((sum, s) => sum + s.autofixCount, 0);
   return {
     cardId,
     maxAttempts,
@@ -113,6 +131,9 @@ function aggregate(cardId: string, maxAttempts: number, samples: SampleResult[])
     stageBreakdown,
     avgTokens: samples.length ? Math.round(totalTokens / samples.length) : 0,
     avgDurationMs: samples.length ? Math.round(totalDuration / samples.length) : 0,
+    autofixTriggeredCount,
+    autofixSavedCount,
+    totalAutofixEvents,
   };
 }
 
@@ -123,6 +144,7 @@ function formatReport(report: BenchmarkReport): string {
   lines.push(`  阶段分布: ${Object.entries(report.stageBreakdown).map(([k, v]) => `${k}=${v}`).join(', ')}`);
   lines.push(`  平均 token: ${report.avgTokens.toLocaleString()}`);
   lines.push(`  平均耗时: ${(report.avgDurationMs / 1000).toFixed(1)}s`);
+  lines.push(`  autofix: 触发 ${report.autofixTriggeredCount}/${report.samples.length}，救活 ${report.autofixSavedCount}（共 ${report.totalAutofixEvents} 次事件）`);
   return lines.join('\n');
 }
 
@@ -179,9 +201,9 @@ async function main() {
         result.sample = i + 1;
         samples.push(result);
         if (result.ok) {
-          console.log(`[benchmark] sample ${i + 1}: ✅ tokens=${result.totalTokens} ms=${result.durationMs}`);
+          console.log(`[benchmark] sample ${i + 1}: ✅ tokens=${result.totalTokens} ms=${result.durationMs} autofix=${result.autofixCount}`);
         } else {
-          console.log(`[benchmark] sample ${i + 1}: ❌ stage=${result.stage} attempts=${result.attempts} tokens=${result.totalTokens} ms=${result.durationMs} msg=${result.errorMessage?.slice(0, 120)}`);
+          console.log(`[benchmark] sample ${i + 1}: ❌ stage=${result.stage} attempts=${result.attempts} tokens=${result.totalTokens} ms=${result.durationMs} autofix=${result.autofixCount} msg=${result.errorMessage?.slice(0, 120)}`);
         }
       }
       reports.push(aggregate(cardId, maxAttempts, samples));

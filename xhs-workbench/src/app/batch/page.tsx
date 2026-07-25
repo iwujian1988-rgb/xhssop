@@ -468,13 +468,15 @@ function summarize(jobs: BatchJob[]) {
 }
 
 function aggregateUsage(jobs: BatchJob[]): AiUsageSummary {
-  const result: AiUsageSummary = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0 };
+  const result: AiUsageSummary = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0, autofix_count: 0, autofix_events: [] };
   for (const job of jobs) {
     if (!job.usage) continue;
     result.prompt_tokens += job.usage.prompt_tokens;
     result.completion_tokens += job.usage.completion_tokens;
     result.total_tokens += job.usage.total_tokens;
     result.calls += job.usage.calls;
+    result.autofix_count += job.usage.autofix_count || 0;
+    if (job.usage.autofix_events?.length) result.autofix_events.push(...job.usage.autofix_events);
   }
   return result;
 }

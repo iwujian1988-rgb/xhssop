@@ -1,4 +1,4 @@
-import { callOpenAICompatibleJson } from '@/lib/ai-client';
+import { callOpenAICompatibleJson, recordAutofixEvents } from '@/lib/ai-client';
 import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getDenseDirectoryTitleFormulas } from '@/lib/full-title-formula-catalog';
 import { collectFrenchCheckTargets, findSuspiciousFrenchTokens } from '@/lib/french-spellcheck';
@@ -221,6 +221,10 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     const result = autoFixCoverCapacity(currentCover, spec);
     if (result.events.length) {
       autofixEvents.push(...result.events);
+      // 挂进 recentUsage.autofix_count/events，让 benchmark 和尸体池能直接读到
+      // 「这次 compose 触发了 N 次 autofix」用于命中率统计。仍保留 console 日志
+      // 方便 dev server 控制台目检。
+      recordAutofixEvents(result.events);
       console.info(`[autofix] card=${input.card.id} events=${JSON.stringify(result.events)}`);
     }
     return result.cover;

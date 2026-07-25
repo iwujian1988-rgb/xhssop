@@ -30,6 +30,8 @@ const EMPTY_USAGE: AiUsageSummary = {
   completion_tokens: 0,
   total_tokens: 0,
   calls: 0,
+  autofix_count: 0,
+  autofix_events: [],
 };
 
 function addUsage(a: AiUsageSummary, b: AiUsageSummary): AiUsageSummary {
@@ -38,6 +40,8 @@ function addUsage(a: AiUsageSummary, b: AiUsageSummary): AiUsageSummary {
     completion_tokens: a.completion_tokens + b.completion_tokens,
     total_tokens: a.total_tokens + b.total_tokens,
     calls: a.calls + b.calls,
+    autofix_count: a.autofix_count + b.autofix_count,
+    autofix_events: [...a.autofix_events, ...b.autofix_events],
   };
 }
 
