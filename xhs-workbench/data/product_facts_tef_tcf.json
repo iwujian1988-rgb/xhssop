@@ -1,0 +1,624 @@
+{
+  "audiences": [
+    {
+      "id": "TA-001",
+      "text": "准备用法语成绩服务加拿大移民规划的人，关心 TEF/TCF、CLB/NCLC 和备考路径。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "适合人群与选考决策",
+      "evidence": "资料围绕 TEF/TCF Canada、CLB 换算和考试选择展开。",
+      "raw_keywords": ["加拿大移民", "TEF", "TCF", "CLB", "NCLC"]
+    },
+    {
+      "id": "TA-002",
+      "text": "不知道先考 TEF 还是 TCF 的法语考生。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "我要考TEF还是TCF",
+      "evidence": "资料专门解释 TEF/TCF 的选择逻辑和差异。",
+      "raw_keywords": ["TEF还是TCF", "选考", "考试区别"]
+    },
+    {
+      "id": "TA-003",
+      "text": "目标 CLB7/NCLC7，但不清楚自己离目标差多少的人。",
+      "source_file": "02_先测一下你离CLB7有多远_v1.md",
+      "source_section": "CLB7自测",
+      "evidence": "资料提供先测一下离 CLB7 有多远的诊断入口。",
+      "raw_keywords": ["CLB7", "NCLC7", "自测", "差距"]
+    },
+    {
+      "id": "TA-004",
+      "text": "每天只能拿出 1-2 小时备考、需要具体安排的上班族或学生。",
+      "source_file": "06_30天怎么安排每天2小时版_v1.md",
+      "source_section": "30天每天2小时计划",
+      "evidence": "资料以每天2小时为约束设计30天备考安排。",
+      "raw_keywords": ["30天", "每天2小时", "备考计划"]
+    },
+    {
+      "id": "TA-005",
+      "text": "写作和口语输出弱，背过表达但考场调不出来的人。",
+      "source_file": "03_写作提分捷径50个句型拿来就用_v1.md",
+      "source_section": "输出提分句型",
+      "evidence": "资料包含写作句型、口语表达和可直接调用的表达资产。",
+      "raw_keywords": ["写作", "口语", "句型", "输出"]
+    },
+    {
+      "id": "TA-006",
+      "text": "听力长期提不上去，容易被语速、口音和连续语流卡住的人。",
+      "source_file": "07_听力这件事急不来_v1.md",
+      "source_section": "听力训练",
+      "evidence": "资料单独讨论听力训练节奏和方法。",
+      "raw_keywords": ["听力", "精听", "口音", "语速"]
+    },
+    {
+      "id": "TA-007",
+      "text": "临近考试，需要从报名、考试当天到查分流程都弄清楚的人。",
+      "source_file": "12_上考场那天从报名到查分全流程_v1.md",
+      "source_section": "报名到查分流程",
+      "evidence": "资料覆盖从报名到查分的完整流程。",
+      "raw_keywords": ["报名", "机考", "查分", "流程"]
+    }
+  ],
+  "use_cases": [
+    {
+      "id": "TU-001",
+      "text": "做 TEF Canada 和 TCF Canada 的选考决策。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "TEF/TCF选择",
+      "evidence": "资料用于帮助用户判断该选哪一种考试。",
+      "raw_keywords": ["TEF Canada", "TCF Canada", "选考"]
+    },
+    {
+      "id": "TU-002",
+      "text": "用自测题判断自己离 CLB7/NCLC7 的距离。",
+      "source_file": "02_先测一下你离CLB7有多远_v1.md",
+      "source_section": "CLB7自测",
+      "evidence": "资料包含离 CLB7 有多远的自测模块。",
+      "raw_keywords": ["CLB7", "自测", "诊断"]
+    },
+    {
+      "id": "TU-003",
+      "text": "按每天2小时安排30天备考节奏。",
+      "source_file": "06_30天怎么安排每天2小时版_v1.md",
+      "source_section": "30天计划",
+      "evidence": "资料提供30天每天2小时版本的安排。",
+      "raw_keywords": ["30天", "每天2小时", "计划"]
+    },
+    {
+      "id": "TU-004",
+      "text": "集中训练写作高频句型和段落表达。",
+      "source_file": "03_写作提分捷径50个句型拿来就用_v1.md",
+      "source_section": "50个句型",
+      "evidence": "资料围绕50个句型解决写作表达。",
+      "raw_keywords": ["写作句型", "表达", "段落"]
+    },
+    {
+      "id": "TU-005",
+      "text": "按12大主题整理600个词汇，避免背词后用不上。",
+      "source_file": "04_背词不迷路12大类600词_v1.md",
+      "source_section": "12大类600词",
+      "evidence": "资料以12大类组织600个词汇。",
+      "raw_keywords": ["600词", "主题词", "背词"]
+    },
+    {
+      "id": "TU-006",
+      "text": "提前准备写作高频真题主题，减少考场无话可说。",
+      "source_file": "05_写作练什么高频真题主题全收录_v1.md",
+      "source_section": "高频真题主题",
+      "evidence": "资料收录高频真题主题。",
+      "raw_keywords": ["真题主题", "写作主题", "备考"]
+    },
+    {
+      "id": "TU-007",
+      "text": "建立听力训练路径，而不是临考前乱刷题。",
+      "source_file": "07_听力这件事急不来_v1.md",
+      "source_section": "听力训练",
+      "evidence": "资料强调听力训练需要方法和节奏。",
+      "raw_keywords": ["听力", "精听", "训练"]
+    },
+    {
+      "id": "TU-008",
+      "text": "准备口语观点、过渡句和模拟练习。",
+      "source_file": "08_开口说没那么可怕_v1.md",
+      "source_section": "口语训练",
+      "evidence": "资料针对开口说和口语准备展开。",
+      "raw_keywords": ["口语", "开口说", "过渡句"]
+    },
+    {
+      "id": "TU-009",
+      "text": "通过B2到C1范文对比，看清好文章的差距。",
+      "source_file": "09_好文章长什么样B2到C1范文对比_v1.md",
+      "source_section": "B2到C1范文对比",
+      "evidence": "资料以B2到C1范文对比说明文章差距。",
+      "raw_keywords": ["范文", "B2", "C1", "对比"]
+    },
+    {
+      "id": "TU-010",
+      "text": "考前用避坑清单和流程清单检查遗漏。",
+      "source_file": "11_别踩这些坑30条吐血经验_v1.md",
+      "source_section": "30条避坑经验",
+      "evidence": "资料整理30条备考经验和坑点。",
+      "raw_keywords": ["避坑", "考前", "清单"]
+    }
+  ],
+  "raw_pain_points": [
+    {
+      "id": "TP-001",
+      "text": "TEF 和 TCF 选错方向，可能导致备考资料、题型熟悉度和报名节奏都重来。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "TEF/TCF选择",
+      "evidence": "资料把选考作为第一份内容，说明这是备考前置决策。",
+      "raw_keywords": ["选错考试", "TEF还是TCF", "报名"]
+    },
+    {
+      "id": "TP-002",
+      "text": "不知道自己离 CLB7 还差在哪一科，备考容易平均用力。",
+      "source_file": "02_先测一下你离CLB7有多远_v1.md",
+      "source_section": "CLB7差距",
+      "evidence": "资料用自测帮助定位离CLB7的距离。",
+      "raw_keywords": ["CLB7", "差距", "四科"]
+    },
+    {
+      "id": "TP-003",
+      "text": "资料很多但不知道先练什么，容易今天背词、明天刷题、后天又换方法。",
+      "source_file": "06_30天怎么安排每天2小时版_v1.md",
+      "source_section": "30天安排",
+      "evidence": "资料提供每天2小时版本的路线安排。",
+      "raw_keywords": ["备考计划", "资料太多", "先练什么"]
+    },
+    {
+      "id": "TP-004",
+      "text": "写作句型背了很多，但真正写作文时仍然只会用简单表达。",
+      "source_file": "03_写作提分捷径50个句型拿来就用_v1.md",
+      "source_section": "50个句型",
+      "evidence": "资料以可拿来就用的句型解决输出问题。",
+      "raw_keywords": ["写作句型", "用不上", "表达"]
+    },
+    {
+      "id": "TP-005",
+      "text": "单词背得零散，换到移民、工作、教育等主题时还是说不出来。",
+      "source_file": "04_背词不迷路12大类600词_v1.md",
+      "source_section": "12大类600词",
+      "evidence": "资料按主题组织词汇，减少零散背词。",
+      "raw_keywords": ["背词", "主题词", "说不出来"]
+    },
+    {
+      "id": "TP-006",
+      "text": "高频写作主题没准备，考场看到题目才开始想观点。",
+      "source_file": "05_写作练什么高频真题主题全收录_v1.md",
+      "source_section": "高频真题主题",
+      "evidence": "资料收录写作高频真题主题。",
+      "raw_keywords": ["写作主题", "考场", "观点"]
+    },
+    {
+      "id": "TP-007",
+      "text": "听力不是临考前刷几套题就能补起来，容易越急越乱。",
+      "source_file": "07_听力这件事急不来_v1.md",
+      "source_section": "听力这件事急不来",
+      "evidence": "资料标题本身强调听力训练不能急。",
+      "raw_keywords": ["听力", "刷题", "急不来"]
+    },
+    {
+      "id": "TP-008",
+      "text": "口语不是不会法语，而是没有提前准备可展开的论据和过渡表达。",
+      "source_file": "08_开口说没那么可怕_v1.md",
+      "source_section": "开口说",
+      "evidence": "资料用于降低开口说的门槛。",
+      "raw_keywords": ["口语", "论据", "开口"]
+    },
+    {
+      "id": "TP-009",
+      "text": "不知道一篇从B2到C1的文章到底差在哪，只能凭感觉改。",
+      "source_file": "09_好文章长什么样B2到C1范文对比_v1.md",
+      "source_section": "B2到C1范文对比",
+      "evidence": "资料通过范文对比展示差距。",
+      "raw_keywords": ["B2", "C1", "范文对比"]
+    },
+    {
+      "id": "TP-010",
+      "text": "报名、考试当天、查分和后续流程不清楚，临近考试容易慌。",
+      "source_file": "12_上考场那天从报名到查分全流程_v1.md",
+      "source_section": "报名到查分流程",
+      "evidence": "资料覆盖从报名到查分全流程。",
+      "raw_keywords": ["报名", "查分", "流程"]
+    }
+  ],
+  "raw_selling_points": [
+    {
+      "id": "TS-001",
+      "text": "12份资料按备考旅程组织，覆盖选考、自测、写作、词汇、主题、计划、听力、口语、范文、经验、避坑和流程。",
+      "source_file": "商品2资料清单",
+      "source_section": "12份资料总览",
+      "evidence": "资料目录包含01到12共12个主题文件。",
+      "raw_keywords": ["12份资料", "备考资料包", "系统整理"]
+    },
+    {
+      "id": "TS-002",
+      "text": "先解决 TEF/TCF 选择问题，避免一开始备考方向就错。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "TEF/TCF选择",
+      "evidence": "第一份资料聚焦我要考TEF还是TCF。",
+      "raw_keywords": ["TEF", "TCF", "选考"]
+    },
+    {
+      "id": "TS-003",
+      "text": "用 CLB7 自测把目标拆成可判断的差距，而不是凭感觉备考。",
+      "source_file": "02_先测一下你离CLB7有多远_v1.md",
+      "source_section": "CLB7自测",
+      "evidence": "第二份资料用于先测离CLB7有多远。",
+      "raw_keywords": ["CLB7", "自测", "诊断"]
+    },
+    {
+      "id": "TS-004",
+      "text": "50个写作句型按功能整理，帮助写作从简单句升级到更稳定的论证表达。",
+      "source_file": "03_写作提分捷径50个句型拿来就用_v1.md",
+      "source_section": "50个句型",
+      "evidence": "资料标题明确包含50个句型拿来就用。",
+      "raw_keywords": ["50句型", "写作提分", "论证"]
+    },
+    {
+      "id": "TS-005",
+      "text": "12大类600词按主题组织，适合写作和口语一起调用。",
+      "source_file": "04_背词不迷路12大类600词_v1.md",
+      "source_section": "12大类600词",
+      "evidence": "资料标题明确为12大类600词。",
+      "raw_keywords": ["600词", "主题词", "写作口语"]
+    },
+    {
+      "id": "TS-006",
+      "text": "高频真题主题提前收录，帮助用户先准备观点和素材。",
+      "source_file": "05_写作练什么高频真题主题全收录_v1.md",
+      "source_section": "高频真题主题",
+      "evidence": "资料标题明确为高频真题主题全收录。",
+      "raw_keywords": ["真题主题", "写作素材", "观点"]
+    },
+    {
+      "id": "TS-007",
+      "text": "30天每天2小时版本，把备考任务拆成更容易执行的日程。",
+      "source_file": "06_30天怎么安排每天2小时版_v1.md",
+      "source_section": "30天每天2小时",
+      "evidence": "资料标题明确为30天每天2小时版。",
+      "raw_keywords": ["30天", "每天2小时", "日程"]
+    },
+    {
+      "id": "TS-008",
+      "text": "听力资料强调长期训练方法，避免只靠临考刷题。",
+      "source_file": "07_听力这件事急不来_v1.md",
+      "source_section": "听力方法",
+      "evidence": "资料标题明确听力这件事急不来。",
+      "raw_keywords": ["听力", "训练方法", "精听"]
+    },
+    {
+      "id": "TS-009",
+      "text": "口语资料降低开口难度，围绕表达、论据和练习方式展开。",
+      "source_file": "08_开口说没那么可怕_v1.md",
+      "source_section": "口语训练",
+      "evidence": "资料标题明确为开口说没那么可怕。",
+      "raw_keywords": ["口语", "论据", "开口"]
+    },
+    {
+      "id": "TS-010",
+      "text": "B2到C1范文对比帮助用户看到好文章的结构、表达和论证差距。",
+      "source_file": "09_好文章长什么样B2到C1范文对比_v1.md",
+      "source_section": "范文对比",
+      "evidence": "资料标题明确为B2到C1范文对比。",
+      "raw_keywords": ["范文", "B2", "C1", "对比"]
+    },
+    {
+      "id": "TS-011",
+      "text": "7个真实备考故事提供经验参照，适合做真人经验型内容。",
+      "source_file": "10_翻过去的人怎么说7个真实备考故事_v1.md",
+      "source_section": "7个真实备考故事",
+      "evidence": "资料标题明确包含7个真实备考故事。",
+      "raw_keywords": ["备考故事", "经验", "真人"]
+    },
+    {
+      "id": "TS-012",
+      "text": "30条避坑经验把常见错误提前列出来，适合做警告型和清单型内容。",
+      "source_file": "11_别踩这些坑30条吐血经验_v1.md",
+      "source_section": "30条经验",
+      "evidence": "资料标题明确包含30条吐血经验。",
+      "raw_keywords": ["避坑", "经验", "清单"]
+    },
+    {
+      "id": "TS-013",
+      "text": "报名到查分全流程适合做考前流程清单，减少临场信息差。",
+      "source_file": "12_上考场那天从报名到查分全流程_v1.md",
+      "source_section": "全流程",
+      "evidence": "资料标题明确覆盖从报名到查分。",
+      "raw_keywords": ["报名", "查分", "流程"]
+    }
+  ],
+  "knowledge_assets": [
+    {
+      "id": "TK-001",
+      "text": "TEF/TCF 是备考前需要先判断的考试选择问题。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "选考决策",
+      "evidence": "第一份资料即围绕我要考TEF还是TCF展开。",
+      "raw_keywords": ["TEF", "TCF", "选考"]
+    },
+    {
+      "id": "TK-002",
+      "text": "CLB7/NCLC7 目标需要先做差距诊断，再决定四科训练重点。",
+      "source_file": "02_先测一下你离CLB7有多远_v1.md",
+      "source_section": "CLB7诊断",
+      "evidence": "资料以离CLB7有多远作为入口。",
+      "raw_keywords": ["CLB7", "NCLC7", "诊断"]
+    },
+    {
+      "id": "TK-003",
+      "text": "写作句型应该按功能使用，例如引入观点、让步、对比、因果和总结。",
+      "source_file": "03_写作提分捷径50个句型拿来就用_v1.md",
+      "source_section": "50句型分类",
+      "evidence": "资料围绕写作提分句型展开。",
+      "raw_keywords": ["句型", "让步", "因果", "总结"]
+    },
+    {
+      "id": "TK-004",
+      "text": "主题词汇比零散背词更适合写作和口语输出。",
+      "source_file": "04_背词不迷路12大类600词_v1.md",
+      "source_section": "12大类600词",
+      "evidence": "资料以12大类组织600词。",
+      "raw_keywords": ["主题词汇", "600词", "输出"]
+    },
+    {
+      "id": "TK-005",
+      "text": "高频真题主题可以提前准备观点、例子和关键词。",
+      "source_file": "05_写作练什么高频真题主题全收录_v1.md",
+      "source_section": "高频真题主题",
+      "evidence": "资料用于回答写作练什么。",
+      "raw_keywords": ["真题主题", "观点", "例子"]
+    },
+    {
+      "id": "TK-006",
+      "text": "30天备考计划应该把输入、输出、复盘和模拟安排到每天任务里。",
+      "source_file": "06_30天怎么安排每天2小时版_v1.md",
+      "source_section": "30天安排",
+      "evidence": "资料按每天2小时规划30天。",
+      "raw_keywords": ["30天", "计划", "复盘"]
+    },
+    {
+      "id": "TK-007",
+      "text": "听力训练要重视稳定输入和复听精听，不适合只靠临考突击。",
+      "source_file": "07_听力这件事急不来_v1.md",
+      "source_section": "听力训练",
+      "evidence": "资料标题强调听力急不来。",
+      "raw_keywords": ["听力", "精听", "复听"]
+    },
+    {
+      "id": "TK-008",
+      "text": "口语训练需要提前准备论据碎片和连接表达，减少开口卡顿。",
+      "source_file": "08_开口说没那么可怕_v1.md",
+      "source_section": "口语训练",
+      "evidence": "资料围绕开口说的训练展开。",
+      "raw_keywords": ["口语", "论据", "连接表达"]
+    },
+    {
+      "id": "TK-009",
+      "text": "B2到C1的差距可以从结构、论证、词汇和句型层级观察。",
+      "source_file": "09_好文章长什么样B2到C1范文对比_v1.md",
+      "source_section": "范文对比",
+      "evidence": "资料以B2到C1范文对比展示差距。",
+      "raw_keywords": ["B2", "C1", "范文", "差距"]
+    },
+    {
+      "id": "TK-010",
+      "text": "备考经验和避坑清单适合用于考前自查和路线修正。",
+      "source_file": "11_别踩这些坑30条吐血经验_v1.md",
+      "source_section": "30条经验",
+      "evidence": "资料包含30条吐血经验。",
+      "raw_keywords": ["避坑", "经验", "自查"]
+    },
+    {
+      "id": "TK-011",
+      "text": "报名、机考、查分和后续动作可以整理成流程清单。",
+      "source_file": "12_上考场那天从报名到查分全流程_v1.md",
+      "source_section": "全流程",
+      "evidence": "资料覆盖从报名到查分。",
+      "raw_keywords": ["报名", "机考", "查分"]
+    }
+  ],
+  "content_modules": [
+    {
+      "id": "TM-001",
+      "text": "TEF/TCF选择模块。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于选考决策。",
+      "raw_keywords": ["TEF", "TCF"]
+    },
+    {
+      "id": "TM-002",
+      "text": "CLB7自测模块。",
+      "source_file": "02_先测一下你离CLB7有多远_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于判断目标差距。",
+      "raw_keywords": ["CLB7", "自测"]
+    },
+    {
+      "id": "TM-003",
+      "text": "写作50句型模块。",
+      "source_file": "03_写作提分捷径50个句型拿来就用_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于写作表达训练。",
+      "raw_keywords": ["50句型", "写作"]
+    },
+    {
+      "id": "TM-004",
+      "text": "12大类600词模块。",
+      "source_file": "04_背词不迷路12大类600词_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于主题词汇整理。",
+      "raw_keywords": ["600词", "主题词"]
+    },
+    {
+      "id": "TM-005",
+      "text": "高频真题主题模块。",
+      "source_file": "05_写作练什么高频真题主题全收录_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于写作主题准备。",
+      "raw_keywords": ["真题主题", "写作"]
+    },
+    {
+      "id": "TM-006",
+      "text": "30天每天2小时计划模块。",
+      "source_file": "06_30天怎么安排每天2小时版_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于备考计划。",
+      "raw_keywords": ["30天", "每天2小时"]
+    },
+    {
+      "id": "TM-007",
+      "text": "听力训练模块。",
+      "source_file": "07_听力这件事急不来_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于听力训练。",
+      "raw_keywords": ["听力", "训练"]
+    },
+    {
+      "id": "TM-008",
+      "text": "口语训练模块。",
+      "source_file": "08_开口说没那么可怕_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于口语表达。",
+      "raw_keywords": ["口语", "表达"]
+    },
+    {
+      "id": "TM-009",
+      "text": "B2到C1范文对比模块。",
+      "source_file": "09_好文章长什么样B2到C1范文对比_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于范文对比。",
+      "raw_keywords": ["范文", "B2", "C1"]
+    },
+    {
+      "id": "TM-010",
+      "text": "备考故事模块。",
+      "source_file": "10_翻过去的人怎么说7个真实备考故事_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于经验型内容。",
+      "raw_keywords": ["备考故事", "经验"]
+    },
+    {
+      "id": "TM-011",
+      "text": "30条避坑经验模块。",
+      "source_file": "11_别踩这些坑30条吐血经验_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于避坑内容。",
+      "raw_keywords": ["避坑", "经验"]
+    },
+    {
+      "id": "TM-012",
+      "text": "报名到查分流程模块。",
+      "source_file": "12_上考场那天从报名到查分全流程_v1.md",
+      "source_section": "整篇",
+      "evidence": "用于流程清单。",
+      "raw_keywords": ["报名", "查分", "流程"]
+    }
+  ],
+  "displayable_assets": [
+    {
+      "id": "TD-001",
+      "text": "12份资料总览目录。",
+      "source_file": "商品2资料清单",
+      "source_section": "12份资料",
+      "evidence": "01到12共12个文件构成资料包。",
+      "raw_keywords": ["资料目录", "资料包", "总览"]
+    },
+    {
+      "id": "TD-002",
+      "text": "TEF/TCF选择对照表。",
+      "source_file": "01_我要考TEF还是TCF_v1.md",
+      "source_section": "TEF/TCF选择",
+      "evidence": "可视化为选考对照和决策树。",
+      "raw_keywords": ["对照表", "决策树", "选考"]
+    },
+    {
+      "id": "TD-003",
+      "text": "CLB7差距自测表。",
+      "source_file": "02_先测一下你离CLB7有多远_v1.md",
+      "source_section": "CLB7自测",
+      "evidence": "可视化为自测题和四科差距表。",
+      "raw_keywords": ["自测表", "CLB7", "四科"]
+    },
+    {
+      "id": "TD-004",
+      "text": "50个写作句型分类表。",
+      "source_file": "03_写作提分捷径50个句型拿来就用_v1.md",
+      "source_section": "50句型",
+      "evidence": "可视化为句型分组和例句表。",
+      "raw_keywords": ["句型表", "写作", "例句"]
+    },
+    {
+      "id": "TD-005",
+      "text": "12大类600词主题词汇表。",
+      "source_file": "04_背词不迷路12大类600词_v1.md",
+      "source_section": "12大类600词",
+      "evidence": "可视化为主题词汇密集表。",
+      "raw_keywords": ["词汇表", "600词", "主题"]
+    },
+    {
+      "id": "TD-006",
+      "text": "高频写作主题清单。",
+      "source_file": "05_写作练什么高频真题主题全收录_v1.md",
+      "source_section": "高频真题主题",
+      "evidence": "可视化为主题目录和备考清单。",
+      "raw_keywords": ["主题清单", "真题", "写作"]
+    },
+    {
+      "id": "TD-007",
+      "text": "30天每天2小时备考日历。",
+      "source_file": "06_30天怎么安排每天2小时版_v1.md",
+      "source_section": "30天计划",
+      "evidence": "可视化为30天路线图。",
+      "raw_keywords": ["日历", "路线图", "30天"]
+    },
+    {
+      "id": "TD-008",
+      "text": "听力训练步骤卡。",
+      "source_file": "07_听力这件事急不来_v1.md",
+      "source_section": "听力训练",
+      "evidence": "可视化为训练步骤和复盘卡。",
+      "raw_keywords": ["听力步骤", "精听", "复盘"]
+    },
+    {
+      "id": "TD-009",
+      "text": "口语论据碎片和过渡表达卡。",
+      "source_file": "08_开口说没那么可怕_v1.md",
+      "source_section": "口语训练",
+      "evidence": "可视化为口语卡片和表达清单。",
+      "raw_keywords": ["口语卡", "论据", "过渡句"]
+    },
+    {
+      "id": "TD-010",
+      "text": "B2到C1范文对比表。",
+      "source_file": "09_好文章长什么样B2到C1范文对比_v1.md",
+      "source_section": "范文对比",
+      "evidence": "可视化为前后对比和批注页。",
+      "raw_keywords": ["范文对比", "B2", "C1"]
+    },
+    {
+      "id": "TD-011",
+      "text": "7个备考故事卡。",
+      "source_file": "10_翻过去的人怎么说7个真实备考故事_v1.md",
+      "source_section": "真实备考故事",
+      "evidence": "可视化为经验故事摘要。",
+      "raw_keywords": ["经验卡", "故事", "备考"]
+    },
+    {
+      "id": "TD-012",
+      "text": "30条避坑清单。",
+      "source_file": "11_别踩这些坑30条吐血经验_v1.md",
+      "source_section": "30条避坑",
+      "evidence": "可视化为警告清单和错题提醒。",
+      "raw_keywords": ["避坑清单", "警告", "经验"]
+    },
+    {
+      "id": "TD-013",
+      "text": "报名到查分流程图。",
+      "source_file": "12_上考场那天从报名到查分全流程_v1.md",
+      "source_section": "全流程",
+      "evidence": "可视化为流程图和考前 checklist。",
+      "raw_keywords": ["流程图", "报名", "查分"]
+    }
+  ]
+}

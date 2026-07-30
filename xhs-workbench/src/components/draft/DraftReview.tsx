@@ -1,6 +1,6 @@
 'use client';
 
-import { useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import ReferenceCoverRenderer from '@/components/templates/ReferenceCoverRenderer';
 import { useAutoFitScale } from '@/components/templates/useAutoFitScale';
 import { downloadImageUrl, exportAllAsZip, exportNodeAsPng, type ExportItem } from '@/lib/export-image';
@@ -12,6 +12,7 @@ export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: Refer
   const coverNodeRef = useRef<HTMLDivElement | null>(null);
   const innerRefs = useRef(new Map<number, HTMLElement>());
   const [generatedCoverImageUrl, setGeneratedCoverImageUrl] = useState<string | null>(null);
+  const [selectedTitle, setSelectedTitle] = useState(draft.selected_title);
   const [exportBusy, setExportBusy] = useState<'' | 'cover' | 'all'>('');
   const [exportMsg, setExportMsg] = useState('');
 
@@ -20,7 +21,11 @@ export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: Refer
   // When the cover image is pre-generated (batch runner server-side generation),
   // use it directly instead of showing the manual generate button.
   const coverImageUrl = presetCoverImageUrl ?? generatedCoverImageUrl;
-  const safeTitle = (draft.selected_title || '小红书笔记').replace(/[\\/:*?"<>|]/g, '').slice(0, 40);
+  useEffect(() => {
+    setSelectedTitle(draft.selected_title);
+  }, [draft.selected_title]);
+
+  const safeTitle = (selectedTitle || draft.selected_title || '小红书笔记').replace(/[\\/:*?"<>|]/g, '').slice(0, 40);
 
   async function handleExportCover() {
     setExportBusy('cover');
@@ -75,8 +80,9 @@ export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: Refer
       </div>
       <div className="space-y-4">
         <section className="border border-neutral-200 bg-white p-4"><div className="text-sm font-black">统一内容任务单</div><div className="mt-3 grid gap-3 sm:grid-cols-2"><BriefFact label="人群" value={draft.brief.audience} /><BriefFact label="场景" value={draft.brief.scene} /><BriefFact label="痛点" value={draft.brief.pain} /><BriefFact label="内容价值" value={draft.brief.content_value} /><BriefFact label="商品卖点" value={draft.brief.selling_point} /><BriefFact label="购买理由" value={draft.brief.buying_reason} /></div></section>
-        <section className="border border-neutral-200 bg-white p-4"><div className="text-sm font-black">标题候选</div><div className="mt-3 space-y-2">{draft.title_candidates.map((title, index) => <div className={`border px-3 py-2 ${title.title === draft.selected_title ? 'border-red-400 bg-red-50' : 'border-neutral-200'}`} key={`${title.title}-${index}`}><div className="font-bold">{title.title}</div><div className="mt-1 text-xs text-neutral-500">公式 #{title.formula_id} · {title.trigger_type} · {title.reason}</div></div>)}</div></section>
-        <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between"><div className="text-sm font-black">自动检查</div><span className={`px-2 py-1 text-xs font-bold ${draft.checks.issues.length ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{draft.checks.issues.length ? '需要调整' : '通过'}</span></div><div className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><Check label="标题与封面一致" ok={draft.checks.title_cover_consistent} /><Check label="模板容量正常" ok={draft.checks.template_capacity_ok} /><Check label="商品事实有依据" ok={draft.checks.product_claims_grounded} /><Check label="内容密度达标" ok={draft.checks.content_density_ok} /></div></section>
+        <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between gap-3"><div className="text-sm font-black">标题候选</div><div className="text-xs font-bold text-neutral-500">当前：{selectedTitle}</div></div><div className="mt-3 space-y-2">{draft.title_candidates.map((title, index) => <button type="button" className={`block w-full border px-3 py-2 text-left ${title.title === selectedTitle ? 'border-red-400 bg-red-50' : 'border-neutral-200 hover:border-neutral-400'}`} key={`${title.title}-${index}`} onClick={() => setSelectedTitle(title.title)}><div className="flex items-center gap-2"><span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-black text-neutral-600">{title.trigger_type || '标题'}</span><span className="font-bold">{title.title}</span></div><div className="mt-1 text-xs text-neutral-500">公式 #{title.formula_id} · {title.reason}</div></button>)}</div></section>
+        {draft.cover_title_candidates?.length ? <section className="border border-neutral-200 bg-white p-4"><div className="text-sm font-black">备用封面标题</div><div className="mt-3 space-y-2">{draft.cover_title_candidates.map((item, index) => <div className={`border px-3 py-2 text-xs ${item.template_id === card?.renderer_id ? 'border-red-300 bg-red-50' : 'border-neutral-200 bg-white'}`} key={`${item.template_id}-${item.title}-${index}`}><div className="font-black text-neutral-500">{item.template_id} · {item.title_type || '封面'}</div><div className="mt-1 text-base font-black text-neutral-900">{item.title}</div>{item.subtitle ? <div className="mt-1 font-semibold text-neutral-600">{item.subtitle}</div> : null}{item.reason ? <div className="mt-1 text-neutral-400">{item.reason}</div> : null}</div>)}</div></section> : null}
+        <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between"><div className="text-sm font-black">自动检查</div><span className={`px-2 py-1 text-xs font-bold ${draft.checks.issues.length ? 'bg-red-100 text-red-700' : draft.checks.warnings?.length ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>{draft.checks.issues.length ? '需要调整' : draft.checks.warnings?.length ? '通过，有提醒' : '通过'}</span></div><div className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><Check label="标题与封面一致" ok={draft.checks.title_cover_consistent} /><Check label="模板容量正常" ok={draft.checks.template_capacity_ok} /><Check label="商品事实有依据" ok={draft.checks.product_claims_grounded} /><Check label="内容密度达标" ok={draft.checks.content_density_ok} /></div>{draft.checks.warnings?.length ? <ul className="mt-3 space-y-1 text-xs leading-relaxed text-amber-800">{draft.checks.warnings.map(issue => <li key={issue}>提醒 · {formatWarning(issue)}</li>)}</ul> : null}</section>
         <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between"><div className="text-sm font-black">法语与考试事实审校</div><span className={`px-2 py-1 text-xs font-bold ${draft.accuracy_audit.approved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}`}>{draft.accuracy_audit.approved ? '通过' : '已修正/需留意'}</span></div><p className="mt-2 text-xs text-neutral-500">自动修正 {draft.accuracy_audit.corrected_count} 处</p>{draft.accuracy_audit.issues.length ? <ul className="mt-3 space-y-1 text-xs leading-relaxed text-amber-900">{draft.accuracy_audit.issues.map(issue => <li key={issue}>· {issue}</li>)}</ul> : null}</section>
         {card ? <a className="block border border-neutral-300 bg-white px-4 py-3 text-center text-sm font-bold" href={card.reference_image}>查看参考原图</a> : null}
       </div>
@@ -88,6 +94,26 @@ export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: Refer
 
 function BriefFact({ label, value }: { label: string; value: string }) { return <div className="border-l-2 border-neutral-900 pl-3"><div className="text-xs font-bold text-neutral-400">{label}</div><div className="mt-1 text-sm leading-relaxed">{value}</div></div>; }
 function Check({ label, ok }: { label: string; ok: boolean }) { return <div className={ok ? 'text-green-700' : 'text-red-700'}>{ok ? '通过' : '未通过'} · {label}</div>; }
+function formatWarning(issue: string) {
+  const labels: Record<string, string> = {
+    core_keyword_missing_from_opening: '正文开头没有明显出现核心搜索词，建议开头补“DELF B2写作/法语写作”等身份词。',
+    overabsolute_register_rule: '语体建议可能说得太绝对，可以把“必须/一律/不能”改成“更稳/建议/通常”。',
+    overabsolute_public_rule: '公开文案里有偏绝对的规则表达，发布前建议降调。',
+    unsupported_product_quantity_claim: '文案写了商品数量，但本次检索证据没命中；商品详情页能兜底时可保留。',
+    public_inventory_relation_claim: '文案提到“资料里/商品里”的关系，带货可以用，但发布前核对商品详情页。',
+    caption_ai_cliche: '正文有一点AI套话，建议人工顺一下口语感。',
+    unsafe_mechanical_language_replacement: '有“直接替换/套用”的倾向，建议改成“按语境选择/改写”。',
+    overmechanical_content_method: '方法说得过于机械，建议补充语境条件。',
+    unsupported_fixed_time_advice: '出现固定时间建议，注意别写成考试官方规则。',
+    editorial_low_quality_phrase: '有廉价营销词，建议发布前换成更具体的表达。',
+    free_original_title_missing: '标题候选缺少自然原创版本。',
+    reference_migration_title_missing: '标题候选缺少竞品机制迁移版本。',
+    formula_title_missing: '标题候选缺少爆款公式仿写版本。',
+    title_candidate_mix_incomplete: '标题候选类型不够完整。',
+    cover_items_semantic_duplicate: '封面条目有少量重复，发布前可以人工删改。',
+  };
+  return labels[issue] || issue;
+}
 
 function DynamicDirectoryCover({ draft, card, presetImageUrl, onImageReady }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; presetImageUrl?: string | null; onImageReady?: (url: string | null) => void }) {
   const spec = card ? getCoverTemplateSpec(card.renderer_id) : undefined;

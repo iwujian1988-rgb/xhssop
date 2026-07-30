@@ -50,6 +50,7 @@ export async function submitImageTask(input: SubmitImageTaskInput): Promise<Imag
         // 有参考图才传；纯文生图不带 images，避免被当图生图半编辑。
         ...(validImages.length ? { images: validImages } : {}),
       }),
+      signal: AbortSignal.timeout(30000),
     });
   } catch (error) {
     const detail = error instanceof Error
@@ -74,6 +75,7 @@ export async function getImageTask(taskId: string): Promise<ImageTaskResult> {
   try {
     res = await fetch(`${baseUrl}/v1/videos/${encodeURIComponent(taskId)}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
+      signal: AbortSignal.timeout(30000),
     });
   } catch (error) {
     const detail = error instanceof Error

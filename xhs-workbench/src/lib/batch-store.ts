@@ -7,6 +7,51 @@ import type { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import type { ProductId } from '@/types/data';
 import type { MigratedTopic, ReferenceDrivenDraft } from '@/types/reference-workflow';
 
+// 极简 promise-based 互斥锁。batch-runner 并发跑多个 job 时，每个 job 会调
+// saveJob → loadBatch → 改 jobs 摘要 → writeJsonAtomic(batch.json)。如果两
+// 个 job 同时进入这个临界区，后写的会覆盖前写的 jobs 摘要，导致 batch.json
+// 里某个 job 的状态/计数被回滚。activeRunner 是单例（同一时间只跑一个
+// batch），所以一个全局 mutex 就够；按 batchId 分桶纯属未来扩展位。
+class Mutex {
+  private queue: Array<() => void> = [];
+  private locked = false;
+  async runExclusive<T>(fn: () => Promise<T>): Promise<T> {
+    await this.acquire();
+    try {
+      return await fn();
+    } finally {
+      this.release();
+    }
+  }
+  private acquire(): Promise<void> {
+    if (!this.locked) {
+      this.locked = true;
+      return Promise.resolve();
+    }
+    return new Promise<void>(resolve => {
+      this.queue.push(() => {
+        this.locked = true;
+        resolve();
+      });
+    });
+  }
+  private release(): void {
+    this.locked = false;
+    const next = this.queue.shift();
+    if (next) next();
+  }
+}
+
+const batchMutexes = new Map<string, Mutex>();
+function getBatchMutex(batchId: string): Mutex {
+  let mutex = batchMutexes.get(batchId);
+  if (!mutex) {
+    mutex = new Mutex();
+    batchMutexes.set(batchId, mutex);
+  }
+  return mutex;
+}
+
 export type BatchJobCard = NonNullable<ReturnType<typeof getCompetitorCreativeCard>>;
 
 export type BatchJobStatus = 'pending' | 'running' | 'success' | 'failed';
@@ -120,19 +165,25 @@ export async function updateBatchStatus(batchId: string, status: BatchStatus): P
 }
 
 export async function saveJob(batchId: string, job: BatchJob): Promise<void> {
+  // job_<id>.json 是 per-job 独立文件，无并发风险。
   await writeJsonAtomic(jobFilePath(batchId, job.id), job);
-  const batch = await loadBatch(batchId);
-  const index = batch.jobs.findIndex(item => item.id === job.id);
-  const summary: Batch['jobs'][number] = {
-    id: job.id,
-    seq: job.seq,
-    reference_card_id: job.reference_card_id,
-    topic: job.topic,
-    status: job.status,
-  };
-  if (index >= 0) batch.jobs[index] = summary;
-  else batch.jobs.push(summary);
-  await writeJsonAtomic(batchFilePath(batchId), batch);
+  // batch.json 的 jobs 摘要数组是共享状态：loadBatch → 修改单条 → write 这套
+  // 读改写序列在并发下会产生 lost-update（后写覆盖前写）。用 per-batch mutex
+  // 把这个临界区串起来，job_<id>.json 的写盘仍然并行，性能不受影响。
+  await getBatchMutex(batchId).runExclusive(async () => {
+    const batch = await loadBatch(batchId);
+    const index = batch.jobs.findIndex(item => item.id === job.id);
+    const summary: Batch['jobs'][number] = {
+      id: job.id,
+      seq: job.seq,
+      reference_card_id: job.reference_card_id,
+      topic: job.topic,
+      status: job.status,
+    };
+    if (index >= 0) batch.jobs[index] = summary;
+    else batch.jobs.push(summary);
+    await writeJsonAtomic(batchFilePath(batchId), batch);
+  });
 }
 
 export async function loadJob(batchId: string, jobId: string): Promise<BatchJob> {
@@ -161,9 +212,11 @@ export async function loadAllJobs(batchId: string): Promise<BatchJob[]> {
 }
 
 export async function deleteJob(batchId: string, jobId: string): Promise<void> {
-  const batch = await loadBatch(batchId);
-  batch.jobs = batch.jobs.filter(job => job.id !== jobId);
-  await writeJsonAtomic(batchFilePath(batchId), batch);
+  await getBatchMutex(batchId).runExclusive(async () => {
+    const batch = await loadBatch(batchId);
+    batch.jobs = batch.jobs.filter(job => job.id !== jobId);
+    await writeJsonAtomic(batchFilePath(batchId), batch);
+  });
   await fs.unlink(jobFilePath(batchId, jobId)).catch((cause: unknown) => {
     if ((cause as NodeJS.ErrnoException).code !== 'ENOENT') throw cause;
   });

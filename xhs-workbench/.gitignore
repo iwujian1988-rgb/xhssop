@@ -39,3 +39,20 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+# scratch / e2e run outputs (tests themselves stay tracked)
+.compose10*.json
+.topics10*.json
+.test-cover.png
+benchmark-result-*.json
+benchmark-*.log
+collocation-image-result-*.json
+dev-server*.log
+full-batch-result-*.json
+full-batch-run.log
+image-batch-result-*.json
+image-batch-run.log
+product2-all-cards.log
+product2-all-cards-*.json
+product2-e2e-summary-*.json
+product2-e2e-full-*.json

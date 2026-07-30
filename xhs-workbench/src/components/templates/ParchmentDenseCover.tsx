@@ -11,13 +11,13 @@ interface ParchmentDenseCoverProps {
 export default function ParchmentDenseCover({ payload, className = '' }: ParchmentDenseCoverProps) {
   const sectionCount = Math.max(1, payload.sections.length);
   const titleLength = visualLength(payload.title);
-  const titleScale = titleLength > 28 ? '3.65cqw'
-    : titleLength > 22 ? '4.05cqw'
-      : titleLength > 17 ? '4.45cqw'
-        : '5.05cqw';
+  const titleScale = titleLength > 28 ? '4.05cqw'
+    : titleLength > 22 ? '4.48cqw'
+      : titleLength > 17 ? '4.92cqw'
+        : '5.55cqw';
 
   const sectionsKey = payload.sections.map(s => `${s.heading}:${s.items.length}:${s.items.map(i => `${i.primary}${i.secondary || ''}`).join(',')}`).join('|');
-  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey, sectionCount], { min: 0.5, max: 1, step: 0.025 });
+  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey, sectionCount], { min: 0.58, max: 1, step: 0.025 });
 
   return (
     <article
@@ -94,15 +94,15 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
         }
         .parchment-dense-header {
           position: relative;
-          height: 13.6%;
-          padding: 2.85cqw 5.2cqw 1.1cqw;
+          height: 14.2%;
+          padding: 2.7cqw 4.8cqw 1cqw;
           text-align: center;
         }
         .parchment-dense-header h1 {
           margin: 0;
           color: #76241c;
           font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
-          font-size: clamp(25px, var(--title-scale), 50px);
+          font-size: clamp(30px, var(--title-scale), 58px);
           font-weight: 900;
           line-height: 1.02;
           letter-spacing: 0;
@@ -113,7 +113,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           margin: 1.05cqw 0 0;
           color: #8e5d43;
           font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
-          font-size: clamp(11px, 1.65cqw, 15px);
+          font-size: clamp(12px, 1.95cqw, 18px);
           font-weight: 700;
           line-height: 1.12;
         }
@@ -122,14 +122,14 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           display: flex;
           flex-direction: column;
           justify-content: space-between;
-          height: 86.4%;
-          padding: 0 5.2cqw 3.1cqw;
+          height: 85.8%;
+          padding: 0 4.8cqw 2.7cqw;
           overflow: hidden;
         }
         .parchment-dense-section {
           display: grid;
           flex-shrink: 0;
-          grid-template-columns: 11.6cqw minmax(0, 1fr);
+          grid-template-columns: 10.8cqw minmax(0, 1fr);
         }
         .parchment-dense-label {
           display: flex;
@@ -140,7 +140,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           border-right: .18cqw solid rgba(105,36,28,.7);
           color: #3e3028;
           font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
-          font-size: clamp(13px, calc(2.15cqw * var(--fit-scale, 1)), 19px);
+          font-size: clamp(15px, calc(2.5cqw * var(--fit-scale, 1)), 23px);
           font-weight: 800;
           line-height: 1.08;
           text-align: center;
@@ -151,14 +151,14 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           min-height: 0;
           flex-direction: column;
           justify-content: flex-start;
-          padding: calc(.35cqw * var(--fit-scale, 1)) 0 calc(.35cqw * var(--fit-scale, 1)) 2.7cqw;
+          padding: calc(.28cqw * var(--fit-scale, 1)) 0 calc(.28cqw * var(--fit-scale, 1)) 2.35cqw;
         }
         .parchment-dense-body h2 {
-          margin: 0 0 calc(.7cqw * var(--fit-scale, 1));
+          margin: 0 0 calc(.55cqw * var(--fit-scale, 1));
           overflow: hidden;
           color: #9b3328;
           font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
-          font-size: clamp(13px, calc(2.35cqw * var(--fit-scale, 1)), 22px);
+          font-size: clamp(15px, calc(2.7cqw * var(--fit-scale, 1)), 26px);
           font-weight: 800;
           line-height: 1.08;
           text-align: center;
@@ -168,29 +168,29 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
         .parchment-dense-grid {
           display: grid;
           grid-template-columns: repeat(var(--columns), minmax(0, 1fr));
-          column-gap: 2.15cqw;
-          row-gap: calc(.35cqw * var(--fit-scale, 1));
+          column-gap: 1.75cqw;
+          row-gap: calc(.28cqw * var(--fit-scale, 1));
           min-width: 0;
         }
         .parchment-dense-item {
           display: grid;
-          grid-template-columns: .95cqw minmax(0, 1fr);
+          grid-template-columns: .88cqw minmax(0, 1fr);
           align-items: start;
           min-width: 0;
           overflow: hidden;
           color: #2f2925;
           font-family: "Noto Serif SC", "STSong", serif;
-          font-size: clamp(10.5px, calc(2.1cqw * var(--fit-scale, 1)), 18px);
+          font-size: clamp(12px, calc(2.42cqw * var(--fit-scale, 1)), 22px);
           font-weight: 800;
-          line-height: 1.1;
+          line-height: 1.06;
           white-space: normal;
         }
         .parchment-dense-dot {
-          width: .48cqw;
-          height: .48cqw;
+          width: .54cqw;
+          height: .54cqw;
           border-radius: 50%;
           background: #78271e;
-          margin-top: .48cqw;
+          margin-top: .5cqw;
         }
         .parchment-dense-copy {
           display: flex;

@@ -1,3 +1,5 @@
+import type { ContentShape, MigratedTopic } from '@/types/reference-workflow';
+
 const RAW_FORMULAS = `
 1|为什么 [每个人都觉得很好的事] 其实对你有害？
 2|为什么 [非传统操作] 是对 [目标] 有益的
@@ -113,4 +115,46 @@ export function getDenseDirectoryTitleFormulas(topic = '') {
     if (item.id === '72' && !/自测|测试|测一测|诊断/.test(topic)) return false;
     return true;
   });
+}
+
+const FAMILY_TRIGGER_PRIORITY: Record<ContentShape, string[]> = {
+  directory: ['数字锚定', '好奇缺口', '恐惧损失', '互动测试'],
+  phrase: ['数字锚定', '恐惧损失', '行动号召', '好奇缺口'],
+  offer: ['身份代入', '场景条件', '结果承诺', '数字锚定'],
+  flashcard: ['好奇缺口', '数字锚定', '互动测试', '认知冲突'],
+  book: ['好奇缺口', '数字锚定', '认知冲突', '结果承诺'],
+  pain: ['恐惧损失', '认知冲突', '场景条件', '好奇缺口'],
+  experience: ['场景条件', '认知冲突', '恐惧损失', '好奇缺口'],
+  document: ['好奇缺口', '数字锚定', '认知冲突', '恐惧损失'],
+  table: ['数字锚定', '互动测试', '认知冲突', '好奇缺口'],
+  roadmap: ['场景条件', '结果承诺', '身份代入', '数字锚定'],
+};
+
+const TOPIC_TYPE_TRIGGER_PRIORITY: Record<string, string[]> = {
+  search_pain: ['恐惧损失', '好奇缺口', '认知冲突', '场景条件', '互动测试'],
+  selling_point: ['行动号召', '场景条件', '数字锚定', '身份代入', '好奇缺口'],
+  narrow_knowledge: ['数字锚定', '认知冲突', '好奇缺口', '互动测试', '行动号召'],
+  product_showcase: ['认知冲突', '恐惧损失', '好奇缺口', '身份代入', '行动号召'],
+};
+
+const UNSUPPORTED_PERSONAL_OR_AUTHORITY_IDS = new Set([
+  '3', '7', '8', '9', '10', '12', '21', '25', '35', '39', '41', '42', '43', '44', '45', '46', '47', '58', '65', '67', '68', '69', '70', '71', '72', '74',
+]);
+
+export function getRoutedTitleFormulas(topic: MigratedTopic, family: ContentShape) {
+  const priorities = Array.from(new Set([
+    ...(topic.topic_type ? TOPIC_TYPE_TRIGGER_PRIORITY[topic.topic_type] || [] : []),
+    ...(topic.title_trigger_types || []),
+    ...FAMILY_TRIGGER_PRIORITY[family],
+  ]));
+  const text = `${topic.topic} ${topic.pain} ${topic.content_promise}`;
+  return fullTitleFormulaCatalog
+    .filter(item => !UNSUPPORTED_PERSONAL_OR_AUTHORITY_IDS.has(item.id))
+    .filter(item => item.id !== '29' || /词汇|单词|表达|连接词/.test(text))
+    .filter(item => item.id !== '72' || /自测|检查|诊断|错误|评分/.test(text))
+    .map(item => ({ item, rank: priorities.indexOf(item.trigger_type) }))
+    .filter(({ rank }) => rank >= 0)
+    .sort((a, b) => a.rank - b.rank || Number(a.item.id) - Number(b.item.id))
+    .slice(0, 8)
+    .map(({ item }) => item);
 }

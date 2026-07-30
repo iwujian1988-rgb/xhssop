@@ -49,7 +49,7 @@ export async function composeWithRetry(
   input: ComposeDraftInput,
   options: { maxAttempts?: number } = {},
 ): Promise<ComposeOutcome> {
-  const maxAttempts = options.maxAttempts ?? 3;
+  const maxAttempts = options.maxAttempts ?? 1;
   let totalUsage: AiUsageSummary = { ...EMPTY_USAGE };
   let lastError: Error | null = null;
 
@@ -64,6 +64,13 @@ export async function composeWithRetry(
       const usage = getRecentAiUsage();
       totalUsage = addUsage(totalUsage, usage);
       lastError = cause instanceof Error ? cause : new Error('compose 失败');
+      console.warn('[compose-attempt-failed]', JSON.stringify({
+        attempt,
+        stage: classifyComposeError(lastError),
+        message: lastError.message,
+        calls: usage.calls,
+        total_tokens: usage.total_tokens,
+      }));
       if (!isRetryableComposeError(lastError)) break;
     }
   }

@@ -14,8 +14,10 @@ export function normalizeDenseDirectoryCover(value: unknown): DenseDirectoryCove
 
   return {
     kind: 'dense_directory',
-    title: clip(cleanPublicText(asString(input.title)), 22),
-    subtitle: clip(cleanPublicText(asString(input.subtitle)), 32),
+    // 保留 LLM 的完整句子给后续标题编辑器判断。这里如果先截断，
+    // 后续只能看到半句话，无法判断原意并正确返修。
+    title: cleanPublicText(asString(input.title)),
+    subtitle: cleanPublicText(asString(input.subtitle)),
     sections: sections.slice(0, 6),
   };
 }
@@ -36,7 +38,7 @@ export function validateReferenceDraft(draft: ReferenceDrivenDraft, renderer: Cr
     && sectionCountOk
     && sectionItemsOk;
   const contentDensityOk = Boolean(spec) && itemCount >= (spec?.minTotalItems || 0);
-  const titleCoverConsistent = keywordOverlap(draft.selected_title, `${draft.cover.title} ${draft.brief.topic}`) >= 1;
+  const titleCoverConsistent = keywordOverlap(draft.selected_title, `${draft.cover.title} ${draft.cover.subtitle} ${draft.brief.topic}`) >= 1;
   const productClaimsGrounded = !hasUnsupportedClaim(draft.caption)
     || draft.evidence.some(item => /raw_selling_points|content_modules|displayable_assets/.test(item.category));
 
@@ -56,6 +58,7 @@ export function validateReferenceDraft(draft: ReferenceDrivenDraft, renderer: Cr
 
 function normalizeSection(value: unknown): DenseDirectorySection | null {
   const input = asRecord(value);
+  const rawItems = Array.isArray(input.items) ? input.items : [];
   const items = Array.isArray(input.items)
     ? input.items.map(item => {
         const row = asRecord(item);
@@ -67,11 +70,12 @@ function normalizeSection(value: unknown): DenseDirectorySection | null {
       }).filter(item => item.primary)
     : [];
   const columns = Number(input.columns);
+  const itemLimit = Math.min(12, Math.max(8, rawItems.length));
   return {
     side_label: clip(cleanPublicText(asString(input.side_label)), 6),
     heading: clip(cleanPublicText(asString(input.heading)), 20),
     columns: ([2, 3, 4, 5].includes(columns) ? columns : 3) as 2 | 3 | 4 | 5,
-    items: items.slice(0, 8),
+    items: items.slice(0, itemLimit),
     source_type: normalizeSourceType(asString(input.source_type)),
     source_ids: Array.isArray(input.source_ids) ? input.source_ids.map(asString).filter(Boolean).slice(0, 8) : [],
   };
@@ -108,7 +112,19 @@ function asString(value: unknown) {
 }
 
 function clip(value: string, max: number) {
-  return value.length > max ? value.slice(0, max) : value;
+  if (value.length <= max) return value;
+  // 截断时优先在词边界收口；中文/无空格场景退化为硬切。
+  // 留 1 字符位给省略号，避免视觉上像意外残词（如 "l'expressio"）。
+  const budget = max - 1;
+  const head = value.slice(0, budget);
+  const boundary = head.search(/[^\s，。、；：]+$/);
+  let cut: number;
+  if (boundary <= 0 || head.length - boundary > Math.min(18, head.length / 2)) {
+    cut = head.length;
+  } else {
+    cut = boundary;
+  }
+  return value.slice(0, cut).trimEnd() + '…';
 }
 
 function cleanPublicText(value: string) {

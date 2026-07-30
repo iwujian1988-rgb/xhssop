@@ -53,6 +53,10 @@ export async function callOpenAICompatibleJson(messages: AiMessage[], options: A
   const retries = options.retries ?? 2;
   for (let attempt = 1; attempt <= retries; attempt += 1) {
     try {
+      // 单次 fetch 必须有上限：DeepSeek/OpenAI 服务端通常 60-120s 会主动断开，
+      // 但 TCP 半挂 / 流式响应中途卡死会让裸 fetch 永远 hang，连锁锁死整个
+      // batch-runner（activeRunner 永不释放）。每 attempt 重建 signal，避免
+      // 上一轮的 timeout 影响下一轮重试。
       const res = await fetch(`${baseUrl}/chat/completions`, {
         method: 'POST',
         headers: {
@@ -67,6 +71,7 @@ export async function callOpenAICompatibleJson(messages: AiMessage[], options: A
           thinking: { type: options.thinking === true ? 'enabled' : 'disabled' },
           response_format: { type: 'json_object' },
         }),
+        signal: AbortSignal.timeout(120000),
       });
 
       if (!res.ok) {

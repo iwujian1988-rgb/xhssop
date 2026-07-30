@@ -1,7 +1,8 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import { DraftReview } from '@/components/draft/DraftReview';
 import { competitorCreativeCards, getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
@@ -16,6 +17,14 @@ type PlanResponse = { batch: Batch; usage: AiUsageSummary };
 type BatchQueryResponse = { batch: Batch; jobs: BatchJob[]; active_runner: string | null };
 
 export default function BatchPage() {
+  return (
+    <Suspense fallback={<main className="min-h-screen bg-[#f4f5f6] p-6 text-sm text-neutral-500">正在加载批量工作台...</main>}>
+      <BatchPageContent />
+    </Suspense>
+  );
+}
+
+function BatchPageContent() {
   const [productId, setProductId] = useState<ProductId>('delf_b2_writing');
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(() => initialCardSelection());
   const [direction, setDirection] = useState('');
@@ -29,6 +38,7 @@ export default function BatchPage() {
   const [tab, setTab] = useState<'success' | 'failed'>('success');
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set());
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const searchParams = useSearchParams();
 
   const fetchBatchState = useCallback(async (batchId: string) => {
     const response = await fetch(`/api/batch?batch_id=${encodeURIComponent(batchId)}`);
@@ -50,6 +60,18 @@ export default function BatchPage() {
       if (pollRef.current) clearTimeout(pollRef.current);
     };
   }, [batch, activeRunner, fetchBatchState]);
+
+  // 从首页 / 外部带 ?batch_id= 跳进来时，自动加载该 batch（含 single_<ts> 单条存档）。
+  useEffect(() => {
+    if (batch) return;
+    const batchId = searchParams?.get('batch_id');
+    if (!batchId) return;
+    fetchBatchState(batchId).catch(error => {
+      console.error('load batch by query failed:', error);
+      setPlanError(`找不到或读取失败：${batchId}`);
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   async function handlePlan() {
     setPlanning(true);
@@ -368,12 +390,12 @@ function PlanForm({
           <label className="block text-xs font-bold text-neutral-500">商品</label>
           <select className="field mt-1" value={productId} onChange={event => setProductId(event.target.value as ProductId)}>
             <option value="delf_b2_writing">商品1：DELF B2写作资料库</option>
-            <option value="tef_tcf_canada">商品2：TEF/TCF Canada资料库</option>
+            <option value="tef_tcf_canada">商品2：TEF/TCF Canada</option>
           </select>
           <label className="mt-4 block text-xs font-bold text-neutral-500">每卡选题数</label>
           <input type="number" min={1} max={3} className="field mt-1" value={topicsPerCard} onChange={event => setTopicsPerCard(Number(event.target.value) || 2)} />
           <label className="mt-4 block text-xs font-bold text-neutral-500">可选方向</label>
-          <textarea className="field mt-1 min-h-20 resize-y" placeholder="例如：更偏考前急救；留空让AI判断" value={direction} onChange={event => setDirection(event.target.value)} />
+          <textarea className="field mt-1 min-h-20 resize-y" placeholder="例如：更偏考前急救；留空由AI结合种子和封面选择切口" value={direction} onChange={event => setDirection(event.target.value)} />
           <button className="mt-4 w-full bg-neutral-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-neutral-400" disabled={planning} onClick={onPlan}>
             {planning ? '正在串行生成选题...' : '生成批量计划'}
           </button>

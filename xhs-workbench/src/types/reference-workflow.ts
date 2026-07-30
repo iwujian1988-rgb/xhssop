@@ -18,6 +18,40 @@ export type CreativeCardRenderer =
   | 'collocation_dense'
   | 'ai_scene_overlay';
 
+export type ContentShape =
+  | 'directory'
+  | 'phrase'
+  | 'offer'
+  | 'flashcard'
+  | 'book'
+  | 'pain'
+  | 'experience'
+  | 'document'
+  | 'table'
+  | 'roadmap';
+
+export type TitleCandidateType = '资料型' | '解释型' | '痛点型' | '强钩子型' | '情绪型' | '结果型';
+
+export type CoverTitleType = '资料' | '大全' | '时效' | '稀缺' | '情绪' | '结果' | '反常识';
+
+export interface EditorialSeed {
+  seed_id: string;
+  product_id: ProductId;
+  topic: string;
+  keyword_candidates: string[];
+  audience: string;
+  user_pain: string;
+  user_need: string;
+  pay_trigger: string;
+  use_scenario: string;
+  content_shapes: ContentShape[];
+  anchor_fact_ids: string[];
+  dynamic_fact_terms: string[];
+  ai_original_scope: string;
+  title_trigger_types: string[];
+  page_plan: string[];
+}
+
 export interface CompetitorCreativeCard {
   id: string;
   name: string;
@@ -36,6 +70,8 @@ export interface CompetitorCreativeCard {
 
 export interface MigratedTopic {
   id: string;
+  scope_level?: 'broad' | 'narrow';
+  topic_type?: 'search_pain' | 'selling_point' | 'narrow_knowledge' | 'product_showcase';
   topic: string;
   audience: string;
   scene: string;
@@ -49,6 +85,13 @@ export interface MigratedTopic {
     knowledge_base: string;
     ai_original: string;
   };
+  seed_id?: string;
+  content_shape?: ContentShape;
+  anchor_fact_ids?: string[];
+  dynamic_fact_terms?: string[];
+  ai_original_scope?: string;
+  title_trigger_types?: string[];
+  page_plan?: string[];
 }
 
 export interface EvidenceSnippet {
@@ -59,6 +102,9 @@ export interface EvidenceSnippet {
   source_file: string;
   source_section: string;
   score: number;
+  source_role?: 'anchor' | 'dynamic';
+  source_excerpt?: string;
+  usage_caution?: string;
 }
 
 export interface UnifiedContentBrief {
@@ -77,15 +123,28 @@ export interface UnifiedContentBrief {
   ai_original_plan: string;
   cover_requirement: string;
   difference_from_recent: string;
+  seed_id?: string;
+  page_plan?: string[];
+  public_source_policy?: string;
 }
 
 export interface TitleCandidate {
   title: string;
+  title_type?: TitleCandidateType;
   formula_id: string;
   trigger_type: string;
   formula_skeleton: string;
   reason: string;
   risk_flags: string[];
+}
+
+export interface CoverTitleCandidate {
+  template_id: CreativeCardRenderer;
+  title: string;
+  subtitle?: string;
+  title_type?: CoverTitleType;
+  reason?: string;
+  fit_score?: number;
 }
 
 export interface DenseDirectoryItem {
@@ -124,6 +183,7 @@ export interface ReferenceDrivenDraft {
   brief: UnifiedContentBrief;
   title_candidates: TitleCandidate[];
   selected_title: string;
+  cover_title_candidates?: CoverTitleCandidate[];
   cover: DenseDirectoryCoverPayload;
   inner_pages: GeneratedInnerPage[];
   caption: string;
@@ -141,6 +201,7 @@ export interface ReferenceDrivenDraft {
     product_claims_grounded: boolean;
     content_density_ok: boolean;
     issues: string[];
+    warnings?: string[];
   };
 }
 

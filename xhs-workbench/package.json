@@ -3,10 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "node scripts/start-next-with-proxy.mjs dev",
     "build": "next build",
-    "start": "next start",
-    "lint": "eslint"
+    "start": "node scripts/start-next-with-proxy.mjs start",
+    "lint": "eslint",
+    "test:seed-flow": "tsx scripts/test-seed-flow.mts",
+    "test:editorial-guards": "tsx scripts/test-editorial-guards.mts"
   },
   "dependencies": {
     "@fontsource/lxgw-wenkai": "^5.3.0",
@@ -33,6 +35,7 @@
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.2.10",
+    "playwright": "^1.62.0",
     "tailwindcss": "^4",
     "tsx": "^4.23.1",
     "typescript": "^5"

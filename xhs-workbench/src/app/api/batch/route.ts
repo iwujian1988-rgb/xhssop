@@ -5,9 +5,11 @@ import { formatBatchId, formatJobId, createBatch, deleteJob, listBatches, loadAl
 import { getActiveRunner, startBatchRunner } from '@/lib/batch-runner';
 import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
-import { generateTopics } from '@/lib/reference-compose';
+import { generateTopics, refineSeededTopics } from '@/lib/reference-compose';
 import { loadProductFacts } from '@/lib/product-facts-loader';
 import { compactProductContext } from '@/lib/product-fact-retrieval';
+import { planSeededTopics } from '@/lib/editorial-seed-library';
+import { getRecentSeedIds } from '@/lib/seed-usage-store';
 import type { ProductId } from '@/types/data';
 
 export const runtime = 'nodejs';
@@ -105,16 +107,31 @@ async function handlePlan(body: PlanBody) {
     const spec = getCoverTemplateSpec(card.renderer_id);
     if (!spec) continue;
 
-    const topics = await generateTopics({
+    const recentSeedIds = await getRecentSeedIds(body.product_id, card.id);
+    const seededTopics = planSeededTopics({
       productId: body.product_id,
       card,
-      productContext,
+      facts,
       direction,
+      limit: topicsPerCard,
+      recentSeedIds,
     });
+    const topics = seededTopics.length ? await refineSeededTopics({
+      productId: body.product_id,
+      card,
+      seededTopics,
+      direction,
+    }) : await generateTopics({
+        productId: body.product_id,
+        card,
+        productContext,
+        direction,
+      });
 
     for (const topic of topics.slice(0, topicsPerCard)) {
-      if (seenTopics.has(topic.topic)) continue;
-      seenTopics.add(topic.topic);
+      const topicKey = `${card.renderer_id}:${topic.seed_id || topic.topic}`;
+      if (seenTopics.has(topicKey)) continue;
+      seenTopics.add(topicKey);
       const job: BatchJob = {
         id: formatJobId(seq),
         seq,

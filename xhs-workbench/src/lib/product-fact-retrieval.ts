@@ -1,5 +1,6 @@
 import type { EvidenceSnippet, MigratedTopic } from '@/types/reference-workflow';
 import type { FactCategory, ProductFactItem, ProductFacts } from '@/types/content-planning';
+import type { ProductId } from '@/types/data';
 
 const categoryWeight: Partial<Record<FactCategory, number>> = {
   knowledge_assets: 5,
@@ -55,6 +56,45 @@ export function retrieveProductFacts(facts: ProductFacts, topic: MigratedTopic, 
     }));
 }
 
+export async function resolveProductEvidence(
+  productId: ProductId,
+  facts: ProductFacts,
+  topic: MigratedTopic,
+  limit = 10,
+): Promise<EvidenceSnippet[]> {
+  const flatFacts = Object.entries(facts).flatMap(([category, items]) =>
+    (items as ProductFactItem[]).map(item => ({ item, category: category as FactCategory })),
+  );
+  const byId = new Map(flatFacts.map(entry => [entry.item.id, entry]));
+  const anchorIds = topic.anchor_fact_ids || [];
+  const missing = anchorIds.filter(id => !byId.has(id));
+  if (missing.length) {
+    throw new Error(`种子知识锚点不存在：${missing.join('、')}`);
+  }
+
+  const anchors: EvidenceSnippet[] = anchorIds.map(id => {
+    const entry = byId.get(id)!;
+    return toSnippet(entry.item, entry.category, 100, 'anchor');
+  });
+  const dynamicTopic: MigratedTopic = {
+    ...topic,
+    search_terms: Array.from(new Set([...(topic.dynamic_fact_terms || []), ...topic.search_terms])),
+  };
+  const dynamic = retrieveProductFacts(facts, dynamicTopic, limit)
+    .filter(item => !anchorIds.includes(item.id))
+    .map(item => ({ ...item, source_role: 'dynamic' as const }));
+  const usageCaution = productId === 'delf_b2_writing'
+    ? '本条是知识素材，不自动等于官方硬规则。已核验官方要求：DELF B2写作至少250词。其余时间分配、论据数量、句法数量和连接词数量只能作为练习建议，不得写成“必须/至少/挽回多少分”。'
+    : '本条是知识素材，不自动等于官方硬规则；学习建议不得改写成官方数量要求或提分承诺。';
+  const combined = [...anchors, ...dynamic]
+    .slice(0, Math.max(limit, anchors.length))
+    .map(item => ({ ...item, usage_caution: usageCaution }));
+  // The structured fact index is enough for topic/content grounding. Raw Markdown
+  // is intentionally not attached to every generation call: French examples and
+  // translations are verified by the final language audit instead.
+  return combined;
+}
+
 function scoreFact(item: ProductFactItem, terms: string[]) {
   const text = normalize(`${item.text} ${item.evidence} ${item.source_section} ${item.raw_keywords.join(' ')}`);
   return terms.reduce((sum, term) => {
@@ -63,6 +103,24 @@ function scoreFact(item: ProductFactItem, terms: string[]) {
     if (text.includes(normalized)) return sum + Math.min(10, 2 + normalized.length);
     return sum;
   }, 0);
+}
+
+function toSnippet(
+  item: ProductFactItem,
+  category: FactCategory,
+  score: number,
+  sourceRole: EvidenceSnippet['source_role'],
+): EvidenceSnippet {
+  return {
+    id: item.id,
+    category,
+    text: item.text,
+    evidence: item.evidence,
+    source_file: item.source_file,
+    source_section: item.source_section,
+    score,
+    source_role: sourceRole,
+  };
 }
 
 function uniqueTerms(values: string[]) {
