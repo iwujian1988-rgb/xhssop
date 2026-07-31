@@ -106,7 +106,7 @@ function buildTitlePack(
     coverTitle = `${identity}${object}别乱背`;
     coverSubtitle = `按场景分类，写作口语都能套`;
   } else if (renderer === 'memo_offer') {
-    coverTitle = `${identity}${pain}正在拖后腿`;
+    coverTitle = `${identity}${pain}一直在扣分`;
     coverSubtitle = `这页备忘录先存起来`;
     note = '备忘录模板：封面标题必须先打痛点，再补资料。';
   } else if (renderer === 'notebook_big_words') {
@@ -175,7 +175,7 @@ function buildTitlePack(
 
 function inferObject(topic: MigratedTopic, productId: ProductId) {
   const text = `${topic.seed_id} ${topic.topic} ${topic.content_promise} ${topic.search_terms?.join(' ')}`;
-  if (/TEF|TCF|选考|选择/.test(text)) return productId === 'tef_tcf_canada' ? '选考表' : '任务表';
+  if (/TEF|TCF|选考|选择/.test(text)) return productId === 'tef_tcf_canada' ? '选考表' : '题型表';
   if (/CLB|自测|差距/.test(text)) return '自测表';
   if (/口语|开口|展开/.test(text)) return '口语展开';
   if (/听力/.test(text)) return '听力训练';
@@ -198,8 +198,8 @@ function inferScene(topic: MigratedTopic, productId: ProductId) {
 
 function inferPain(topic: MigratedTopic, productId: ProductId) {
   const text = `${topic.pain} ${topic.topic}`;
-  if (/资料|零散|混乱|到处翻/.test(text)) return '资料太散';
-  if (/卡|不会|想不出|展开/.test(text)) return '总卡住';
+  if (/资料|零散|混乱|到处翻/.test(text)) return '资料太乱';
+  if (/卡|不会|想不出|展开/.test(text)) return '写不好';
   if (/错误|扣分|漏|检查/.test(text)) return '老丢分';
   if (/方向|选错|平均用力/.test(text)) return '方向错';
   if (/背|记不住/.test(text)) return '背了用不上';

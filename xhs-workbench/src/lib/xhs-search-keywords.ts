@@ -20,7 +20,7 @@ const KEYWORDS: Record<ProductId, XhsSearchKeywordGroup> = {
       '论坛讨论',
       '议论文',
       '正式非正式',
-      '写作任务',
+      '写作题型',
       '句型',
       '连接词',
       '表达',

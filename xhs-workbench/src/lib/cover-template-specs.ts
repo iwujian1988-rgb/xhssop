@@ -59,7 +59,7 @@ export const coverTemplateSpecs: Record<Exclude<CreativeCardRenderer, 'ai_scene_
     renderer: 'memo_offer', name: '备忘录资料说明', family: 'offer', renderMode: 'code', sectionCount: 4, itemsPerSection: 2, minTotalItems: 6,
     maxPrimaryVisualLength: 40, maxSecondaryVisualLength: 38,
     contentInstruction: '输出4个备忘录小节，每节2条；依次说明适合人群、使用场景、资料内容和使用要求，保持真实简洁。',
-    titleInstruction: '此模板特例：封面 title 必须是一句具体痛点+损失感的整句钩子（如"你的DELF B2格式正在拖后腿"、"DELF B2写作这一步最容易忽略"）。禁止写"·任务格式备忘录"、"·任务格式说明"、"·资料说明"这类说明书式命名；副标题再补资料说明口吻。',
+    titleInstruction: '此模板特例：封面 title 必须是一句具体痛点+损失感的整句钩子（如"DELF B2格式分老丢的人先看"、"DELF B2写作这一步最容易忽略"）。禁止写"·题型备忘录"、"·题型说明"、"·资料说明"这类说明书式命名；副标题再补资料说明口吻。',
     forbiddenInstruction: '禁止冒充真人履历，禁止写不存在的课程服务和效果保证。',
   },
   word_flashcard: {

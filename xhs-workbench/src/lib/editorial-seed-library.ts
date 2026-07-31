@@ -127,7 +127,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_task_formats', product_id: 'delf_b2_writing',
-    topic: 'DELF B2三种写作任务怎么区分', keyword_candidates: ['写作任务', '格式', '范文'],
+    topic: 'DELF B2三种写作题型怎么区分', keyword_candidates: ['写作题型', '格式', '范文'],
     audience: '对正式信、论坛投稿和议论文边界不清楚的备考者',
     user_pain: '知道要表达观点，却经常用错称呼、结构和语体',
     user_need: '看懂三类任务的读题信号、结构、语体和常见误区',

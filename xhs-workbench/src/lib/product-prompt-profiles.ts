@@ -28,7 +28,7 @@ const profiles: Record<ProductId, ProductPromptProfile> = {
     requiredIdentityPattern: /DELF\s*B2|\u6cd5\u8bed\s*B2(?:\u5199\u4f5c|\u4f5c\u6587)|B2\s*(?:\u5199\u4f5c|\u4f5c\u6587)|\u6cd5\u8bed\u5199\u4f5c/i,
     forbiddenIdentityPattern: /\bTEF\b|\bTCF\b|\bCLB\s*\d*\b|\bNCLC\s*\d*\b|加拿大(?:移民|法语考试|法语备考)/i,
     topicScopePrompt: '当前是商品1。选题只围绕DELF B2写作：正式信、建议信、投诉/反对信、论坛投稿、评分、自查、范文迁移、词汇句法与观点展开。禁止引入TEF、TCF、CLB、NCLC、加拿大移民、口语考试、短信或简讯任务。',
-    contentScopePrompt: '当前是商品1。所有用户可见内容只能写DELF B2写作，禁止出现TEF、TCF、CLB、NCLC或加拿大移民语境；写作任务只含正式信、建议信、投诉/反对信和论坛投稿，不得引入口语考试、短信或简讯。',
+    contentScopePrompt: '当前是商品1。所有用户可见内容只能写DELF B2写作，禁止出现TEF、TCF、CLB、NCLC或加拿大移民语境；面向用户时说"写作题型/文体"，不要说"写作任务"；题型只含正式信、建议信、投诉/反对信和论坛投稿，不得引入口语考试、短信或简讯。',
     editorialScopePrompt: '商品1正文与内页只能围绕DELF B2写作，不得混入TEF/TCF/CLB或加拿大移民语境。学习建议不能冒充DELF官方强制规则。',
     auditScopePrompt: '仅拦截与商品1有关的明确考试事实错误：DELF B2写作少于250词、正式信与论坛投稿混用、敬语适用范围明显错误。不要审查TEF/TCF规则，也不要做额外教研扩展。',
     titleExamples: [

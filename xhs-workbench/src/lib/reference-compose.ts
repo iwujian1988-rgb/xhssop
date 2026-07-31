@@ -917,8 +917,12 @@ function normalizeTitles(value: unknown, allowedIds?: Set<string>, productId?: P
   if (!Array.isArray(value)) return [];
   return value.map(item => {
     const input = asRecord(item);
+    const title = compactTitleForLimit(
+      polishHumanTitleText(normalizeTitleIdentity(sanitizeTitleLikeText(asString(input.title)), productId), productId),
+      productId,
+    );
     return {
-      title: compactTitleForLimit(normalizeTitleIdentity(sanitizeTitleLikeText(asString(input.title)), productId), productId),
+      title,
       title_type: normalizeTitleCandidateType(asString(input.title_type) || asString(input.trigger_type)),
       formula_id: asString(input.formula_id),
       trigger_type: asString(input.trigger_type),
@@ -931,6 +935,7 @@ function normalizeTitles(value: unknown, allowedIds?: Set<string>, productId?: P
     && (!productId
       ? /法语|DELF|B2|TEF|TCF/i.test(item.title)
       : hasRequiredProductIdentity(productId, item.title) && !hasForbiddenProductIdentity(productId, item.title))
+    && !isUnnaturalTitle(item.title)
     && (!allowedIds || allowedIds.has(item.formula_id) || item.formula_id === 'free_original' || item.formula_id === 'reference_migration')
     && !/官方授权|内部押题|内部资料|100\s*%|百分百/.test(item.title)
   );
@@ -1429,9 +1434,9 @@ function callTitleEditor(input: {
         '2) cover_title 用于封面大字，负责第一眼停留，通常12-18字，最多20字，短、狠、能被当前封面画面兑现；少于12字必须有极强钩子。cover_subtitle 8-24字，补充范围/使用场景。',
         '封面标题不是资料名，必须让用户第一眼知道“这和我有关”：必须包含领域身份（法语/DELF/B2/TEF/TCF/CLB7之一）+ 用户状态/场景/痛点/损失感之一。',
         '封面标题允许多种句式：直给型、提醒型、结果型、资料型、情绪型。禁止连续输出同一种“AAA？BBB”句式。',
-        '好封面标题示例：DELF格式分别白丢、B2作文写完先查、TEF口语卡住别背答案、CLB7总差一点先测、考前7天还在背范文。',
+        '好封面标题示例：DELF格式分老丢的人先看、B2作文写完先查、TEF口语说不长先别背答案、CLB7总差一点先测、考前7天还在背范文。',
         '文字标题比封面标题更完整：必须像用户会点开的笔记标题，而不是图片上的大字。可以包含搜索词、完整钩子和具体承接。',
-        '好文字标题示例：DELF B2写作总拿不到高分？先查这5个扣分点；法语B2写作模板别乱背，这份结构表更适合考前翻；TEF/TCF备考最怕的不是题难，是一开始就选错方向。',
+        '好文字标题示例：DELF B2写作总拿不到高分？先查这5个扣分点；法语B2模板背了也用不上？这份结构表更适合考前翻；TEF/TCF备考最怕的不是题难，是一开始就选错方向。',
         '标题不是概括内容，而是制造点击理由。先选心理钩子，再写标题。',
         '可用钩子：恐惧损失、好奇缺口、认知冲突、场景代入、结果承诺、资料稀缺、大全收藏、时效更新。',
         '每个文字标题至少命中 2 个张力点：具体人群/场景、真实痛点、悬念缺口、反常识、损失感、数字锚点、搜索关键词。',
@@ -1473,6 +1478,19 @@ function callTitleEditor(input: {
         },
         title_formula_candidates: input.allowedTitleFormulas,
         validated_search_keywords: titleKeywords,
+        title_language_rules: {
+          use_human_phrasing: true,
+          forbidden_surface_phrases: ['资料太散', '卡住', '拖后腿', '正在白背', '白背', '写作任务', '你的DELF B2格式', '你的DELF B2范文'],
+          preferred_rewrites: {
+            '资料太散': '资料太乱',
+            '卡住': '写不好/说不长/听不懂/上不去',
+            '拖后腿': '扣分/老丢分',
+            '白背': '背了也用不上',
+            '写作任务': '写作题型/文体/正式信/论坛投稿/建议信/投诉信',
+          },
+          cover_title_rule: '封面标题先让用户觉得和自己有关，再给资料感或结果感；不要只写资料名。',
+          text_title_rule: '文字标题可以更完整，优先 14-20 个可见字，允许搜索词和爆款钩子结合。',
+        },
         avoid_low_traffic_keywords: avoidedKeywords,
         strong_title_examples: profile.titleExamples,
         cover_content: {
@@ -1580,13 +1598,13 @@ function normalizeCoverTitleCandidate(value: unknown, fallbackTemplateId: Creati
   const input = asRecord(value);
   const templateId = (asString(input.template_id) || fallbackTemplateId) as CreativeCardRenderer | undefined;
   if (!templateId || templateId === 'ai_scene_overlay' || !getCoverTemplateSpec(templateId)) return undefined;
-  const title = normalizeTitleIdentity(sanitizeTitleLikeText(asString(input.title)), productId);
-  const subtitle = normalizeTitleIdentity(sanitizeTitleLikeText(asString(input.subtitle)), productId);
+  const title = polishHumanTitleText(normalizeTitleIdentity(sanitizeTitleLikeText(asString(input.title)), productId), productId);
+  const subtitle = polishHumanTitleText(normalizeTitleIdentity(sanitizeTitleLikeText(asString(input.subtitle)), productId), productId);
   const spec = getCoverTemplateSpec(templateId);
   const titleType = asString(input.title_type) as CoverTitleCandidate['title_type'];
   if (!isCompleteTitle(title, 'cover') || title.length > 18) return undefined;
   if (subtitle && subtitle.length > 24) return undefined;
-  if (!hasRequiredProductIdentity(productId, title) || hasForbiddenProductIdentity(productId, `${title} ${subtitle}`)) return undefined;
+  if (isUnnaturalTitle(title) || !hasRequiredProductIdentity(productId, title) || hasForbiddenProductIdentity(productId, `${title} ${subtitle}`)) return undefined;
   return {
     template_id: templateId,
     title,
@@ -1673,8 +1691,8 @@ function buildCoverTitleFallback(
 
   return {
     template_id: templateId,
-    title: normalizeTitleIdentity(clip(title, 18), productId),
-    subtitle: clip(subtitle, 24),
+    title: polishHumanTitleText(normalizeTitleIdentity(clip(title, 18), productId), productId),
+    subtitle: polishHumanTitleText(clip(subtitle, 24), productId),
     title_type: titleType,
     reason: '本地兜底：保证封面标题含领域身份和用户关系。',
     fit_score: 86,
@@ -1726,11 +1744,52 @@ function needsTitleRewrite(candidates: TitleCandidate[], selectedTitle: string, 
     || candidates.some(item => !isCompleteTitle(item.title, 'text'));
 }
 
+function polishHumanTitleText(value: string, productId?: ProductId) {
+  let title = sanitizeTitleLikeText(value);
+  const isDelf = productId === 'delf_b2_writing' || /DELF|B2|写作|作文|法语B2/i.test(title);
+  const isTef = productId === 'tef_tcf_canada' || /TEF|TCF|CLB|Canada/i.test(title);
+  const stuckReplacement = /口语|开口/.test(title)
+    ? '说不长'
+    : /听力|听/.test(title)
+      ? '听不懂'
+      : /CLB|分数/.test(title)
+        ? '上不去'
+        : /写作|作文|DELF|B2/.test(title)
+          ? '写不好'
+          : '没方向';
+  const replacements: Array<[RegExp, string]> = [
+    [/资料太散/g, '资料太乱'],
+    [/总卡住/g, stuckReplacement],
+    [/卡住/g, stuckReplacement],
+    [/正在拖后腿/g, '一直在扣分'],
+    [/拖后腿/g, '扣分'],
+    [/正在白背/g, '背了也用不上'],
+    [/白背/g, '背了也用不上'],
+    [/你的DELF\s*B2格式/g, 'DELF B2格式'],
+    [/你的DELF\s*B2范文/g, 'DELF B2范文'],
+    [/你的法语B2/g, '法语B2'],
+    [/写作任务/g, '写作题型'],
+    [/三类任务/g, '三类题型'],
+    [/任务别混/g, '题型别混'],
+    [/任务这样区分/g, '题型这样分'],
+    [/模板别乱背，先看结构表/g, '模板背了用不上？'],
+  ];
+  for (const [pattern, replacement] of replacements) title = title.replace(pattern, replacement);
+  if (isDelf) title = title.replace(/^B2(?!写作|作文|范文|格式|题型|句型|词汇)/, 'DELF B2');
+  if (isTef) title = title.replace(/^法语备考/, 'TEF/TCF备考');
+  return sanitizeTitleLikeText(title);
+}
+
+function isUnnaturalTitle(value: string) {
+  return /资料太散|正在拖后腿|拖后腿|正在白背|白背|写作任务|你的DELF\s*B2|你的法语B2|卡住/.test(value);
+}
+
 function isNaturalTitle(value: string) {
   return !/测一测.{0,12}(?:评分维度|检查清单|句法库|词汇库)|按目的套用语|组合法语句|越改越口语/.test(value);
 }
 
 function isWeakCommercialTitle(value: string) {
+  if (isUnnaturalTitle(value)) return true;
   if (!/[？?!！]/.test(value) && !/\d/.test(value) && !/别再|先别|警告|常犯|总|越|反而|像A2|不高级|卡住|跑题|白费|漏|错|太晚|不懂|不会|乱|别扭|差在哪|问题在这|一页|交卷前|考前/i.test(value)) {
     return true;
   }
@@ -1741,6 +1800,8 @@ function isWeakCommercialTitle(value: string) {
 
 function titleImpactScore(value: string) {
   let score = 0;
+  if (isUnnaturalTitle(value)) score -= 12;
+  if (/写不好|说不长|听不懂|背了也用不上|一直在扣分|老丢分|扣分|写不出来|用不上|没方向/.test(value)) score += 4;
   if (/法语|DELF|B2|TEF|TCF/i.test(value)) score += 3;
   if (/[？?!！]/.test(value)) score += 2;
   if (/\d/.test(value)) score += 2;
@@ -1854,9 +1915,9 @@ function ensureTitleCandidateMix(
     result.find(item => item.title_type === '情绪型'),
     result.find(item => item.title_type === '结果型'),
   ].filter((item): item is TitleCandidate => Boolean(item));
-  const rest = uniqueTitleCandidates([...required, ...result.filter(item => !choiceFirst.includes(item) && !required.includes(item))])
+  const rest = uniqueTitleCandidatesStrict([...required, ...result.filter(item => !choiceFirst.includes(item) && !required.includes(item))])
     .sort((a, b) => titleImpactScore(b.title) - titleImpactScore(a.title));
-  return uniqueTitleCandidates([...choiceFirst, ...rest]).slice(0, 6);
+  return uniqueTitleCandidatesStrict([...choiceFirst, ...rest]).slice(0, 6);
 }
 
 function uniqueTitleCandidates(candidates: TitleCandidate[]) {
@@ -1867,6 +1928,40 @@ function uniqueTitleCandidates(candidates: TitleCandidate[]) {
     seen.add(key);
     return true;
   });
+}
+
+function uniqueTitleCandidatesStrict(candidates: TitleCandidate[]) {
+  const seen = new Set<string>();
+  const seenMeaning: string[] = [];
+  return candidates.filter(candidate => {
+    const key = sanitizeTitleLikeText(candidate.title).replace(/[\s，。；：、！？!?·《》“”"'（）()]/g, '').toLowerCase();
+    if (!key || seen.has(key)) return false;
+    const meaningKey = titleMeaningKey(candidate.title);
+    if (meaningKey && seenMeaning.some(existing => existing === meaningKey || titleMeaningOverlap(existing, meaningKey) >= 0.72)) return false;
+    seen.add(key);
+    if (meaningKey) seenMeaning.push(meaningKey);
+    return true;
+  });
+}
+
+function titleMeaningKey(value: string) {
+  return polishHumanTitleText(value)
+    .replace(/DELF\s*B2|TEF\s*\/\s*TCF|TEF|TCF|CLB\s*7|Canada/gi, '')
+    .replace(/法语|B2|写作|作文|备考|资料|模板|范文|这张|这份|先看|先别|别再|的人|一下/g, '')
+    .replace(/[\s，。；：、！？!?·《》“”"'（）()]/g, '')
+    .toLowerCase();
+}
+
+function titleMeaningOverlap(a: string, b: string) {
+  const left = titleMeaningTokens(a);
+  const right = new Set(titleMeaningTokens(b));
+  if (!left.length || !right.size) return 0;
+  const hit = left.filter(token => right.has(token)).length;
+  return hit / Math.max(left.length, right.size);
+}
+
+function titleMeaningTokens(value: string) {
+  return Array.from(new Set(value.match(/[A-Za-z0-9]+|[\u4e00-\u9fa5]{2}/g) || []));
 }
 
 function buildSeedTitleFallbacks(topic: MigratedTopic, productId: ProductId) {
@@ -1880,7 +1975,7 @@ function buildSeedTitleFallbacks(topic: MigratedTopic, productId: ProductId) {
       delf_topic_vocabulary: { free: 'DELF B2主题词怎么准备', reference: 'DELF B2词汇按主题积累' },
       delf_argument_bank: { free: 'DELF B2没观点怎么展开', reference: 'DELF B2观点这样写具体' },
       delf_sample_transfer: { free: 'DELF B2范文别整篇背', reference: 'DELF B2范文这样拆才会用' },
-      delf_task_formats: { free: 'DELF B2三类任务别混', reference: 'DELF B2写作任务这样区分' },
+      delf_task_formats: { free: 'DELF B2三类题型别混', reference: 'DELF B2写作题型这样分' },
       delf_learning_route: { free: 'DELF B2写作先练哪一块', reference: 'DELF B2按阶段安排复习' },
       delf_scoring_dimensions: { free: 'DELF B2作文该怎么自评', reference: 'DELF B2评分维度这样看' },
       delf_combination_examples: { free: '法语B2表达怎么组合', reference: 'DELF B2词句观点这样拼' },
@@ -2195,7 +2290,7 @@ function buildMaterialTitle(productId: ProductId, base: string, topicName: strin
     return clip(`${base}${topicName}，我整理好了`, 20);
   }
   if (/评分|检查|交卷|自查/.test(text)) return 'DELF B2写作扣分点，我做成检查表';
-  if (/范文|模板/.test(text)) return '法语B2写作模板别乱背，先看结构表';
+  if (/范文|模板/.test(text)) return '法语B2模板背了用不上？';
   return clip(`${base}${topicName}，考前直接照这个查`, 20);
 }
 
@@ -2514,7 +2609,7 @@ function getRendererCoverFallbackTitle(productId: ProductId, renderer: ProductCa
   if (exactFallback) return exactFallback;
   if (renderer === 'memo_offer') {
     return productId === 'delf_b2_writing'
-      ? '你的DELF B2格式正在拖后腿'
+      ? 'DELF B2格式分老丢的人先看'
       : 'TEF/TCF备考正在被资料拖慢';
   }
   return getProductCoverFallbackTitle(productId, family);

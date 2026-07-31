@@ -367,6 +367,8 @@ function pickPreviewCoverTitle(item: any, input: InputRow) {
 
 function previewTitleScore(title: string) {
   let score = Math.min(Array.from(title).length, 18);
+  if (isUnnaturalPreviewTitle(title)) score -= 12;
+  if (/写不好|说不长|听不懂|背了也用不上|一直在扣分|老丢分|扣分|写不出来|用不上|没方向/.test(title)) score += 4;
   if (/\d/.test(title)) score += 2;
   if (/[?!？！]/.test(title)) score += 2;
   if (/别再|先别|总丢|卡住|白背|致命|反而|大全|必背|稀缺|考前|冲刺/.test(title)) score += 4;
@@ -388,6 +390,15 @@ function cleanTitle(value: unknown) {
     .replace(/直接套用/g, '照着改写')
     .replace(/直接用/g, '照着用')
     .replace(/([，,、：:；;？！?])\1+/g, '$1')
+    .replace(/资料太散/g, '资料太乱')
+    .replace(/总卡住|卡住/g, '写不好')
+    .replace(/正在拖后腿|拖后腿/g, '一直在扣分')
+    .replace(/正在白背|白背/g, '背了也用不上')
+    .replace(/你的DELF\s*B2格式/g, 'DELF B2格式')
+    .replace(/你的DELF\s*B2范文/g, 'DELF B2范文')
+    .replace(/你的法语B2/g, '法语B2')
+    .replace(/写作任务/g, '写作题型')
+    .replace(/三类任务/g, '三类题型')
     .trim();
 }
 
@@ -396,9 +407,14 @@ function acceptTitle(value: unknown, productId: ProductId, role: 'cover' | 'text
   const length = Array.from(title).length;
   const min = role === 'cover' ? 10 : 13;
   if (!title || length < min || length > 20) return '';
+  if (isUnnaturalPreviewTitle(title)) return '';
   if (!hasPreviewProductIdentity(title, productId)) return '';
   if (hasIncompleteTitleEnding(title)) return '';
   return title;
+}
+
+function isUnnaturalPreviewTitle(title: string) {
+  return /资料太散|正在拖后腿|拖后腿|正在白背|白背|写作任务|你的DELF\s*B2|你的法语B2|卡住/.test(title);
 }
 
 function compactPreviewTitle(value: unknown, productId: ProductId) {
