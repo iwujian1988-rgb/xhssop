@@ -56,3 +56,7 @@ product2-all-cards.log
 product2-all-cards-*.json
 product2-e2e-summary-*.json
 product2-e2e-full-*.json
+
+# 跨 batch 标题去重库（runtime state，不进 git）
+/data/title-usage.json
+/data/title-usage.json.*.tmp
