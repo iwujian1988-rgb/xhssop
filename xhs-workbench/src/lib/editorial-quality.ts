@@ -19,7 +19,20 @@ export function normalizeTitleIdentity(value: string, productId?: ProductId) {
 
 export function getPublicEditorialRiskIssues(editorialText: string, caption = editorialText) {
   const issues: string[] = [];
-  if (/不是.{0,40}而是|不在于.{0,40}而在于|问题(?:就)?出在|问题的关键|很多(?:备考.{0,12})?同学|其实[，,]/.test(caption)) issues.push('caption_ai_cliche');
+  // AI 套话检测：原 6 种 + 新增常见 LLM 套路。
+  // 原：不是 X 而是 Y / 不在于 X 而在于 Y / 问题出在 / 问题的关键 / 很多备考同学 / 其实，
+  // 新增：
+  //   - "X，让你的 Y 更 Z"——AI 喜欢的"提升体"
+  //   - "X 不仅仅是 Y，更是 Z"——递进式空话
+  //   - "在 X 的过程中，Y"——翻译腔
+  //   - "X 才是 Y 的关键/核心/根本"——结论式空话
+  //   - "通过 X，Y 才能 Z"——条件式空话
+  //   - "X，让 Y 不再 Z"——制造焦虑式
+  //   - "X 的重要性不言而喻"——结论空话
+  //   - "X 是一个需要 Y 的过程"——循环定义
+  //   - "综上所述/总而言之/总的来说"——AI 议论文尾段标志
+  //   - "首先.*其次.*最后"——AI 议论文中段标志（在同一句/段落里出现）
+  if (/不是.{0,40}而是|不在于.{0,40}而在于|问题(?:就)?出在|问题的关键|很多(?:备考.{0,12})?同学|其实[，,]?|别只看.{0,20}更要看|让.{1,12}更.{1,8}|不仅仅是.{1,18}.{0,4}更是|在.{1,18}的过程中|才是.{1,12}(?:关键|核心|根本)|通过.{1,18}，.{1,12}才能|让.{1,12}不再|重要性不言而喻|是一个需要.{1,18}的过程|综上所述|^总而言之|^总的来说|首先[，,][^。]{0,80}其次[，,][^。]{0,80}最后[，,]/.test(caption)) issues.push('caption_ai_cliche');
   if (/(商品|资料)(里|中|内).{0,10}(有|没有|包含|不含|收录|未收录)/.test(editorialText)) issues.push('public_inventory_relation_claim');
   if (/(?:挽回|提高|提升|多拿|少丢).{0,8}\d+(?:\s*[-~至]\s*\d+)?\s*分|(?:省下|节省).{0,8}(?:至少)?\s*\d+\s*分钟/.test(editorialText)) issues.push('unsupported_score_or_time_claim');
   if (/精准提分|效率翻倍|分数卡在\s*\d+\s*分左右|考前[^。；\n]{0,20}就能/.test(editorialText)) issues.push('unsupported_outcome_claim');

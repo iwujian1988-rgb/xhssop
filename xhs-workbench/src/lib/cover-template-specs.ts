@@ -28,9 +28,9 @@ export const coverTemplateSpecs: Record<Exclude<CreativeCardRenderer, 'ai_scene_
   parchment_dense_directory: directory('parchment_dense_directory', '羊皮纸高密度资料目录'),
   white_green_directory: directory('white_green_directory', '白底绿字知识清单'),
   clean_purple_directory: {
-    renderer: 'clean_purple_directory', name: '白底紫色知识资料', family: 'directory', renderMode: 'code', sectionCount: 4, itemsPerSection: 10, minTotalItems: 36,
+    renderer: 'clean_purple_directory', name: '白底紫色知识资料', family: 'directory', renderMode: 'code', sectionCount: 4, itemsPerSection: 9, minTotalItems: 28,
     maxPrimaryVisualLength: 40, maxSecondaryVisualLength: 25,
-    contentInstruction: '输出4个知识分组，每组10个短条目；primary写法语词、短语或知识标签，secondary写极短中文解释。保持打印资料页的高密度，不输出长句。',
+    contentInstruction: '输出4个知识分组，每组8-10个短条目；primary写法语词、短语或知识标签，secondary写极短中文解释。保持打印资料页的高密度，不输出长句。',
     titleInstruction: '标题直接说明法语领域或考试名与资料对象，适合打印资料页。',
     forbiddenInstruction: '禁止长解释、空泛口号、虚构官方数量和无法在资料页中展示的内容。',
   },
@@ -80,14 +80,14 @@ export const coverTemplateSpecs: Record<Exclude<CreativeCardRenderer, 'ai_scene_
     renderer: 'notebook_big_words', name: '手写本痛点大字', family: 'pain', renderMode: 'hybrid', sectionCount: 3, itemsPerSection: 1, minTotalItems: 3,
     maxPrimaryVisualLength: 40, maxSecondaryVisualLength: 42,
     contentInstruction: '输出3条递进短句：用户现状、反差判断、解决方向。每条只表达一层意思，像真人随手写下的提醒。',
-    titleInstruction: '标题可以情绪化，但必须说明法语对象；封面正文承担痛点和转折。',
+    titleInstruction: '封面正文只承载3条痛点短句，所以 title 必须是反常识/情绪型钩子（如"B2写作总差一点"、"B2考生最容易卡在这步"、"不是词汇量不够"），让人一眼共鸣。禁止写"X 大全""X 清单""X 资料库""X 整理"这类具体内容型标题——本模板承载不了资料承诺，那种标题请走 dense_directory 类模板。副标题补一句反差/追问。',
     forbiddenInstruction: '禁止假装本人通过考试，禁止虚构分数、时间和个人经历。',
   },
   plain_experience: {
     renderer: 'plain_experience', name: '极简经验长图', family: 'experience', renderMode: 'code', sectionCount: 2, itemsPerSection: 2, minTotalItems: 4,
     maxPrimaryVisualLength: 40, maxSecondaryVisualLength: 54,
     contentInstruction: '输出2段各2条，组合后成为两段连贯的经验正文；每段合计70到110个中文字，必须是完整中文句子组成的段落（可嵌入法语例句）。第一段讲真实困难和判断，第二段给可执行建议。严禁输出”法语短语+中文翻译”这类词汇/短语释义条目，严禁把多条短语堆叠成伪段落（如”J\'ai bien compris.，我完全理解了。”是错误示例）。没有用户提供的真实经历时，不得使用"我后来发现/我的整理方法/让我/我考前/我上岸/我亲测"这类第一人称经历口吻，只能写成泛化观察和建议。',
-    titleInstruction: '标题像一篇经验帖的大标题，清楚指出法语人群或阶段。',
+    titleInstruction: '封面正文只有2段经验分享（合计不到200字），所以 title 必须是反常识/情绪/结果型钩子（如"B2写不到字数？不是词汇问题"、"DELF B2跑题的人都有一个共同点"），让用户觉得"这说的就是我"。禁止写"X 大全""X 清单""X 资料库""X 整理好了"这类具体内容型标题——2 段经验正文撑不起资料承诺，那种标题请走 dense_directory 类模板。副标题补一句反差或追问。',
     forbiddenInstruction: '禁止虚构第一人称成绩、身份、留学或考试经历。',
   },
   document_analysis: {

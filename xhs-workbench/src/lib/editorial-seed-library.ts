@@ -15,10 +15,13 @@ const delfSeeds: EditorialSeed[] = [
     use_scenario: '考前集中整理正式信表达，以及考场草稿阶段快速调用',
     content_shapes: ['directory', 'phrase', 'offer', 'flashcard', 'pain', 'document'],
     anchor_fact_ids: ['PP-007', 'KA-008', 'KA-009', 'KA-020'],
-    dynamic_fact_terms: ['正式信', '开头', '结尾', '礼貌', '写信目的'],
+    // 之前是 5 个 dynamic_fact_terms（正式信/开头/结尾/礼貌/写信目的），
+    // LLM 会想把全部塞进封面副标题 → 副标题超长 → cover_subtitle_length_invalid
+    // 在 6 张不同卡上 100% 失败。缩到 3 个核心词，避免 LLM"全流程"枚举式副标题。
+    dynamic_fact_terms: ['正式信', '开头', '结尾'],
     ai_original_scope: '可以补充新的正确例句和选用场景，但不得伪造商品条目、官方模板或固定得分规则',
     title_trigger_types: ['好奇缺口', '恐惧损失', '数字锚定', '场景条件'],
-    page_plan: ['先判断写信目的', '按场景选择开头', '按语气选择结尾', '展示完整套用示例', '给出考场调用方法'],
+    page_plan: ['按场景选择开头', '按语气选择结尾', '展示完整套用示例', '给出考场调用方法'],
   },
   {
     seed_id: 'delf_final_check', product_id: 'delf_b2_writing',
@@ -532,6 +535,9 @@ export function planSeededTopics(input: {
   const direction = normalize(input.direction || '');
   const recentSeedIds = new Set(input.recentSeedIds || []);
   const day = (input.date || new Date()).toISOString().slice(0, 10);
+  // recentSeedIds 提到最高优先级：之前 sort 把 direction 放在前面，
+  // 一个高分 recent seed 会覆盖 fresh seed，导致 7 天内重复。
+  // 现在 recent 主导，fresh 永远先于 recent；池子不够时 pick/循环会自然兜底。
   const ranked = getEditorialSeeds(input.productId)
     .filter(seed => seed.content_shapes.includes(spec.family))
     .filter(seed => seed.anchor_fact_ids.every(id => factIds.has(id)))
@@ -541,7 +547,7 @@ export function planSeededTopics(input: {
       recentPenalty: recentSeedIds.has(seed.seed_id) ? 1 : 0,
       rotation: stableHash(`${day}:${input.card.id}:${seed.seed_id}`),
     }))
-    .sort((a, b) => b.directionScore - a.directionScore || a.recentPenalty - b.recentPenalty || a.rotation - b.rotation);
+    .sort((a, b) => a.recentPenalty - b.recentPenalty || b.directionScore - a.directionScore || a.rotation - b.rotation);
 
   const limit = input.limit ?? 4;
   const pools = topicSeedPools[input.productId];

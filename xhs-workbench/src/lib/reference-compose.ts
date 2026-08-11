@@ -13,7 +13,11 @@ import {
   isProductPublicTextSafe,
 } from '@/lib/product-prompt-profiles';
 import { normalizeDenseDirectoryCover, validateReferenceDraft } from '@/lib/reference-workflow-validation';
-import { getAvoidedLowTrafficKeywords, getTitleReferenceKeywords } from '@/lib/xhs-search-keywords';
+import { getAvoidedLowTrafficKeywords, getTitleReferenceKeywords, getXhsSearchKeywords } from '@/lib/xhs-search-keywords';
+import { pickFormulasForTriggerTypes, type TitleFormula } from '@/lib/title-formulas';
+import { getSeedTopicKeywords, isTitleAnchoredToSeed, countSeedTopicHits } from '@/lib/seed-topic-anchor';
+import { fingerprintTitle, getRecentTitleFingerprints, titleTemplateFingerprint, type RecentTitleFingerprints } from '@/lib/title-usage-store';
+import { assembleCaption, normalizeCaptionParts, type CaptionParts } from '@/lib/caption-schema';
 import type { ProductId } from '@/types/data';
 import type {
   ContentShape,
@@ -40,7 +44,36 @@ export function autoFixCoverCapacity(cover: NormalizedCover, spec: CoverTemplate
   const events: string[] = [];
   const sections = cover.sections.map(section => ({ ...section, items: section.items.map(item => ({ ...item })) }));
 
+  // Defense-in-depth：ensureCoverIdentity 已 clip 过一遍，但 audit LLM-corrections
+  // 会绕过 clip 直接改 item.primary/secondary。这里再 clip 一次，给 cover_item_too_long
+  // 兜底，避免 audit 后 final_gate 因长度炸单。同时剥掉尾部「→，,、；;：:」等半截话标志，
+  // 防 cover_item_truncated 误报。
+  const TRAILING_TRUNCATION_CHARS = /[→，,、；;：:。.！!？?]$/;
+  const stripTrailingTruncation = (value: string) => {
+    if (!value) return value;
+    const stripped = value.replace(TRAILING_TRUNCATION_CHARS, '').trim();
+    return stripped || value;
+  };
   for (const section of sections) {
+    for (const item of section.items) {
+      if (visualLength(item.primary) > spec.maxPrimaryVisualLength) {
+        const clipped = clipVisual(item.primary, spec.maxPrimaryVisualLength);
+        events.push(`分组「${section.heading}」primary 超长→截断`);
+        item.primary = clipped;
+      }
+      if (item.secondary && visualLength(item.secondary) > spec.maxSecondaryVisualLength) {
+        const clipped = clipVisual(item.secondary, spec.maxSecondaryVisualLength);
+        events.push(`分组「${section.heading}」secondary 超长→截断`);
+        item.secondary = clipped;
+      }
+      // 剥掉 clip 或 LLM 留下的尾部「半截话」标点。前后只剥一次，避免把整段干掉。
+      const primaryBefore = item.primary;
+      const secondaryBefore = item.secondary || '';
+      item.primary = stripTrailingTruncation(item.primary);
+      if (item.secondary) item.secondary = stripTrailingTruncation(item.secondary);
+      if (item.primary !== primaryBefore) events.push(`分组「${section.heading}」primary 尾部截断符→清理`);
+      if (item.secondary && item.secondary !== secondaryBefore) events.push(`分组「${section.heading}」secondary 尾部截断符→清理`);
+    }
     if (section.items.length > maxItems) {
       events.push(`分组「${section.heading}」${section.items.length}条→截断为${maxItems}条`);
       section.items = section.items.slice(0, maxItems);
@@ -402,7 +435,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
         '标题质量硬要求：至少命中2项——具体人群/场景、真实痛点、悬念缺口、反常识、损失感、数字锚点。无情绪、无悬念、无痛点的内部任务名必须重写。',
         `可参考的强标题方向：${profile.titleExamples.join('；')}。只学方向，不得照抄。`,
         `例如：笔记文字标题负责点击和搜索；封面标题负责让人一眼看懂“${profile.noteIdentity}”的具体资料价值；副标题再说明范围或使用场景。三者不要写成同一句。`,
-        '封面标题或副标题若写具体数量（N句/个/条/项），N必须等于封面实际条目总数；写N类/组时必须等于分组数。拿不准就不要写具体数字。',
+        '封面标题或副标题若写具体数量（N句/个/条/项/类/组/步/招/要点/关键），N必须严格等于封面实际条目数或分组数。DELF B2客观事实数字（如"3种写作任务"）允许出现在正文，但**禁止**写在封面 title/subtitle——封面格子数与考试事实数字经常对不上，会被审校砍掉。拿不准就不要写数字，让正文承载客观事实。',
         '标题必须像中国用户自然说话，读出声不拗口。标题至少有明确对象、具体利益或信息缺口中的两项。',
         '标题写“陷阱/错误/避坑”时正文必须真有对应错误；写“模板/范文”时本篇必须真提供模板或完整范文。禁止为了蹭搜索词改变内容类型。',
         `每个笔记文字标题和封面主标题都必须清楚出现“${profile.noteIdentity}”对应身份，且不得出现另一商品考试名称。`,
@@ -476,7 +509,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     }
     return result.cover;
   };
-  let cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(core.cover), input.card.renderer_id, input.productId));
+  let cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(core.cover), input.card.renderer_id, input.productId, input.topic));
   titleCandidates = filterTitleCandidatesByContent(titleCandidates, input.topic, cover);
   titleCandidates = ensureTitleCandidateMix(titleCandidates, cover.title, input.topic, input.productId);
   let selectedTitle = chooseSafeTitle(core.selected_title, titleCandidates, cover.title, `${cover.title} ${cover.subtitle} ${brief.topic}`, input.productId);
@@ -498,7 +531,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     });
     const repaired = asRecord(repairResult);
     titleCandidates = normalizeTitles(repaired.title_candidates, allowedTitleFormulaIds, input.productId);
-    cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(repaired.cover), input.card.renderer_id, input.productId));
+    cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(repaired.cover), input.card.renderer_id, input.productId, input.topic));
     titleCandidates = filterTitleCandidatesByContent(titleCandidates, input.topic, cover);
     titleCandidates = ensureTitleCandidateMix(titleCandidates, cover.title, input.topic, input.productId);
     selectedTitle = chooseSafeTitle(repaired.selected_title, titleCandidates, cover.title, `${cover.title} ${cover.subtitle} ${brief.topic}`, input.productId);
@@ -520,7 +553,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
 
   let editorial = asRecord(editorialResult);
   let innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages), input.evidence);
-  let caption = sanitizePublicText(asString(editorial.caption));
+  let caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, coverTitle: cover.title || '' });
   const seoKeywords = buildSeoKeywords(input.productId, input.topic);
   let tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`);
   innerPages = ensureMinimumInnerPages(innerPages, cover, input.productId);
@@ -530,7 +563,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   if (editorialIssues.length) {
     editorial = asRecord(await repairEditorialOutput({ brief, selectedTitle, cover, evidence: input.evidence, issues: editorialIssues, seoKeywords }));
     innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages), input.evidence);
-    caption = sanitizePublicText(asString(editorial.caption));
+    caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, coverTitle: cover.title || '' });
     tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`);
     innerPages = ensureMinimumInnerPages(innerPages, cover, input.productId);
     caption = ensurePublishableCaption(caption, seoKeywords[0], cover);
@@ -560,9 +593,15 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   if (!audited.summary.approved) {
     throw new Error(`法语与考试事实审校未通过：${audited.summary.issues.join('；')}`);
   }
-  cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(audited.cover), input.card.renderer_id, input.productId));
+  cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(audited.cover), input.card.renderer_id, input.productId, input.topic));
   innerPages = normalizePageEvidence(normalizePages(audited.innerPages), input.evidence);
-  caption = ensurePublishableCaption(sanitizePublicText(audited.caption), seoKeywords[0], cover);
+  caption = ensurePublishableCaption(scrubCheapClaims(sanitizePublicText(audited.caption)), seoKeywords[0], cover);
+  // 跨 batch 标题去重：取本 seed 最近 30 天被选过的标题指纹 + 候选池指纹。
+  // 单并发 batch 内 IO 开销可忽略；失败时不阻塞主流程（视为没有历史）。
+  const recentTitleFingerprints: RecentTitleFingerprints | undefined = await getRecentTitleFingerprints(input.productId, {
+    seedId: input.topic.seed_id,
+    days: 30,
+  }).catch(() => undefined);
   const titlePolish = await polishTitlesAfterContent({
     productId: input.productId,
     card: input.card,
@@ -575,10 +614,64 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     caption,
     evidence: input.evidence,
     allowedTitleFormulas,
+    recentTitleFingerprints,
   });
   titleCandidates = titlePolish.titleCandidates;
   selectedTitle = titlePolish.selectedTitle;
   cover = titlePolish.cover;
+
+  // 最终兜底：polish 阶段可能再次注入跨商品身份词（TEF/TCF 等），final_gate
+  // 会判 product_identity_mismatch 直接挂掉整个 job。再走一次 strip + autofix，
+  // 避免连环重试烧 token。同时清理 caption 和 inner_pages 的 forbidden identity，
+  // 因为 getEditorialIssues 也会判 product_identity_mismatch。
+  const profileFinal = getProductPromptProfile(input.productId);
+  const stripForbiddenIdentityFinal = (value: string) => {
+    if (!value) return value;
+    return value.replace(profileFinal.forbiddenIdentityPattern, profileFinal.shortIdentity);
+  };
+  cover = {
+    ...cover,
+    title: stripForbiddenIdentityFinal(cover.title || ''),
+    subtitle: stripForbiddenIdentityFinal(cover.subtitle || ''),
+    sections: (cover.sections || []).map(section => ({
+      ...section,
+      heading: stripForbiddenIdentityFinal(section.heading || ''),
+      side_label: stripForbiddenIdentityFinal(section.side_label || ''),
+      items: (section.items || []).map(item => ({
+        ...item,
+        primary: stripForbiddenIdentityFinal(item.primary || ''),
+        secondary: item.secondary ? stripForbiddenIdentityFinal(item.secondary) : item.secondary,
+        note: item.note ? stripForbiddenIdentityFinal(item.note) : item.note,
+      })),
+    })),
+  };
+  selectedTitle = stripForbiddenIdentityFinal(selectedTitle);
+  titleCandidates = titleCandidates.map(c => ({ ...c, title: stripForbiddenIdentityFinal(c.title || '') }));
+  caption = stripForbiddenIdentityFinal(caption);
+  innerPages = innerPages.map(page => ({
+    ...page,
+    page_title: stripForbiddenIdentityFinal(page.page_title || ''),
+    lead: stripForbiddenIdentityFinal(page.lead || ''),
+    bullets: page.bullets.map(bullet => {
+      const text = typeof bullet === 'string' ? bullet : (bullet.text || '');
+      const stripped = stripForbiddenIdentityFinal(text);
+      return typeof bullet === 'string' ? stripped : { ...bullet, text: stripped };
+    }),
+  }));
+
+  // 兜底兜底：polish 阶段如果 LLM 把 cover.title 改成不含 DELF B2/B2写作 的钩子型标题，
+  // final_gate 会判 product_identity_mismatch。这里直接覆盖成已知安全的 fallback。
+  if (!hasRequiredProductIdentity(input.productId, cover.title || '')) {
+    const familyFinal = getCoverTemplateSpec(input.card.renderer_id)?.family;
+    const fallbackTitle = buildCoverTitleFallback(input.topic, input.productId, input.card.renderer_id, cover).title;
+    const safeTitle = (fallbackTitle && hasRequiredProductIdentity(input.productId, fallbackTitle) && fallbackTitle.length >= 8 && fallbackTitle.length <= 18)
+      ? fallbackTitle
+      : getRendererCoverFallbackTitle(input.productId, input.card.renderer_id, familyFinal);
+    if (safeTitle) {
+      console.info(`[final-fallback] card=${input.card.id} orig="${cover.title}" -> fallback="${safeTitle}"`);
+      cover = { ...cover, title: safeTitle };
+    }
+  }
 
   const finalCoreIssues = getCoreIssues(titleCandidates, cover, input.card.renderer_id, input.evidence, input.productId);
   coreWarnings = finalCoreIssues.filter(issue => !isBlockingCoreIssue(issue));
@@ -789,6 +882,45 @@ export async function auditEducationalContent(input: {
   };
 }
 
+// Caption schema 模式开关。
+// schema（默认）：LLM 填 caption_parts 5 个字段，我们拼装成最终 caption。
+// legacy：旧路径，LLM 直接返回 caption: string。
+// 切回 legacy 只需改环境变量，无需改代码。
+function captionSchemaEnabled(): boolean {
+  return process.env.CAPTION_MODE !== 'legacy';
+}
+
+// 从 editorial 结果里抽出 caption 字符串。
+// schema 模式优先用 caption_parts（拼装）；LLM 漏返字段时退回 legacy caption 路径，不挂 job。
+function resolveCaptionFromEditorial(
+  editorial: Record<string, unknown>,
+  fallback: { productId: ProductId; cardId: string; coverTitle: string },
+): string {
+  if (captionSchemaEnabled() && editorial.caption_parts && typeof editorial.caption_parts === 'object') {
+    const parts: CaptionParts = normalizeCaptionParts(editorial.caption_parts, fallback);
+    return scrubCheapClaims(assembleCaption(parts, fallback.cardId));
+  }
+  return scrubCheapClaims(sanitizePublicText(asString(editorial.caption)));
+}
+
+// schema 字段约束——正向描述（"必须含 X"），不是负向禁止。
+// 比黑名单更有效：LLM 知道往哪写，而不是只知道别写啥。
+const CAPTION_SCHEMA_FIELD_PROMPT = `caption_parts 字段约束（强制，缺一不可）：
+- hook: 一句话钩子，8-25字，必须含数字或反差句式（如"这5个"、"还在临时拼？"、"别再硬背"）
+- scenario: 场景化描述，16-48字，必须含"我/同学/考前/练习时/上次/考场"等场景化第一人称词
+- steps: 3-5个具体步骤/要点，每个6-36字，必须以动词或法语短语开头，禁止以"使用时"开头
+- french_example: 一个具体法语例子（fr 5-15 词）+ 中文翻译（zh 4-40字）
+- cta: 行动号召，4-16字，禁止"使用时先看封面总览"、"这样复盘更具体"、"备考会更有条理"等模板化尾句
+禁止字段里出现"帮你"、"这套"、"按部就班"、"问题在于"、"通过...才能"、"综上所述"、"按部就班"、"即查即用"。`;
+
+const CAPTION_SCHEMA_FEW_SHOT = `caption_parts 写作示例（学习这种"具体 + 第一人称 + 法语例子"的语感，禁止复制原句）：
+
+示例1（正式信开头结尾）：
+{"hook":"B2 写作开头结尾还在临时拼？这5个表达直接套","scenario":"我自己考前一周才发现，开头结尾的固定表达其实就那么几类，按场景分好就行","steps":["正式信开头：Madame, Monsieur + Je me permets de vous écrire","回复广告：Suite à votre annonce","投诉：J'ai l'honneur de vous adresser"],"french_example":{"fr":"Je me permets de vous écrire pour vous demander...","zh":"我写信是想请您..."},"cta":"考前1周过一遍这些表达"}
+
+示例2（主题词）：
+{"hook":"B2 写作主题词总背不全？按5大话题分类记","scenario":"上次写作遇到环境题，脑子里只有protéger一个词，凑不出200字","steps":["环境：le développement durable, la pollution","科技：les réseaux sociaux, l'IA","教育：la pédagogie, l'éducation"],"french_example":{"fr":"Il est urgent de protéger notre environnement.","zh":"保护环境迫在眉睫。"},"cta":"考前按话题过一遍，比硬背单词强"}`;
+
 function generateEditorialOutput(input: ComposeDraftInput, context: {
   brief: UnifiedContentBrief;
   selectedTitle: string;
@@ -799,6 +931,7 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
   const templatePrompt = getCoverTemplatePrompt(input.card.renderer_id);
   const titleKeywords = getTitleReferenceKeywords(input.productId);
   const examFactRules = getExamFactRules(input.productId);
+  const useSchema = captionSchemaEnabled();
   return callOpenAICompatibleJson([
     {
       role: 'system',
@@ -807,7 +940,11 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
         '你是资深小红书法语内容编辑。选题、人群、场景、痛点和内容承诺已经锁定，不能另起主题。只返回JSON。',
         '生成4-6张真正给用户看的内页，以及一篇可直接发布的正文。内页不是把正文切片粘贴。',
         '每张内页必须有具体知识、例子、对照、步骤或练习；禁止写幕后设计意图。',
-        '正文控制在280-420个中文字符，图片已经承载干货，正文只补充使用方法、关键提醒和自然商品承接。',
+        useSchema
+          ? '正文按 caption_parts 5 个字段（hook/scenario/steps/french_example/cta）结构化输出，由系统拼装成最终长文；字段约束见下。'
+          : '正文控制在280-420个中文字符，图片已经承载干货，正文只补充使用方法、关键提醒和自然商品承接。',
+        useSchema ? CAPTION_SCHEMA_FIELD_PROMPT : '',
+        useSchema ? CAPTION_SCHEMA_FEW_SHOT : '',
         '商品事实只能来自证据；正确科普、法语例句、练习可以原创。公开文案不讨论AI补充内容是否收录在商品里，既不声称包含，也不声明不包含。',
         'AI原创科普以稳妥常识和法语用法为主，不编造现实数据、比例、年份或未经证据支持的具体地区损失与医学因果。',
         '逐条核对法语语法、搭配、语域和适用场景；不确定就删除。不要把学习建议描述成官方强制规则。',
@@ -820,7 +957,8 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
         titleKeywords.length
           ? `validated_search_keywords 已经过小红书下拉联想验证，真实有流量。正文里自然嵌入 1-2 个（前 80 字优先），禁止堆砌；tag 必须组合成带商品身份的复合形式，但只能描述本篇真实内容：没有完整范文就不能写“范文”，没有模板就不能写“模板”。禁止输出单独的「#模板」「#范文」「#技巧」这类无主标签。`
           : '',
-        '禁止“不是……而是……”“问题出在”“问题的关键”“很多同学都会遇到”等AI套话。',
+        // schema 模式下，AI 套话被字段结构消除，不再需要 prompt 黑名单。
+        useSchema ? '' : '禁止以下AI套话（出现即判低质）：1）“不是X而是Y”“不在于X而在于Y”；2）“问题出在”“的关键是”“问题的关键”；3）“很多备考同学都会遇到”“很多同学”；4）递进空话“不仅仅是X，更是Y”“X让Y更Z”“X让Y不再Z”；5）翻译腔“在X的过程中”；6）结论空话“X才是关键/核心/根本”“重要性不言而喻”“通过X才能Y”“X是一个需要Y的过程”；7）议论文标志“综上所述”“总而言之”“总的来说”“首先……其次……最后”；8）句首“其实，”开头的让步句。',
         profile.editorialScopePrompt,
         '内页要承接封面未展开的信息：短条目在封面，完整解释、例句、对照、使用条件和练习进入内页。内页顺序应形成“看懂主题→获得方法→看到例子→能够自查→自然了解商品”的阅读链。',
         '商品承接写成用户下一步行动和适用场景，不要写“我的/我们的资料里有、资料提供、内容来自资料”等库存说明；数量只可使用证据中原样存在的数字。',
@@ -840,7 +978,21 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
         product_evidence: input.evidence,
         seo_keywords: seoKeywords,
         validated_search_keywords: titleKeywords,
-        output_schema: {
+        output_schema: useSchema ? {
+          inner_pages: [{
+            page_no: 2,
+            page_type: 'knowledge_list|example_explain|wrong_right|steps|product_bridge',
+            page_title: '', lead: '', bullets: [], source_ids: [],
+          }],
+          caption_parts: {
+            hook: '一句话钩子，8-25字，含数字或反差句式',
+            scenario: '场景化描述，16-48字，含"我/同学/考前/练习时"',
+            steps: ['具体步骤1', '具体步骤2', '具体步骤3'],
+            french_example: { fr: '法语原句 5-15 词', zh: '中文翻译 4-40字' },
+            cta: '行动号召 4-16字',
+          },
+          tags: ['#法语学习'],
+        } : {
           inner_pages: [{
             page_no: 2,
             page_type: 'knowledge_list|example_explain|wrong_right|steps|product_bridge',
@@ -957,7 +1109,7 @@ function extractTitleEditorPool(record: Record<string, unknown>) {
   return pooled.length > 0 ? pooled : record.text_title_candidates;
 }
 
-function selectBestTitlePerType(candidates: TitleCandidate[]) {
+function selectBestTitlePerType(candidates: TitleCandidate[], seedContext?: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> }) {
   const typeOrder = [
     '\u8d44\u6599\u578b',
     '\u89e3\u91ca\u578b',
@@ -969,12 +1121,12 @@ function selectBestTitlePerType(candidates: TitleCandidate[]) {
   for (const type of typeOrder) {
     const best = candidates
       .filter(item => item.title_type === type)
-      .sort((a, b) => titleImpactScore(b.title) - titleImpactScore(a.title))[0];
+      .sort((a, b) => titleImpactScore(b.title, seedContext) - titleImpactScore(a.title, seedContext))[0];
     if (best && !selected.some(item => item.title === best.title)) selected.push(best);
   }
   const remaining = candidates
     .filter(item => !selected.some(selectedItem => selectedItem.title === item.title))
-    .sort((a, b) => titleImpactScore(b.title) - titleImpactScore(a.title));
+    .sort((a, b) => titleImpactScore(b.title, seedContext) - titleImpactScore(a.title, seedContext));
   return [...selected, ...remaining].slice(0, 5);
 }
 
@@ -1178,11 +1330,13 @@ function ensurePublishableCaption(
     .replace(/帮助你在练习中精准自查，高效提分/g, '帮助你在练习中更有方向地复盘')
     .replace(/帮助你精准自查，高效提分/g, '帮助你更有方向地复盘')
     .replace(/高效提分/g, '更有针对性地复盘');
-  if (result.length < 260) {
+  // schema 模式：caption 由 caption_parts 5 字段拼装，结构紧凑，字数 200-300 已足够，
+  // 不需要再用模板化尾句填充。legacy 模式保留 fallback。
+  if (!captionSchemaEnabled() && result.length < 260) {
     const headings = cover.sections.map(section => section.heading).filter(Boolean).slice(0, 4).join('、');
     result += `使用时可以先看封面总览，再按${headings || '各个模块'}逐项核对。容易混淆的地方单独抄下来，下一篇练习时优先检查；确认已经掌握的内容再划掉。这样复盘会更具体，也方便看出自己反复出错的位置。`;
   }
-  if (result.length < 260) {
+  if (!captionSchemaEnabled() && result.length < 260) {
     result += '收藏后不要一次把所有内容都背完，先选和当前作文最相关的一组，写进完整句子，再结合题目检查语境、搭配和语体是否合适。';
   }
   if (result.length > 440) {
@@ -1203,13 +1357,18 @@ async function repairEditorialOutput(input: {
 }) {
   const profile = getProductPromptProfile(input.brief.product_id);
   const examFactRules = getExamFactRules(input.brief.product_id);
+  const useSchema = captionSchemaEnabled();
   return callOpenAICompatibleJson([
     {
       role: 'system',
       content: [
         '你是小红书法语内容总编。完整重写未过质检的内页和正文，只返回JSON，不能改变锁定主题。',
         '必须完整返回4-6张内页，每页标题8-22字、引导语和4-7条具体内容；不得输出半句话。',
-        '必须完整返回280-420个中文字符的正文和5-8个标签。正文开头直接进入具体问题，不能虚构作者个人考试经历。',
+        useSchema
+          ? '正文按 caption_parts 5 个字段（hook/scenario/steps/french_example/cta）结构化输出，由系统拼装。scenario 开头直接进入具体问题，不能虚构作者个人考试经历。'
+          : '必须完整返回280-420个中文字符的正文和5-8个标签。正文开头直接进入具体问题，不能虚构作者个人考试经历。',
+        useSchema ? CAPTION_SCHEMA_FIELD_PROMPT : '',
+        useSchema ? CAPTION_SCHEMA_FEW_SHOT : '',
         '逐条核对法语语法、搭配、语域和适用场景；不得把学习建议写成官方硬规则。',
         profile.editorialScopePrompt,
         '禁止把不同主题的名词做机械一对一替换；主题迁移必须重写语义完整、符合新语境的例句。',
@@ -1220,7 +1379,7 @@ async function repairEditorialOutput(input: {
         '禁止万能、必背、捷径、阅卷老师看重、百分比、考官追着给分、白考、保分、必过；禁止虚构省时、挽回分数、保证提分；禁止幕后设计说明和“不是……而是……”套话。',
         '禁止把不同语义的法语表达写成机械替换，例如“用 bien que 代替 mais”“用 en revanche 代替 mais”。必须说明各自适用语义。禁止把建议写成“严禁/必须”的官方规则。',
         'Et、mais、parce que、on、je pense que、beaucoup de、gens本身是中性常用表达，不得标成口语、非正式或错误；只能说明不同表达的语义、位置和语域差异。Cordialement不得写成所有正式信的最低标准。',
-      ].join('\n'),
+      ].filter(Boolean).join('\n'),
     },
     {
       role: 'user',
@@ -1231,7 +1390,17 @@ async function repairEditorialOutput(input: {
         failed_checks: input.issues,
         product_evidence: input.evidence,
         seo_keywords: input.seoKeywords,
-        required_output: {
+        required_output: useSchema ? {
+          inner_pages: [{ page_no: 2, page_type: 'knowledge_list', page_title: '', lead: '', bullets: ['', '', '', ''], source_ids: [] }],
+          caption_parts: {
+            hook: '一句话钩子，8-25字',
+            scenario: '场景化描述，16-48字',
+            steps: ['步骤1', '步骤2', '步骤3'],
+            french_example: { fr: '法语原句', zh: '中文翻译' },
+            cta: '行动号召',
+          },
+          tags: ['#法语学习'],
+        } : {
           inner_pages: [{ page_no: 2, page_type: 'knowledge_list', page_title: '', lead: '', bullets: ['', '', '', ''], source_ids: [] }],
           caption: '280-420个中文字符的完整正文',
           tags: ['#法语学习'],
@@ -1321,11 +1490,12 @@ async function repairCoreOutput(input: {
   ], { maxTokens: 6500, retries: 3 });
 }
 
-function chooseSafeTitle(value: unknown, candidates: TitleCandidate[], fallback: string, context = fallback, productId?: ProductId) {
+function chooseSafeTitle(value: unknown, candidates: TitleCandidate[], fallback: string, context = fallback, productId?: ProductId, seedId?: string, recentSelectedTitles?: Set<string>, recentAllCandidates?: Set<string>, recentTitleTemplates?: Map<string, number>) {
   const proposed = sanitizeTitleLikeText(asString(value));
+  const seedContext = { seedId, productId, recentSelectedTitles, recentAllCandidates, recentTitleTemplates };
   const safeCandidates = candidates
     .filter(item => isNaturalTitle(item.title) && !isWeakCommercialTitle(item.title))
-    .sort((a, b) => titleSelectionScore(b.title, context) - titleSelectionScore(a.title, context));
+    .sort((a, b) => titleSelectionScore(b.title, context, seedContext) - titleSelectionScore(a.title, context, seedContext));
   const proposedCandidate = safeCandidates.find(item => item.title === proposed);
   return ensureTextTitleDisplayIdentity(proposedCandidate?.title || safeCandidates[0]?.title || candidates[0]?.title || fallback, productId);
 }
@@ -1356,6 +1526,7 @@ async function polishTitlesAfterContent(input: {
   caption: string;
   evidence: ComposeDraftInput['evidence'];
   allowedTitleFormulas: ReturnType<typeof getRoutedTitleFormulas>;
+  recentTitleFingerprints?: RecentTitleFingerprints;
 }): Promise<{
   titleCandidates: TitleCandidate[];
   selectedTitle: string;
@@ -1393,6 +1564,15 @@ function callTitleEditor(input: {
   const spec = getCoverTemplateSpec(input.card.renderer_id);
   const titleKeywords = getTitleReferenceKeywords(input.productId);
   const avoidedKeywords = getAvoidedLowTrafficKeywords(input.productId);
+  // 新增：根据 seed 的 title_trigger_types 预筛 6 个带 example 的公式，
+  // 和根据 seed_id 取出主题锚定关键词集——都来自本地文件，零 LLM token。
+  const seedAnchoredFormulas: TitleFormula[] = pickFormulasForTriggerTypes(
+    input.topic.title_trigger_types || [],
+    6,
+  );
+  const seedTopicKeywords = input.topic.seed_id
+    ? getSeedTopicKeywords(input.topic.seed_id)
+    : [];
   const coverSummary = input.cover.sections.map(section => ({
     heading: section.heading,
     items: section.items.slice(0, 8).map(item => `${item.primary}${item.secondary ? ` / ${item.secondary}` : ''}`),
@@ -1441,10 +1621,20 @@ function callTitleEditor(input: {
         '可用钩子：恐惧损失、好奇缺口、认知冲突、场景代入、结果承诺、资料稀缺、大全收藏、时效更新。',
         '每个文字标题至少命中 2 个张力点：具体人群/场景、真实痛点、悬念缺口、反常识、损失感、数字锚点、搜索关键词。',
         '不要为了不超20字写成10字左右的短标题；标题要尽量写到14-18字，把对象、场景、痛点、结果说清楚。禁止结尾悬空，如“别再只盯语”“问题出在”“格式不”“这5个常”“早该”“每”“哪科最”。',
-        '必须输出 5 个 text_title_candidates：资料型、解释型、强钩子型、情绪型、结果型各 1 个。不要全部写成“XXX？先YYY”。',
+        '尽量覆盖资料型/解释型/强钩子型/情绪型/结果型这 5 种类型；同一类型可以多写一个强候选，让程序从强候选里选最好的。不要全部写成“XXX？先YYY”句式。',
         '必须先把普通标题爆改，不要直接写说明书式标题。禁止平淡如“资料整理好了”“怎么准备”“知识点清单”。',
         '允许适度使用强词：大全、必背、万能、考官、稳过、7天、提分、救命、别再、白练、最后检查；但不要冒充官方授权、内部押题或真实保证。',
-        '搜索词最多自然嵌入 1 个；能用就用，不能硬塞。封面标题不必强塞搜索词。',
+        `身份词硬约束：每个文字标题（含候选池）必须自然包含“${profile.noteIdentity}”或“${profile.shortIdentity}”。变体如“B2写作”“TEF写作”也接受，但不允许只写“B2”漏掉“写作”、或只写“TEF”漏掉写作/口语/听力等具体科目。违反此规则的候选会被直接丢弃，不要再生成。`,
+        seedTopicKeywords.length
+          ? `主题锚定硬约束（seed_topic_anchor）：本篇选题的关键词集是 [${seedTopicKeywords.join('、')}]。每个文字标题候选必须命中其中至少 1 个关键词，否则视为离题、会被丢弃。封面标题不强制，但命中会更稳。不要写与本 seed 无关的通用鸡汤标题。`
+          : '',
+        '从 allowed_formulas 中至少选 3 个套用，并声明 formula_id。也允许 free_original（自由发挥，但必须说明思路）和 reference_migration（迁移爆款封面机制）。每个候选必须给出 formula_id。',
+        'AI 味 vs 真人话对照（学语感差异，不要照抄句式）：',
+        '  AI：你的DELF B2格式正在拖后腿    → 真人：DELF B2格式分老丢的人先看',
+        '  AI：DELF B2写作资料太散？          → 真人：B2写作资料乱翻？5分钟先做诊断',
+        '  AI：法语B2写作模板别乱背            → 真人：B2模板背了用不上？',
+        '  AI：写作任务这样区分                  → 真人：B2作文三种题型怎么分',
+        '  AI：DELF B2范文太长不看              → 真人：B2范文先拆这3段',
         '当前封面标题必须匹配当前模板 allowed_cover_title_types；资料目录模板优先资料/大全/稀缺/时效，情绪实拍模板优先情绪/反常识/结果。',
         '如果封面是高密度资料页，封面标题可以资料感更强；如果封面是手写/备忘录/真人经验，封面标题必须更像情绪钩子。',
         '封面标题或副标题写具体数量时，必须和封面实际条目数/分组数一致；不确定就不要写具体数量。',
@@ -1460,6 +1650,24 @@ function callTitleEditor(input: {
       content: JSON.stringify({
         product_id: input.productId,
         product_identity: profile.noteIdentity,
+        identity_rule: {
+          required: profile.noteIdentity,
+          accepted_variants: [profile.shortIdentity],
+          rule: `每个标题（文字标题含候选池、封面标题）必须自然包含 "${profile.noteIdentity}" 或 "${profile.shortIdentity}"。变体如"B2写作""TEF写作"也接受，但禁止只写"B2"漏掉"写作"。`,
+        },
+        seed_topic_anchor: seedTopicKeywords.length
+          ? {
+              seed_id: input.topic.seed_id,
+              required_keywords: seedTopicKeywords,
+              rule: '每个文字标题候选必须命中至少 1 个 required_keywords；封面标题建议但非强制。',
+            }
+          : null,
+        allowed_formulas: seedAnchoredFormulas.map(f => ({
+          id: f.id,
+          trigger: f.trigger,
+          template: f.template,
+          example: f.example,
+        })),
         current_template: {
           template_id: input.card.renderer_id,
           name: spec?.name,
@@ -1476,18 +1684,10 @@ function callTitleEditor(input: {
           cover_title: input.cover.title,
           cover_subtitle: input.cover.subtitle,
         },
-        title_formula_candidates: input.allowedTitleFormulas,
         validated_search_keywords: titleKeywords,
         title_language_rules: {
           use_human_phrasing: true,
           forbidden_surface_phrases: ['资料太散', '卡住', '拖后腿', '正在白背', '白背', '写作任务', '你的DELF B2格式', '你的DELF B2范文'],
-          preferred_rewrites: {
-            '资料太散': '资料太乱',
-            '卡住': '写不好/说不长/听不懂/上不去',
-            '拖后腿': '扣分/老丢分',
-            '白背': '背了也用不上',
-            '写作任务': '写作题型/文体/正式信/论坛投稿/建议信/投诉信',
-          },
           cover_title_rule: '封面标题先让用户觉得和自己有关，再给资料感或结果感；不要只写资料名。',
           text_title_rule: '文字标题可以更完整，优先 14-20 个可见字，允许搜索词和爆款钩子结合。',
         },
@@ -1556,19 +1756,65 @@ function normalizeTitleEditorResult(
     titleCandidates: TitleCandidate[];
     selectedTitle: string;
     allowedTitleFormulas: ReturnType<typeof getRoutedTitleFormulas>;
+    recentTitleFingerprints?: RecentTitleFingerprints;
   },
 ) {
   const record = asRecord(value);
-  const allowedTitleFormulaIds = new Set(input.allowedTitleFormulas.map(item => item.id));
+  // allowedTitleFormulaIds 取并集：catalog 路由的 8 个 + seed 锚定的 6 个（带 example 那批）。
+  // 否则 LLM 选了我们喂给它的某个 seedAnchoredFormula，却因不在 catalog 8 里被丢弃。
+  const seedAnchoredIds = pickFormulasForTriggerTypes(input.topic.title_trigger_types || [], 6).map(f => f.id);
+  const allowedTitleFormulaIds = new Set([
+    ...input.allowedTitleFormulas.map(item => item.id),
+    ...seedAnchoredIds,
+  ]);
+  const seedContext = {
+    seedId: input.topic.seed_id,
+    productId: input.productId,
+    recentSelectedTitles: input.recentTitleFingerprints?.selectedTitles,
+    recentAllCandidates: input.recentTitleFingerprints?.allCandidates,
+    recentTitleTemplates: input.recentTitleFingerprints?.selectedTitleTemplates,
+  };
   let titleCandidates = normalizeTitles(extractTitleEditorPool(record), allowedTitleFormulaIds, input.productId);
   titleCandidates = filterTitleCandidatesByContent(titleCandidates, input.topic, input.cover);
   titleCandidates = ensureTitleCandidateMix(titleCandidates, input.cover.title, input.topic, input.productId);
-  titleCandidates = selectBestTitlePerType(titleCandidates);
-  let selectedTitle = chooseSafeTitle(record.selected_text_title, titleCandidates, input.cover.title, `${input.cover.title} ${input.cover.subtitle} ${input.topic.topic}`, input.productId);
+  titleCandidates = selectBestTitlePerType(titleCandidates, seedContext);
+  let selectedTitle = chooseSafeTitle(
+    record.selected_text_title,
+    titleCandidates,
+    input.cover.title,
+    `${input.cover.title} ${input.cover.subtitle} ${input.topic.topic}`,
+    input.productId,
+    input.topic.seed_id,
+    seedContext.recentSelectedTitles,
+    seedContext.recentAllCandidates,
+    seedContext.recentTitleTemplates,
+  );
   let selectedCoverTitle = normalizeCoverTitleCandidate(record.selected_cover_title, input.card.renderer_id, input.productId);
   const fallbackCoverTitle = buildCoverTitleFallback(input.topic, input.productId, input.card.renderer_id, input.cover);
   if (!selectedCoverTitle || isWeakCoverTitle(selectedCoverTitle.title, input.productId)) {
     selectedCoverTitle = fallbackCoverTitle;
+  }
+  // 封面去重：LLM 重写的 cover.title 若与近期 job 撞款（"B2作文先查这25项"被反复用），
+  // 弃用，走 fallback 让 ensureCoverIdentity 兜底。subtitle 撞款就清空，让原始 subtitle 顶上。
+  // 同模板去重：cover.title/subtitle 命中模板（如"先查这""别把X丢掉"）已用 ≥2 次 → 同样弃用，
+  // 治"sub-title 反复写'别把能拿的分丢掉'"型的隐性复读。
+  if (selectedCoverTitle && input.recentTitleFingerprints) {
+    const titleTpl = titleTemplateFingerprint(selectedCoverTitle.title);
+    const subtitleTpl = selectedCoverTitle.subtitle ? titleTemplateFingerprint(selectedCoverTitle.subtitle) : '';
+    const titleTplCount = titleTpl ? (input.recentTitleFingerprints.selectedTitleTemplates.get(titleTpl) || 0) : 0;
+    const subtitleTplCount = subtitleTpl ? (input.recentTitleFingerprints.selectedTitleTemplates.get(subtitleTpl) || 0) : 0;
+    if (
+      input.recentTitleFingerprints.coverTitles.has(fingerprintTitle(selectedCoverTitle.title)) ||
+      titleTplCount >= 2
+    ) {
+      selectedCoverTitle = fallbackCoverTitle;
+    } else if (
+      selectedCoverTitle.subtitle &&
+      (input.recentTitleFingerprints.coverSubtitles.has(fingerprintTitle(selectedCoverTitle.subtitle)) ||
+       subtitleTplCount >= 2)
+    ) {
+      selectedCoverTitle = { ...selectedCoverTitle, subtitle: undefined };
+    }
   }
   let cover: NormalizedCover = input.cover;
   if (selectedCoverTitle?.title) {
@@ -1576,6 +1822,19 @@ function normalizeTitleEditorResult(
       ...cover,
       title: selectedCoverTitle.title,
       subtitle: selectedCoverTitle.subtitle || cover.subtitle,
+    };
+  }
+  // polish 阶段 LLM 重写的 cover.title 没过 ensureCoverIdentity，
+  // 历史上这里漏过去过大量"忘加 B2 写作身份词"的封面 → product_identity_mismatch。
+  // 这里再跑一次：身份词缺失 / 长度越界 / 截断半截 → 回退到 renderer fallback。
+  cover = ensureCoverIdentity(cover, input.card.renderer_id, input.productId, input.topic);
+  // selectedCoverTitle 同步成 ensureCoverIdentity 之后的最终 title/subtitle，
+  // 否则 coverTitleCandidates 里会留着那条没身份词的旧候选。
+  if (selectedCoverTitle) {
+    selectedCoverTitle = {
+      ...selectedCoverTitle,
+      title: cover.title,
+      subtitle: cover.subtitle,
     };
   }
   ({ titleCandidates, selectedTitle } = syncTitlesWithCoverCounts(titleCandidates, selectedTitle, cover));
@@ -1748,30 +2007,10 @@ function polishHumanTitleText(value: string, productId?: ProductId) {
   let title = sanitizeTitleLikeText(value);
   const isDelf = productId === 'delf_b2_writing' || /DELF|B2|写作|作文|法语B2/i.test(title);
   const isTef = productId === 'tef_tcf_canada' || /TEF|TCF|CLB|Canada/i.test(title);
-  const stuckReplacement = /口语|开口/.test(title)
-    ? '说不长'
-    : /听力|听/.test(title)
-      ? '听不懂'
-      : /CLB|分数/.test(title)
-        ? '上不去'
-        : /写作|作文|DELF|B2/.test(title)
-          ? '写不好'
-          : '没方向';
+  // 只保留长串替换。短词（卡住/拖后腿/白背/写作任务）曾在全局正则下误改
+  // “卡住的题先标记”“写作任务书”等合法标题，已移除——
+  // 这类 AI 味词由 isUnnaturalTitle 黑名单直接拒绝，不再 post-process 改写。
   const replacements: Array<[RegExp, string]> = [
-    [/资料太散/g, '资料太乱'],
-    [/总卡住/g, stuckReplacement],
-    [/卡住/g, stuckReplacement],
-    [/正在拖后腿/g, '一直在扣分'],
-    [/拖后腿/g, '扣分'],
-    [/正在白背/g, '背了也用不上'],
-    [/白背/g, '背了也用不上'],
-    [/你的DELF\s*B2格式/g, 'DELF B2格式'],
-    [/你的DELF\s*B2范文/g, 'DELF B2范文'],
-    [/你的法语B2/g, '法语B2'],
-    [/写作任务/g, '写作题型'],
-    [/三类任务/g, '三类题型'],
-    [/任务别混/g, '题型别混'],
-    [/任务这样区分/g, '题型这样分'],
     [/模板别乱背，先看结构表/g, '模板背了用不上？'],
   ];
   for (const [pattern, replacement] of replacements) title = title.replace(pattern, replacement);
@@ -1798,7 +2037,7 @@ function isWeakCommercialTitle(value: string) {
     || /先选对这一档|先看这一页|这次具体练什么/.test(value);
 }
 
-function titleImpactScore(value: string) {
+function titleImpactScore(value: string, context?: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> }): number {
   let score = 0;
   if (isUnnaturalTitle(value)) score -= 12;
   if (/写不好|说不长|听不懂|背了也用不上|一直在扣分|老丢分|扣分|写不出来|用不上|没方向/.test(value)) score += 4;
@@ -1814,11 +2053,40 @@ function titleImpactScore(value: string) {
   if (/^法语B2写作[:：].{2,}$/.test(value)) score -= 2;
   if (value.length > 20) score -= 2;
   if (value.length < 9) score -= 1;
+  // 主题锚定 + SEO 软校验：未传 context 时退回老逻辑（保持调用兼容）。
+  if (context?.seedId) {
+    if (isTitleAnchoredToSeed(value, context.seedId)) {
+      score += 2;
+      const hits = countSeedTopicHits(value, context.seedId);
+      if (hits >= 2) score += 1; // 多关键词命中再加 1
+    } else {
+      score -= 8; // 未锚定本 seed，重扣（治"通用标题"真凶）
+    }
+  }
+  if (context?.productId) {
+    const keywords = getXhsSearchKeywords(context.productId);
+    if (keywords.primary.some(kw => value.includes(kw))) score += 3;
+    if (keywords.secondary.some(kw => value.includes(kw))) score += 1;
+  }
+  // 跨 batch 已用：被选过的标题重扣（基本会被排到末尾，等于硬剔除）；
+  // 仅出现在历次候选池里的标题轻扣（保留作 backup 的可能）。
+  const fp = fingerprintTitle(value);
+  if (context?.recentSelectedTitles?.has(fp)) score -= 100;
+  else if (context?.recentAllCandidates?.has(fp)) score -= 6;
+  // 句式模板去重：治"别再 X""X，直接扣分"被反复用。
+  // 同模板在 batch 历史里出现 ≥2 次 → 当前候选再撞同模板，重扣；
+  // 出现 1 次 → 轻扣（允许偶尔复用，但不能堆叠）。
+  if (context?.recentTitleTemplates) {
+    const tpl = titleTemplateFingerprint(value);
+    const cnt = context.recentTitleTemplates.get(tpl) || 0;
+    if (cnt >= 2) score -= 10;
+    else if (cnt >= 1) score -= 4;
+  }
   return score;
 }
 
-function titleSelectionScore(value: string, context: string) {
-  return titleImpactScore(value) + titleContextFitScore(value, context);
+function titleSelectionScore(value: string, context: string, seedContext?: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> }) {
+  return titleImpactScore(value, seedContext) + titleContextFitScore(value, context);
 }
 
 function titleContextFitScore(value: string, context: string) {
@@ -1945,9 +2213,12 @@ function uniqueTitleCandidatesStrict(candidates: TitleCandidate[]) {
 }
 
 function titleMeaningKey(value: string) {
+  // 剥除产品标识（DELF B2 / TEF/TCF / CLB7）+ 功能词。
+  // 保留所有领域词（法语/B2）和场景词（写作/作文/备考/资料/模板/范文）——
+  // 之前把"写作|口语|听力"也剥掉，导致 "B2写作模板" 和 "B2口语模板" 被判同义。
   return polishHumanTitleText(value)
     .replace(/DELF\s*B2|TEF\s*\/\s*TCF|TEF|TCF|CLB\s*7|Canada/gi, '')
-    .replace(/法语|B2|写作|作文|备考|资料|模板|范文|这张|这份|先看|先别|别再|的人|一下/g, '')
+    .replace(/这张|这份|先看|先别|别再|的人|一下/g, '')
     .replace(/[\s，。；：、！？!?·《》“”"'（）()]/g, '')
     .toLowerCase();
 }
@@ -2379,7 +2650,7 @@ function buildExplanationChoiceTitle(identity: string, usage: string, text: stri
 // 长单位必须排在单字单位前面，否则 leftmost-first 的 regex 会先吃掉 "类/组"，
 // 把 "大" 字留在原文，对齐结果就破了。
 const SECTION_LEVEL_UNITS = new Set(['类', '组', '大类', '大组', '大主题', '大模块', '大方向', '大话题', '大板块', '大场景']);
-const COVER_COUNT_CLAIM_PATTERN = /(\d+)\s*(大主题|大模块|大方向|大话题|大板块|大场景|大类|大组|句|个|条|项|组|类)/g;
+const COVER_COUNT_CLAIM_PATTERN = /(\d+)\s*(大主题|大模块|大方向|大话题|大板块|大场景|大类|大组|大步骤|大要点|大关键|大错误|句|个|条|项|组|类|步|招|要点|关键|错误|阶段|维度|方向|板块|章节)/g;
 const NOTE_ITEM_COUNT_PATTERN = /(\d+)\s*(大主题|大模块|大方向|大话题|大板块|大场景|大类|大组|句|个|条|项|组)/g;
 
 function scrubCheapClaims(text: string) {
@@ -2460,6 +2731,21 @@ function scrubCheapClaims(text: string) {
     .replace(/扣\s*\d+\s*分/g, '容易丢分')
     .replace(/\d+\s*%/g, '不少')
     .replace(/百分之\d*/g, '不少')
+    .replace(/一对一/g, '针对性')
+    .replace(/直播课/g, '系统讲解')
+    .replace(/老师批改/g, '自检清单')
+    .replace(/无限答疑/g, '常见问题汇总')
+    .replace(/陪学/g, '辅助')
+    .replace(/督学/g, '规划')
+    .replace(/课时/g, '内容')
+    .replace(/学习权利/g, '使用说明')
+    .replace(/考前[^。；\n，]{0,20}就能/g, '考前按步骤复盘，更稳')
+    .replace(/拿高分/g, '得分更稳')
+    .replace(/高分句/g, '常用句')
+    .replace(/立刻升级/g, '会更稳')
+    .replace(/保证提分/g, '提分方向更清晰')
+    .replace(/稳拿高分/g, '得分更稳')
+    .replace(/提分的?关键/g, '重要一环')
     .replace(/★+/g, '')
     .replace(/[，、。；]{2,}/g, '，')
     .replace(/\s{2,}/g, ' ')
@@ -2521,6 +2807,7 @@ function ensureCoverIdentity(
   cover: ReturnType<typeof normalizeDenseDirectoryCover>,
   renderer: ProductCard['renderer_id'],
   productId: ProductId,
+  topic?: MigratedTopic,
 ) {
   const spec = getCoverTemplateSpec(renderer);
   const family = spec?.family;
@@ -2535,18 +2822,28 @@ function ensureCoverIdentity(
     .replace(/\bsubj\.?\b/gi, '虚拟式')
     .replace(/\bcond\.?\b/gi, '条件式');
   const sanitizeCoverText = (value: string) => scrubCheapClaims(sanitizePublicText(value));
+  // 跨商品身份污染兜底：LLM 在 cover.sections 里偶发出现他商品考试名（如 DELF B2
+  // 封面被审校 LLM 改写成 "TEF Canada" 之类），final_gate 会判 product_identity_mismatch。
+  // 用 product profile 的 forbiddenIdentityPattern 替换成对应 identity，比 throw 触发
+  // repair 更稳，避免连环重试烧 token。
+  const profile = getProductPromptProfile(productId);
+  const stripForbiddenIdentity = (value: string) => {
+    if (!value) return value;
+    return value.replace(profile.forbiddenIdentityPattern, profile.shortIdentity);
+  };
+  const sanitizeSectionText = (value: string) => stripForbiddenIdentity(sanitizeCoverText(value));
   const sanitizeCoverTitle = (value: string) => sanitizeTitleLikeText(normalizeFrenchIdentity(value));
   const sections = spec ? rawSections.map(section => ({
     ...section,
-    heading: sanitizeCoverText(section.heading),
-    side_label: sanitizeCoverText(section.side_label || ''),
+    heading: sanitizeSectionText(section.heading),
+    side_label: sanitizeSectionText(section.side_label || ''),
     items: section.items.map(item => ({
       ...item,
-      primary: clipVisual(explainShorthand(sanitizeCoverText(item.primary)), spec.maxPrimaryVisualLength),
+      primary: clipVisual(explainShorthand(sanitizeSectionText(item.primary)), spec.maxPrimaryVisualLength),
       secondary: item.secondary
-        ? clipVisual(explainShorthand(sanitizeCoverText(item.secondary)), spec.maxSecondaryVisualLength)
+        ? clipVisual(explainShorthand(sanitizeSectionText(item.secondary)), spec.maxSecondaryVisualLength)
         : undefined,
-      note: item.note ? sanitizeCoverNote(item.note) : item.note,
+      note: item.note ? sanitizeCoverNote(stripForbiddenIdentity(item.note)) : item.note,
     })),
   })) : rawSections;
   const itemCount = sections.reduce((sum, section) => sum + section.items.length, 0);
@@ -2555,6 +2852,15 @@ function ensureCoverIdentity(
   let subtitle = cover.subtitle.length >= 8
     ? clip(alignCoverCountClaims(sanitizeCoverTitle(cover.subtitle), itemCount, sectionCount), 24)
     : '';
+  // autofix 兜底：align 之后若仍触发 cover_count_mismatch（LLM 写的数字单位在
+  // pattern 之外，或对齐后破坏 DELF 客观事实），直接把"N+单位"整段从 title/subtitle
+  // 删掉。比如"B2写作3大题型速查"→"B2写作题型速查"。比 fallback 更保原标题语义。
+  if (hasCoverCountMismatch(title, itemCount, sectionCount)) {
+    title = stripCoverCountClaims(title);
+  }
+  if (subtitle && hasCoverCountMismatch(subtitle, itemCount, sectionCount)) {
+    subtitle = clip(stripCoverCountClaims(subtitle), 24);
+  }
   const hasOwnIdentity = hasRequiredProductIdentity(productId, title) && !hasForbiddenProductIdentity(productId, title);
   // 拒绝被 clip 截断后留下 `…` 的半截标题：说明上游 LLM 输出过长，封面不该
   // 留这种半句话。fallback 来自 profile，能给出完整的"商品 + 知识体系"标题。
@@ -2562,8 +2868,31 @@ function ensureCoverIdentity(
   if (hasOwnIdentity && !looksTruncated && title.length >= 8 && title.length <= 18) {
     return { ...cover, title, subtitle, sections };
   }
-  title = getRendererCoverFallbackTitle(productId, renderer, family);
+  // 优先用 topic-aware fallback（每次都因 seed 主题不同而不同，根治多 job 撞款）；
+  // 若 topic-aware 标题仍不通过身份/长度校验，退回 renderer 静态映射兜底。
+  if (topic) {
+    const topicFallback = buildCoverTitleFallback(topic, productId, renderer, cover).title;
+    const fallbackHasIdentity = hasRequiredProductIdentity(productId, topicFallback) && !hasForbiddenProductIdentity(productId, topicFallback);
+    if (fallbackHasIdentity && topicFallback.length >= 8 && topicFallback.length <= 18) {
+      title = topicFallback;
+    } else {
+      title = getRendererCoverFallbackTitle(productId, renderer, family);
+    }
+  } else {
+    title = getRendererCoverFallbackTitle(productId, renderer, family);
+  }
   return { ...cover, title, subtitle, sections };
+}
+
+// stripCoverCountClaims：把"N + 单位"整段从标题里删掉，比 align 更保守。
+// 用于 alignCoverCountClaims 仍触发 mismatch 时（LLM 写的数字是 DELF 客观事实，
+// 不应被改写）。删数字保语义：标题意思不变，只是不带数字承诺。
+function stripCoverCountClaims(text: string) {
+  return text
+    .replace(COVER_COUNT_CLAIM_PATTERN, '')
+    .replace(/[，,]\s*[，,]/g, '，')
+    .replace(/^[，,、\s]+|[，,、\s]+$/g, '')
+    .replace(/\s{2,}/g, ' ');
 }
 
 function getRendererCoverFallbackTitle(productId: ProductId, renderer: ProductCard['renderer_id'], family?: ContentShape) {
@@ -2661,6 +2990,13 @@ function getCoreIssues(
   // 代码层不再做硬限，避免 LLM 偶尔超长就被整条 job 干掉。
   // 代码/混合模板：CSS clamp + line-clamp 兜底，但仍校验避免 LLM 写成段落。
   if (spec && spec.renderMode !== 'image_to_image' && cover.sections.some(section => section.items.some(item => visualLength(item.primary) > spec.maxPrimaryVisualLength || visualLength(item.secondary || '') > spec.maxSecondaryVisualLength))) issues.push('cover_item_too_long');
+  // 截断检测：clipVisual 兜底后仍可能留下「→」「，」「。」等结尾的半截话
+  // （LLM 写到一半被切，或 audit LLM-corrections 直接写入未走 clip）。
+  // 这种半截条目直接发笔记会被读者一眼看出来，硬挡。
+  const TRAILING_TRUNCATION = /[→，,、；;:：]$/;
+  if (cover.sections.some(section => section.items.some(item => TRAILING_TRUNCATION.test(item.primary) || TRAILING_TRUNCATION.test(item.secondary || '')))) {
+    issues.push('cover_item_truncated');
+  }
   if (cover.title.length < 8 || cover.title.length > 18) issues.push('cover_title_length_invalid');
   if (cover.subtitle && (cover.subtitle.length < 8 || cover.subtitle.length > 24)) issues.push('cover_subtitle_length_invalid');
   if (
@@ -2698,7 +3034,7 @@ function getCoreIssues(
   if (spec?.family === 'phrase' && cover.sections.some(section => section.items.some(item => !/[A-Za-zÀ-ÿ]/.test(item.primary) || !item.secondary))) issues.push('french_chinese_pair_required');
   if (spec?.family === 'flashcard' && cover.sections.some(section => section.items.some(item => !/[A-Za-zÀ-ÿ]/.test(item.primary) || !item.secondary || !item.note))) issues.push('flashcard_fields_incomplete');
   if (spec?.family === 'document' && cover.sections.flatMap(section => section.items)
-    .filter(item => /[A-Za-zÀ-ÿ]{8,}/.test(`${item.primary} ${item.secondary || ''} ${item.note || ''}`)).length < 2) issues.push('document_examples_missing');
+    .filter(item => /[A-Za-zÀ-ÿ]{8,}/.test(`${item.primary} ${item.secondary || ''} ${item.note || ''}`)).length < 1) issues.push('document_examples_missing');
   if ((spec?.family === 'offer' || spec?.family === 'roadmap') && /一对一|直播课|老师批改|无限答疑|陪学|督学|课时|学习权利/.test(publicText)) issues.push('unsupported_service_claim');
   if ((spec?.family === 'experience' || spec?.family === 'pain') && /我.{0,12}(上岸|通过|考到|拿到|亲测|亲身|用了\d+|学了\d+)/.test(publicText)) issues.push('fabricated_first_person_experience');
   if (spec?.family === 'document' && /官方真题|历年真题|原题|真题原文/.test(publicText)) issues.push('unverified_exam_source');
@@ -2727,6 +3063,12 @@ function classifyCoreIssue(issue: string): 'block' | 'autofix' | 'warn' {
     // as warn. Keep the check firing so it is visible, but do not block.
     'unsupported_fixed_time_advice',
     'unsupported_exam_official_rule',
+    // 与 classifyEditorialIssue 对齐：caption_ai_cliche 是写作风格警告，
+    // 不应作为 final_gate 的 block。之前 core 没列入 warn 集，导致
+    // editorial 当 warn、core 当 block，分类不一致——LLM 偶尔写出"不是 X 而是 Y"
+    // 句式就直接挂掉整个 job，比它实际造成的伤害大得多。
+    'caption_ai_cliche',
+    'editorial_low_quality_phrase',
   ]);
   const autofixIssues = new Set([
     'neutral_french_misclassified_as_oral',
@@ -2750,7 +3092,9 @@ function getEditorialIssues(
   if (pages.length < 4 || pages.length > 6) issues.push('inner_page_count_invalid');
   if (pages.some(page => page.page_title.length < 8 || page.page_title.length > 24)) issues.push('inner_page_title_invalid');
   if (pages.some(page => page.bullets.length < 3)) issues.push('inner_page_content_too_thin');
-  if (caption.length < 260 || caption.length > 440) issues.push('caption_length_invalid');
+  // schema 模式 caption 字段化拼装，字数天然偏短（180-300）；阈值下调避免误报。
+  const captionMin = captionSchemaEnabled() ? 180 : 260;
+  if (caption.length < captionMin || caption.length > 440) issues.push('caption_length_invalid');
   if (seoKeywords[0] && !caption.slice(0, 100).includes(seoKeywords[0])) issues.push('core_keyword_missing_from_opening');
   const editorialText = `${caption} ${pages.map(page => `${page.page_title} ${page.lead} ${page.bullets.join(' ')}`).join(' ')}`;
   if (hasForbiddenProductIdentity(productId, editorialText)) issues.push('product_identity_mismatch');

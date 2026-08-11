@@ -17,6 +17,7 @@ import {
 import type { ProductFacts } from '@/types/content-planning';
 import type { ProductId } from '@/types/data';
 import { recordSeedUsage } from '@/lib/seed-usage-store';
+import { recordTitleUsage } from '@/lib/title-usage-store';
 
 let activeRunner: string | null = null;
 
@@ -162,6 +163,18 @@ async function runOneJob(
   });
   await recordSeedUsage({ productId: job.product_id, cardId: card.id, draft: outcome.draft })
     .catch(cause => console.error('record seed usage failed:', cause));
+  // 跨 batch 标题去重库：成功后记录本 job 的 selected title + 全部候选 + cover title/subtitle。
+  // 失败不阻塞主流程——下一个 job 仍能成功，只是少了一条去重参考。
+  const titleCandidates = outcome.draft.title_candidates || [];
+  await recordTitleUsage({
+    productId: job.product_id,
+    seedId: job.topic.seed_id || '',
+    cardId: card.id,
+    title: outcome.draft.selected_title || '',
+    candidates: titleCandidates.map(item => item.title).filter(Boolean),
+    coverTitle: outcome.draft.cover.title || '',
+    coverSubtitle: outcome.draft.cover.subtitle || '',
+  }).catch(cause => console.error('record title usage failed:', cause));
 }
 
 function emptyUsage(): AiUsageSummary {
