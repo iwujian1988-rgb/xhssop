@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState } from 'react';
 import ReferenceCoverRenderer from '@/components/templates/ReferenceCoverRenderer';
-import { useAutoFitScale } from '@/components/templates/useAutoFitScale';
 import { downloadImageUrl, exportAllAsZip, exportNodeAsPng, type ExportItem } from '@/lib/export-image';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { buildReferenceImagePrompt, referenceImageNegativePrompt } from '@/lib/reference-image-prompt';
 import type { CompetitorCreativeCard, GeneratedInnerPage, ReferenceDrivenDraft } from '@/types/reference-workflow';
+import { InnerPageRenderer } from '@/components/templates/inner-pages/InnerPageRenderer';
 
 export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; presetCoverImageUrl?: string | null }) {
   const coverNodeRef = useRef<HTMLDivElement | null>(null);
@@ -168,16 +168,6 @@ function ReferenceImageGenerator({ draft, card, onImageReady }: { draft: Referen
 export function InnerPagePreview({ page, registerNode }: { page: GeneratedInnerPage; registerNode?: (node: HTMLElement | null) => void }) {
   const nodeRef = useRef<HTMLElement | null>(null);
   const [busy, setBusy] = useState(false);
-  // Real bug caught by browser testing: a character-count-tier heuristic for
-  // font size (like the old per-template heuristics) still let bullets-heavy
-  // pages overflow the fixed aspect-ratio card by up to 200px, hidden by
-  // overflow-hidden. Replaced with the same measure-and-shrink loop used by
-  // the cover templates, applied directly to this fixed-height card.
-  const fingerprint = `${page.page_title}|${page.lead}|${page.bullets.join('|')}`;
-  // Floor is lower than cover templates because inner pages can be denser
-  // (6 long bullets + lead + title in a fixed 3:4 card). Spacing must also
-  // ride --fit-scale; Tailwind mt-* / space-y-* stay fixed and defeat the fit.
-  const fitRef = useAutoFitScale<HTMLElement>([fingerprint], { min: 0.4, max: 1, step: 0.025 });
 
   async function handleExport() {
     if (!nodeRef.current) return;
@@ -190,17 +180,10 @@ export function InnerPagePreview({ page, registerNode }: { page: GeneratedInnerP
   }
 
   return <div>
-    <article
-      ref={node => { nodeRef.current = node; fitRef.current = node; registerNode?.(node); }}
-      className="aspect-[3/4] overflow-hidden border border-neutral-200 bg-[#fffefb] shadow-sm flex flex-col"
-      style={{ containerType: 'inline-size', padding: 'calc(8% * var(--fit-scale, 1))' } as React.CSSProperties}
-    >
-      <div className="flex flex-shrink-0 items-center justify-between font-bold text-neutral-400" style={{ fontSize: 'clamp(9px, calc(2.4cqw * var(--fit-scale, 1)), 11px)' }}><span>P{page.page_no}</span><span>{page.page_type}</span></div>
-      <h3 className="flex-shrink-0 font-black leading-tight" style={{ marginTop: 'calc(1.25rem * var(--fit-scale, 1))', fontSize: 'clamp(14px, calc(6.2cqw * var(--fit-scale, 1)), 38px)' }}>{page.page_title}</h3>
-      <div className="h-px flex-shrink-0 bg-neutral-900" style={{ marginTop: 'calc(0.75rem * var(--fit-scale, 1))' }} />
-      <p className="flex-shrink-0 font-semibold leading-relaxed text-neutral-700" style={{ marginTop: 'calc(1rem * var(--fit-scale, 1))', fontSize: 'clamp(10px, calc(4.05cqw * var(--fit-scale, 1)), 21px)' }}>{page.lead}</p>
-      <ul className="flex-shrink-0 leading-relaxed text-neutral-800" style={{ marginTop: 'calc(1.25rem * var(--fit-scale, 1))', fontSize: 'clamp(10px, calc(4.05cqw * var(--fit-scale, 1)), 21px)' }}>{page.bullets.slice(0, 6).map((bullet, index) => <li className="grid grid-cols-[24px_1fr] gap-2" style={{ marginBottom: 'calc(0.75rem * var(--fit-scale, 1))' }} key={`${bullet}-${index}`}><span className="font-black text-red-600">{String(index + 1).padStart(2, '0')}</span><span>{bullet}</span></li>)}</ul>
-    </article>
+    <InnerPageRenderer
+      page={page}
+      registerNode={(node) => { nodeRef.current = node; registerNode?.(node); }}
+    />
     <button className="mt-2 w-full border border-neutral-300 bg-white px-2 py-1.5 text-xs font-bold text-neutral-700 disabled:opacity-50" disabled={busy} onClick={handleExport}>{busy ? '导出中...' : '单独导出这张'}</button>
   </div>;
 }

@@ -17,7 +17,8 @@ import { getAvoidedLowTrafficKeywords, getTitleReferenceKeywords, getXhsSearchKe
 import { pickFormulasForTriggerTypes, type TitleFormula } from '@/lib/title-formulas';
 import { getSeedTopicKeywords, isTitleAnchoredToSeed, countSeedTopicHits } from '@/lib/seed-topic-anchor';
 import { fingerprintTitle, getRecentTitleFingerprints, titleTemplateFingerprint, type RecentTitleFingerprints } from '@/lib/title-usage-store';
-import { assembleCaption, normalizeCaptionParts, type CaptionParts } from '@/lib/caption-schema';
+import { assembleCaption, normalizeCaptionParts, stableHash, pickBySeedN, pickBySeed, pickCaptionTemplate, type CaptionParts } from '@/lib/caption-schema';
+import skillData from '@/lib/static-data';
 import type { ProductId } from '@/types/data';
 import type {
   ContentShape,
@@ -552,19 +553,19 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   });
 
   let editorial = asRecord(editorialResult);
-  let innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages), input.evidence);
-  let caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, coverTitle: cover.title || '' });
+  let innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages, `${input.card.id}|${input.topic.id}`), input.evidence);
+  let caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, topicId: input.topic.id, coverTitle: cover.title || '' });
   const seoKeywords = buildSeoKeywords(input.productId, input.topic);
-  let tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`);
+  let tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`, input.card.id);
   innerPages = ensureMinimumInnerPages(innerPages, cover, input.productId);
   caption = ensurePublishableCaption(caption, seoKeywords[0], cover);
   let editorialWarnings = getEditorialIssues(innerPages, caption, seoKeywords, input.evidence, input.productId).filter(issue => !isBlockingEditorialIssue(issue));
   const editorialIssues = getEditorialIssues(innerPages, caption, seoKeywords, input.evidence, input.productId).filter(isBlockingEditorialIssue);
   if (editorialIssues.length) {
-    editorial = asRecord(await repairEditorialOutput({ brief, selectedTitle, cover, evidence: input.evidence, issues: editorialIssues, seoKeywords }));
-    innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages), input.evidence);
-    caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, coverTitle: cover.title || '' });
-    tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`);
+    editorial = asRecord(await repairEditorialOutput({ brief, selectedTitle, cover, evidence: input.evidence, issues: editorialIssues, seoKeywords, cardId: input.card.id, topicId: input.topic.id }));
+    innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages, `${input.card.id}|${input.topic.id}`), input.evidence);
+    caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, topicId: input.topic.id, coverTitle: cover.title || '' });
+    tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`, input.card.id);
     innerPages = ensureMinimumInnerPages(innerPages, cover, input.productId);
     caption = ensurePublishableCaption(caption, seoKeywords[0], cover);
     const remainingIssues = getEditorialIssues(innerPages, caption, seoKeywords, input.evidence, input.productId);
@@ -594,7 +595,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     throw new Error(`法语与考试事实审校未通过：${audited.summary.issues.join('；')}`);
   }
   cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(audited.cover), input.card.renderer_id, input.productId, input.topic));
-  innerPages = normalizePageEvidence(normalizePages(audited.innerPages), input.evidence);
+  innerPages = normalizePageEvidence(normalizePages(audited.innerPages, `${input.card.id}|${input.topic.id}`), input.evidence);
   caption = ensurePublishableCaption(scrubCheapClaims(sanitizePublicText(audited.caption)), seoKeywords[0], cover);
   // 跨 batch 标题去重：取本 seed 最近 30 天被选过的标题指纹 + 候选池指纹。
   // 单并发 batch 内 IO 开销可忽略；失败时不阻塞主流程（视为没有历史）。
@@ -894,32 +895,100 @@ function captionSchemaEnabled(): boolean {
 // schema 模式优先用 caption_parts（拼装）；LLM 漏返字段时退回 legacy caption 路径，不挂 job。
 function resolveCaptionFromEditorial(
   editorial: Record<string, unknown>,
-  fallback: { productId: ProductId; cardId: string; coverTitle: string },
+  fallback: { productId: ProductId; cardId: string; topicId?: string; coverTitle: string },
 ): string {
   if (captionSchemaEnabled() && editorial.caption_parts && typeof editorial.caption_parts === 'object') {
-    const parts: CaptionParts = normalizeCaptionParts(editorial.caption_parts, fallback);
+    const parts = normalizeCaptionParts(editorial.caption_parts, fallback);
     return scrubCheapClaims(assembleCaption(parts, fallback.cardId));
   }
   return scrubCheapClaims(sanitizePublicText(asString(editorial.caption)));
 }
 
-// schema 字段约束——正向描述（"必须含 X"），不是负向禁止。
-// 比黑名单更有效：LLM 知道往哪写，而不是只知道别写啥。
-const CAPTION_SCHEMA_FIELD_PROMPT = `caption_parts 字段约束（强制，缺一不可）：
-- hook: 一句话钩子，8-25字，必须含数字或反差句式（如"这5个"、"还在临时拼？"、"别再硬背"）
+// ============ Caption 多模板 prompt（list / story / contrast）============
+
+// 共通约束：所有 3 个模板都必须遵守。
+const CAPTION_SCHEMA_COMMON_RULES = `共通约束（强制）：
+- 所有字段禁止"帮你"、"这套"、"按部就班"、"问题在于"、"通过...才能"、"综上所述"、"即查即用"
+- cta 禁止"使用时先看封面总览"、"这样复盘更具体"、"备考会更有条理"等模板化尾句
+- 核心搜索词必须自然嵌入到 hook 或 scenario/story/wrong 前 80 字内（SEO 硬约束）`;
+
+// list 模板（清单体）：N 个 X、这 X 类、N 步
+const CAPTION_LIST_PROMPT = `本篇用【清单体 list】caption_parts 字段（强制，缺一不可）：
+- hook: 一句话钩子，8-25字，必须含数字或反差句式（如"这5个"、"还在临时拼？"）
 - scenario: 场景化描述，16-48字，必须含"我/同学/考前/练习时/上次/考场"等场景化第一人称词
 - steps: 3-5个具体步骤/要点，每个6-36字，必须以动词或法语短语开头，禁止以"使用时"开头
 - french_example: 一个具体法语例子（fr 5-15 词）+ 中文翻译（zh 4-40字）
-- cta: 行动号召，4-16字，禁止"使用时先看封面总览"、"这样复盘更具体"、"备考会更有条理"等模板化尾句
-禁止字段里出现"帮你"、"这套"、"按部就班"、"问题在于"、"通过...才能"、"综上所述"、"按部就班"、"即查即用"。`;
+- cta: 行动号召，4-16字
 
-const CAPTION_SCHEMA_FEW_SHOT = `caption_parts 写作示例（学习这种"具体 + 第一人称 + 法语例子"的语感，禁止复制原句）：
+清单体示例（学习语感，禁止复制）：
+{"template":"list","hook":"B2 写作开头结尾还在临时拼？这5个表达直接套","scenario":"我自己考前一周才发现，开头结尾的固定表达其实就那么几类，按场景分好就行","steps":["正式信开头：Madame, Monsieur + Je me permets de vous écrire","回复广告：Suite à votre annonce","投诉：J'ai l'honneur de vous adresser"],"french_example":{"fr":"Je me permets de vous écrire pour vous demander...","zh":"我写信是想请您..."},"cta":"考前1周过一遍这些表达"}`;
 
-示例1（正式信开头结尾）：
-{"hook":"B2 写作开头结尾还在临时拼？这5个表达直接套","scenario":"我自己考前一周才发现，开头结尾的固定表达其实就那么几类，按场景分好就行","steps":["正式信开头：Madame, Monsieur + Je me permets de vous écrire","回复广告：Suite à votre annonce","投诉：J'ai l'honneur de vous adresser"],"french_example":{"fr":"Je me permets de vous écrire pour vous demander...","zh":"我写信是想请您..."},"cta":"考前1周过一遍这些表达"}
+// story 模板（故事体）：痛点前置、个人经历
+const CAPTION_STORY_PROMPT = `本篇用【故事体 story】caption_parts 字段（强制，缺一不可）：
+- hook: 反思/提炼句，8-22字，从故事里提取一句结论（不要重复 scenario 类的开头）
+- story: 第一人称真实故事，60-120字，必须含具体时间/场景（"上次模考"、"昨晚"、"考前一周"等），讲清楚遇到什么问题、怎么发现、怎么解决
+- takeaways: 2-3 个具体行动点，每个8-24字，必须以动词开头，禁止抽象总结（如"按部就班"）
+- french_example: 一个具体法语例子（fr 5-15 词）+ 中文翻译（zh 4-40字）
+- cta: 行动号召，4-16字
 
-示例2（主题词）：
-{"hook":"B2 写作主题词总背不全？按5大话题分类记","scenario":"上次写作遇到环境题，脑子里只有protéger一个词，凑不出200字","steps":["环境：le développement durable, la pollution","科技：les réseaux sociaux, l'IA","教育：la pédagogie, l'éducation"],"french_example":{"fr":"Il est urgent de protéger notre environnement.","zh":"保护环境迫在眉睫。"},"cta":"考前按话题过一遍，比硬背单词强"}`;
+故事体示例（学习语感，禁止复制）：
+{"template":"story","hook":"考前一周才发现，开头结尾的固定表达其实就那么几类","story":"上次模考我卡在 50 分钟还没写完开头，才发现自己开头结尾都是临场拼的。后来把正式信、议论文、投稿这 3 类的开头结尾各背 2 套，写时直接套，速度立刻提上来了。","takeaways":["按文体各备 2 套开头结尾","写前 30 秒判断文体","固定结构比临场拼快 5 分钟"],"french_example":{"fr":"Je me permets de vous écrire pour vous demander...","zh":"我写信是想请您..."},"cta":"考前1周过一遍这些表达"}`;
+
+// contrast 模板（对比体）：错误 vs 正确
+const CAPTION_CONTRAST_PROMPT = `本篇用【对比体 contrast】caption_parts 字段（强制，缺一不可）：
+- hook: 直接抛出对比主题，8-22字。可以是问句、陈述或反问，但必须自然口语化
+  · ✅ 好示范："B2 写作分数卡住？多半是连接词用错了"、"议论文丢分，往往不在词汇量"、"考前背的高级词，考场用不上几个"
+  · ❌ 禁用句式（命中 AI 套话检测，会让笔记被算法降权）：
+    - "不是X，而是Y" / "不是X而是Y"
+    - "别只看X，更要看Y" / "不能只看X，更要看Y"
+    - "不在于X，而在于Y"
+    - 任何含"问题出在"、"综上所述"、"总的来说"的句式
+- wrong: 常见错误做法，20-50字，描述一个具体的、考生真的会犯的错（不要写"很多同学都会犯"这种空话）
+- right: 正确做法，20-50字，给出具体可执行的替代方案
+- transitions: 2-3 个关键差别点，每个6-24字，必须以动词或对比连词开头
+- french_example: 一个具体法语例子（fr 5-15 词）+ 中文翻译（zh 4-40字）
+- cta: 行动号召，4-16字
+
+对比体示例（学习语感，禁止复制）：
+{"template":"contrast","hook":"B2 写作分数卡住？多半是连接词用错了","wrong":"凭感觉挑 bien que 和 même si，结果语域不对，逻辑链也松散","right":"书面用 bien que + 虚拟式，口语用 même si + 直陈式，按场景套用","transitions":["书面语域优先 bien que","口语语域用 même si","替换时同步调整语式"],"french_example":{"fr":"Bien qu'il soit tard, il continue à travailler.","zh":"虽然很晚了，他还在继续工作。"},"cta":"按场景练熟这些表达"}`;
+
+function getCaptionTemplatePrompt(template: 'list' | 'story' | 'contrast'): string {
+  if (template === 'story') return CAPTION_STORY_PROMPT;
+  if (template === 'contrast') return CAPTION_CONTRAST_PROMPT;
+  return CAPTION_LIST_PROMPT;
+}
+
+// output_schema：不同模板对应不同字段 shape。
+const CAPTION_LIST_SCHEMA = {
+  hook: '一句话钩子，8-25字，含数字或反差句式',
+  scenario: '场景化描述，16-48字，含"我/同学/考前/练习时"',
+  steps: ['具体步骤1', '具体步骤2', '具体步骤3'],
+  french_example: { fr: '法语原句 5-15 词', zh: '中文翻译 4-40字' },
+  cta: '行动号召 4-16字',
+};
+
+const CAPTION_STORY_SCHEMA = {
+  hook: '反思句，8-22字，从故事里提炼',
+  story: '第一人称故事 60-120字，含具体时间场景',
+  takeaways: ['行动点1', '行动点2'],
+  french_example: { fr: '法语原句 5-15 词', zh: '中文翻译 4-40字' },
+  cta: '行动号召 4-16字',
+};
+
+const CAPTION_CONTRAST_SCHEMA = {
+  hook: '对比主题句 8-22字，禁用"不是X而是Y"和"别只看X更要看Y"',
+  wrong: '错误做法 20-50字',
+  right: '正确做法 20-50字',
+  transitions: ['差别点1', '差别点2'],
+  french_example: { fr: '法语原句 5-15 词', zh: '中文翻译 4-40字' },
+  cta: '行动号召 4-16字',
+};
+
+function getCaptionSchemaShape(template: 'list' | 'story' | 'contrast') {
+  if (template === 'story') return CAPTION_STORY_SCHEMA;
+  if (template === 'contrast') return CAPTION_CONTRAST_SCHEMA;
+  return CAPTION_LIST_SCHEMA;
+}
 
 function generateEditorialOutput(input: ComposeDraftInput, context: {
   brief: UnifiedContentBrief;
@@ -932,6 +1001,9 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
   const titleKeywords = getTitleReferenceKeywords(input.productId);
   const examFactRules = getExamFactRules(input.productId);
   const useSchema = captionSchemaEnabled();
+  // 多模板分发：按 (cardId, topicId) hash 强制选 1 个模板，让 LLM 不能自由切换。
+  // 这样 15 篇 caption 在结构上天然分布：list/story/contrast 各 5 篇左右。
+  const forcedTemplate = pickCaptionTemplate(`${input.card.id}|${input.topic.id}`);
   return callOpenAICompatibleJson([
     {
       role: 'system',
@@ -941,10 +1013,10 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
         '生成4-6张真正给用户看的内页，以及一篇可直接发布的正文。内页不是把正文切片粘贴。',
         '每张内页必须有具体知识、例子、对照、步骤或练习；禁止写幕后设计意图。',
         useSchema
-          ? '正文按 caption_parts 5 个字段（hook/scenario/steps/french_example/cta）结构化输出，由系统拼装成最终长文；字段约束见下。'
+          ? `正文按 caption_parts 字段结构化输出（模板由系统按本篇 seed 强制指定），由系统拼装成最终长文；字段约束见下。template 字段必须等于系统指定的值，不得自由切换。`
           : '正文控制在280-420个中文字符，图片已经承载干货，正文只补充使用方法、关键提醒和自然商品承接。',
-        useSchema ? CAPTION_SCHEMA_FIELD_PROMPT : '',
-        useSchema ? CAPTION_SCHEMA_FEW_SHOT : '',
+        useSchema ? getCaptionTemplatePrompt(forcedTemplate) : '',
+        useSchema ? CAPTION_SCHEMA_COMMON_RULES : '',
         '商品事实只能来自证据；正确科普、法语例句、练习可以原创。公开文案不讨论AI补充内容是否收录在商品里，既不声称包含，也不声明不包含。',
         'AI原创科普以稳妥常识和法语用法为主，不编造现实数据、比例、年份或未经证据支持的具体地区损失与医学因果。',
         '逐条核对法语语法、搭配、语域和适用场景；不确定就删除。不要把学习建议描述成官方强制规则。',
@@ -985,11 +1057,8 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
             page_title: '', lead: '', bullets: [], source_ids: [],
           }],
           caption_parts: {
-            hook: '一句话钩子，8-25字，含数字或反差句式',
-            scenario: '场景化描述，16-48字，含"我/同学/考前/练习时"',
-            steps: ['具体步骤1', '具体步骤2', '具体步骤3'],
-            french_example: { fr: '法语原句 5-15 词', zh: '中文翻译 4-40字' },
-            cta: '行动号召 4-16字',
+            template: forcedTemplate,
+            ...getCaptionSchemaShape(forcedTemplate),
           },
           tags: ['#法语学习'],
         } : {
@@ -1130,8 +1199,12 @@ function selectBestTitlePerType(candidates: TitleCandidate[], seedContext?: { se
   return [...selected, ...remaining].slice(0, 5);
 }
 
-function normalizePages(value: unknown): GeneratedInnerPage[] {
+function normalizePages(value: unknown, styleSeed?: string): GeneratedInnerPage[] {
   if (!Array.isArray(value)) return [];
+  const STYLES: NonNullable<GeneratedInnerPage['style_variant']>[] = [
+    'lined-notebook', 'grid-notebook', 'dot-notebook',
+    'sticky-note', 'draft-paper', 'loose-leaf', 'kraft-paper',
+  ];
   return value.map((item, index) => {
     const input = asRecord(item);
     const validTypes = ['knowledge_list', 'example_explain', 'wrong_right', 'steps', 'product_bridge'];
@@ -1140,13 +1213,20 @@ function normalizePages(value: unknown): GeneratedInnerPage[] {
     const rawBullets = Array.isArray(input.bullets)
       ? dedupeBullets(input.bullets.map(item => normalizeBulletText(sanitizePublicText(asString(item)))).filter(Boolean)).slice(0, 7)
       : [];
+    const pageNo = Number(input.page_no) || index + 2;
+    // 每页随机一个笔记本样式：seed = (cardId|topicId)-page-N，保证同 job 重跑稳定、
+    // 跨 job/跨页分布不同。
+    const style_variant = styleSeed
+      ? STYLES[stableHash(`${styleSeed}-page-${pageNo}`) % STYLES.length]
+      : undefined;
     return {
-      page_no: Number(input.page_no) || index + 2,
+      page_no: pageNo,
       page_type: normalizedPageType,
       page_title: normalizeInnerPageTitle(sanitizePublicText(asString(input.page_title)), index),
       lead: clip(sanitizePublicText(asString(input.lead)), 90),
       bullets: normalizePageBullets(normalizedPageType, rawBullets),
       source_ids: Array.isArray(input.source_ids) ? input.source_ids.map(asString).filter(Boolean).slice(0, 10) : [],
+      ...(style_variant ? { style_variant } : {}),
     };
   }).filter(page => page.page_title).slice(0, 6);
 }
@@ -1354,10 +1434,13 @@ async function repairEditorialOutput(input: {
   evidence: ReturnType<typeof retrieveProductFacts>;
   issues: string[];
   seoKeywords: string[];
+  cardId: string;
+  topicId: string;
 }) {
   const profile = getProductPromptProfile(input.brief.product_id);
   const examFactRules = getExamFactRules(input.brief.product_id);
   const useSchema = captionSchemaEnabled();
+  const forcedTemplate = pickCaptionTemplate(`${input.cardId}|${input.topicId}`);
   return callOpenAICompatibleJson([
     {
       role: 'system',
@@ -1365,10 +1448,10 @@ async function repairEditorialOutput(input: {
         '你是小红书法语内容总编。完整重写未过质检的内页和正文，只返回JSON，不能改变锁定主题。',
         '必须完整返回4-6张内页，每页标题8-22字、引导语和4-7条具体内容；不得输出半句话。',
         useSchema
-          ? '正文按 caption_parts 5 个字段（hook/scenario/steps/french_example/cta）结构化输出，由系统拼装。scenario 开头直接进入具体问题，不能虚构作者个人考试经历。'
+          ? `正文按 caption_parts 字段结构化输出（template=${forcedTemplate}，不得切换），由系统拼装。`
           : '必须完整返回280-420个中文字符的正文和5-8个标签。正文开头直接进入具体问题，不能虚构作者个人考试经历。',
-        useSchema ? CAPTION_SCHEMA_FIELD_PROMPT : '',
-        useSchema ? CAPTION_SCHEMA_FEW_SHOT : '',
+        useSchema ? getCaptionTemplatePrompt(forcedTemplate) : '',
+        useSchema ? CAPTION_SCHEMA_COMMON_RULES : '',
         '逐条核对法语语法、搭配、语域和适用场景；不得把学习建议写成官方硬规则。',
         profile.editorialScopePrompt,
         '禁止把不同主题的名词做机械一对一替换；主题迁移必须重写语义完整、符合新语境的例句。',
@@ -1393,11 +1476,8 @@ async function repairEditorialOutput(input: {
         required_output: useSchema ? {
           inner_pages: [{ page_no: 2, page_type: 'knowledge_list', page_title: '', lead: '', bullets: ['', '', '', ''], source_ids: [] }],
           caption_parts: {
-            hook: '一句话钩子，8-25字',
-            scenario: '场景化描述，16-48字',
-            steps: ['步骤1', '步骤2', '步骤3'],
-            french_example: { fr: '法语原句', zh: '中文翻译' },
-            cta: '行动号召',
+            template: forcedTemplate,
+            ...getCaptionSchemaShape(forcedTemplate),
           },
           tags: ['#法语学习'],
         } : {
@@ -3092,8 +3172,8 @@ function getEditorialIssues(
   if (pages.length < 4 || pages.length > 6) issues.push('inner_page_count_invalid');
   if (pages.some(page => page.page_title.length < 8 || page.page_title.length > 24)) issues.push('inner_page_title_invalid');
   if (pages.some(page => page.bullets.length < 3)) issues.push('inner_page_content_too_thin');
-  // schema 模式 caption 字段化拼装，字数天然偏短（180-300）；阈值下调避免误报。
-  const captionMin = captionSchemaEnabled() ? 180 : 260;
+  // schema 模式 caption 字段化拼装，story/contrast 模板天然偏长，list 偏短；阈值下调避免误报。
+  const captionMin = captionSchemaEnabled() ? 200 : 260;
   if (caption.length < captionMin || caption.length > 440) issues.push('caption_length_invalid');
   if (seoKeywords[0] && !caption.slice(0, 100).includes(seoKeywords[0])) issues.push('core_keyword_missing_from_opening');
   const editorialText = `${caption} ${pages.map(page => `${page.page_title} ${page.lead} ${page.bullets.join(' ')}`).join(' ')}`;
@@ -3153,10 +3233,16 @@ function collectEvidenceSourceIds(evidence: ComposeDraftInput['evidence']) {
   return ids;
 }
 
+function getProductSeoTags(productId: ProductId) {
+  return skillData.seo_tags[productId];
+}
+
 function buildSeoKeywords(productId: ProductId, topic: MigratedTopic) {
-  const base = productId === 'delf_b2_writing'
-    ? ['DELF B2写作', '法语写作', 'DELF B2备考']
-    : ['TEF TCF Canada', '法语备考', '加拿大法语考试'];
+  // 改：读 seo_tags.core_keywords（4-5 个大词），不再硬编码 3 个。
+  // 旧 pipeline 用 variant-generator.ts 时读这套数据，新 pipeline 之前跳过，
+  // 导致 15 篇 caption 的 SEO 关键词池子只有 3 个固定词。
+  const seoData = getProductSeoTags(productId);
+  const base = seoData?.core_keywords ?? [];
   const topicWords = topic.search_terms.filter(item => item.length >= 2 && item.length <= 12).slice(0, 3);
   return Array.from(new Set([...base, ...topicWords])).slice(0, 6);
 }
@@ -3174,9 +3260,22 @@ function isSameQuotedCorrection(problem: string) {
   return quoted.length >= 2 && quoted[0] === quoted[1];
 }
 
-function normalizeTags(value: unknown, seoKeywords: string[], productId?: ProductId, contentContext = '') {
+function normalizeTags(value: unknown, seoKeywords: string[], productId?: ProductId, contentContext = '', seed = 'default') {
   const raw = Array.isArray(value) ? value.map(asString).filter(Boolean) : [];
   const fallbacks = seoKeywords.slice(0, 5);
+  // 新：从 seo_tags 数据池子按 seed 抽样，让 15 篇笔记的 tag 不再雷同。
+  //   - predefinedTags：大词标签（#DELFB2 #法语B2 ...），抽 2 个
+  //   - longTailTags：长尾关键词转成 #xxx 形式，抽 2 个
+  //   - emojiTag：1 个表情符号
+  const seoData = productId ? getProductSeoTags(productId) : null;
+  const predefinedPool = seoData?.tags ?? [];
+  const longTailPool = seoData?.long_tail_keywords ?? [];
+  const pickedPredefined = pickBySeedN(predefinedPool, `${seed}-pre`, 2);
+  const pickedLongTail = pickBySeedN(longTailPool, `${seed}-lt`, 2).map(kw => kw.replace(/\s+/g, ''));
+  const emojiPool = ['🔥', '💡', '✨', '📌', '📝', '🎯'];
+  const pickedEmoji = pickBySeed(emojiPool, `${seed}-emoji`);
+  const seedTags = [...pickedPredefined, ...pickedLongTail, pickedEmoji];
+
   // 单字高频词（#模板 #范文）作为标签无意义，必须组合成带商品身份的复合标签。
   // 这一步只在 LLM 没给够 tag、走 fallback 时才生效；LLM 自己写的复合标签
   // （例如「#DELFB2写作模板」）原样保留。
@@ -3186,7 +3285,7 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
         .slice(0, 3)
         .map(word => `${identity}${word}`)
     : [];
-  const normalized = [...raw, ...fallbacks, ...compoundFromValidated]
+  const normalized = [...raw, ...seedTags, ...fallbacks, ...compoundFromValidated]
     .map(tag => tag
       .replace(/高分范文/g, '范文拆解')
       .replace(/高分/g, '')
@@ -3403,8 +3502,6 @@ function sanitizePublicText(value: string) {
     .replace(/其实[，,]\s*/g, '')
     .replace(/问题(?:就)?出在/g, '常见原因是')
     .replace(/问题的关键(?:是|在于)?/g, '更需要注意的是')
-    .replace(/不是([^。；\n]{1,70})[，,]?而是/g, '别只看$1，更要看')
-    .replace(/不在于([^。；\n]{1,70})[，,]?而在于/g, '不能只看$1，更要看')
     .replace(/考官追着给分/g, 'B2高阶表达')
     .replace(/考官最想要/g, '评分标准看重')
     .replace(/考官/g, '评分标准')

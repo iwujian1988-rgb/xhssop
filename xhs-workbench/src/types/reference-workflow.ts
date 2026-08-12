@@ -169,6 +169,15 @@ export interface DenseDirectoryCoverPayload {
   sections: DenseDirectorySection[];
 }
 
+export type InnerPageStyleVariant =
+  | 'lined-notebook'
+  | 'grid-notebook'
+  | 'dot-notebook'
+  | 'sticky-note'
+  | 'draft-paper'
+  | 'loose-leaf'
+  | 'kraft-paper';
+
 export interface GeneratedInnerPage {
   page_no: number;
   page_type: 'knowledge_list' | 'example_explain' | 'wrong_right' | 'steps' | 'product_bridge';
@@ -176,6 +185,7 @@ export interface GeneratedInnerPage {
   lead: string;
   bullets: string[];
   source_ids: string[];
+  style_variant?: InnerPageStyleVariant;
 }
 
 export interface ReferenceDrivenDraft {
