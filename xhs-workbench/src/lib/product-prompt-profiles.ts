@@ -47,7 +47,7 @@ const profiles: Record<ProductId, ProductPromptProfile> = {
     tagIdentity: 'DELFB2',
     coverFallbackTitles: {
       directory: 'DELF B2写作资料大全',
-      phrase: '法语B2必背高频表达',
+      phrase: '法语B2写作必背表达',
       offer: '法语B2写作学习方案',
       flashcard: '法语B2写作必背词卡',
       book: 'DELF B2写作速通手册',
@@ -108,6 +108,19 @@ export function hasRequiredProductIdentity(productId: ProductId, value: string) 
 
 export function hasForbiddenProductIdentity(productId: ProductId, value: string) {
   return getProductPromptProfile(productId).forbiddenIdentityPattern.test(value);
+}
+
+/**
+ * 把跨商品污染词替换成本商品的身份词（DELF 资料里的 "TEF/加拿大移民" → "DELF B2"）。
+ * 用带 g flag 的独立实例做全量替换——原 forbiddenIdentityPattern 只有 i flag（用于 .test），
+ * 直接拿来做 replace 只会换第一个匹配，多禁止词的文本会漏掉残留 → product_identity_mismatch。
+ */
+export function stripForbiddenIdentity(productId: ProductId, value: string): string {
+  if (!value) return value;
+  const profile = getProductPromptProfile(productId);
+  const source = profile.forbiddenIdentityPattern.source;
+  const flags = `${profile.forbiddenIdentityPattern.flags}g`;
+  return value.replace(new RegExp(source, flags), profile.shortIdentity);
 }
 
 export function isProductPublicTextSafe(productId: ProductId, value: string) {

@@ -75,6 +75,9 @@ export interface BatchJob {
   attempts: number;
   draft?: ReferenceDrivenDraft;
   cover_image_url?: string;
+  // 生图 API 是异步任务制：task_id 一旦提交就已完成扣款。落盘之后，无论轮询
+  // 网络抖动、进程重启还是 batch 重跑，都能凭它找回结果，不必重新提交。
+  image_task_id?: string;
   failure?: BatchJobFailure;
   usage?: AiUsageSummary;
   started_at?: string;

@@ -2,52 +2,77 @@ import { getImageTask, submitImageTask, type ImageTaskResult } from '@/lib/image
 import { buildReferenceImagePrompt, referenceImageNegativePrompt } from '@/lib/reference-image-prompt';
 import type { CompetitorCreativeCard, DenseDirectoryCoverPayload } from '@/types/reference-workflow';
 
-export interface GenerateCoverImageOptions {
-  maxAttempts?: number;
-  pollIntervalMs?: number;
-  maxPolls?: number;
+// 生图 API 是异步任务制：submit 拿到 task_id 的那一刻就已经扣款。
+// 所以这里刻意把"提交"和"等待"拆成两个函数——调用方必须先把 task_id 持久化
+// （batch job 落盘 / 前端 localStorage），再慢慢等终态。等待过程容忍网络抖动：
+// 任何一次查询失败都不算任务失败，只有 completed / failed / 超过总预算才结束。
+// 旧版 generateCoverImageWithRetry 的问题：一次网络抖动就整个 attempt 作废并
+// 重新提交新任务 = 再扣一次款，旧任务就算 3 秒后成功也永远找不回来。
+
+export interface CoverImageTaskHandle {
+  taskId: string;
 }
 
-export type CoverImageOutcome = { ok: true; url: string } | { ok: false; error: string };
-
-export async function generateCoverImageWithRetry(
+export async function submitCoverImageTask(
   card: CompetitorCreativeCard,
   cover: DenseDirectoryCoverPayload,
-  options: GenerateCoverImageOptions = {},
-): Promise<CoverImageOutcome> {
-  const maxAttempts = options.maxAttempts ?? 2;
-  const pollIntervalMs = options.pollIntervalMs ?? 4000;
-  const maxPolls = options.maxPolls ?? 90;
+): Promise<CoverImageTaskHandle> {
   const prompt = buildReferenceImagePrompt(card, cover);
-
-  let lastError = '文生图多次尝试后仍失败';
-  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
-    try {
-      const task = await submitImageTask({
-        prompt,
-        negativePrompt: referenceImageNegativePrompt,
-        aspectRatio: '3:4',
-      });
-      const result = await pollUntilDone(task.id, pollIntervalMs, maxPolls);
-      if (result.status === 'completed' && result.url) return { ok: true, url: result.url };
-      lastError = result.status === 'failed'
-        ? (result.error?.message || '文生图任务失败')
-        : '文生图轮询超时';
-    } catch (cause) {
-      lastError = cause instanceof Error ? cause.message : '文生图失败';
-    }
-    if (attempt < maxAttempts) await sleep(3000 * attempt);
-  }
-  return { ok: false, error: lastError };
+  const task = await submitImageTask({
+    prompt,
+    negativePrompt: referenceImageNegativePrompt,
+    aspectRatio: '3:4',
+  });
+  if (!task.id) throw new Error('生图任务提交成功但接口没有返回 task_id');
+  return { taskId: task.id };
 }
 
-async function pollUntilDone(taskId: string, intervalMs: number, maxPolls: number): Promise<ImageTaskResult> {
-  for (let i = 0; i < maxPolls; i += 1) {
-    await sleep(intervalMs);
-    const task = await getImageTask(taskId);
-    if (task.status === 'completed' || task.status === 'failed') return task;
+export type CoverImageWaitResult =
+  // 任务结束，拿到图片
+  | { ok: true; url: string }
+  // 供应商已判死（status=failed 或 completed 但无 url）：重新提交新任务不会白扣款
+  | { ok: false; terminal: true; error: string }
+  // 超时/持续查询失败：任务可能还活着，task_id 保留即可稍后恢复，不要重新提交
+  | { ok: false; terminal: false; error: string };
+
+const POLL_INTERVAL_MS = 4000;
+// 生图模型是异步的：5 分钟才算超时。
+const MAX_POLL_MS = 5 * 60 * 1000;
+// 连续 8 次查询失败（约 32 秒完全不可达）才放弃；零星抖动只重试不判死。
+const MAX_CONSECUTIVE_ERRORS = 8;
+
+export async function waitForCoverImageTask(
+  taskId: string,
+  options: { startedAt?: number } = {},
+): Promise<CoverImageWaitResult> {
+  const deadline = (options.startedAt || Date.now()) + MAX_POLL_MS;
+  let consecutiveErrors = 0;
+  for (;;) {
+    await sleep(POLL_INTERVAL_MS);
+    if (Date.now() >= deadline) {
+      return { ok: false, terminal: false, error: `生图任务 ${taskId} 超过5分钟未完成（任务可能仍在处理，凭 task_id 可恢复查询，不要重新提交）` };
+    }
+    let task: ImageTaskResult;
+    try {
+      task = await getImageTask(taskId);
+      consecutiveErrors = 0;
+    } catch (cause) {
+      consecutiveErrors += 1;
+      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
+        const detail = cause instanceof Error ? cause.message : String(cause);
+        return { ok: false, terminal: false, error: `生图任务 ${taskId} 连续${MAX_CONSECUTIVE_ERRORS}次查询失败：${detail}（任务可能仍在处理，凭 task_id 可恢复查询）` };
+      }
+      continue;
+    }
+    if (task.status === 'completed') {
+      return task.url
+        ? { ok: true, url: task.url }
+        : { ok: false, terminal: true, error: `生图任务 ${taskId} 标记完成但没有返回图片 url` };
+    }
+    if (task.status === 'failed') {
+      return { ok: false, terminal: true, error: task.error?.message || `生图任务 ${taskId} 失败` };
+    }
   }
-  return { id: taskId, status: 'failed', error: { message: '轮询超时（task 未在预期时间内完成）' } };
 }
 
 function sleep(ms: number) {

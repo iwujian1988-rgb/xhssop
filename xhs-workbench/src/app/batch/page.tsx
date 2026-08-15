@@ -3,9 +3,14 @@
 import { Suspense, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import JSZip from 'jszip';
+import { saveAs } from 'file-saver';
 import { DraftReview } from '@/components/draft/DraftReview';
+import { BatchExportSlot, type ExportNodes } from '@/components/batch/BatchExportSlot';
 import { competitorCreativeCards, getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
+import { nodeToPngBlob } from '@/lib/export-image';
+import { buildBatchTxt, fetchUrlAsBlobOrNull, seqFolderName, type CoverStatus } from '@/lib/batch-export';
 import type { ProductId } from '@/types/data';
 import type { CompetitorCreativeCard } from '@/types/reference-workflow';
 import type { Batch, BatchJob } from '@/lib/batch-store';
@@ -37,6 +42,9 @@ function BatchPageContent() {
   const [activeRunner, setActiveRunner] = useState<string | null>(null);
   const [tab, setTab] = useState<'success' | 'failed'>('success');
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set());
+  const [exportState, setExportState] = useState<{ running: boolean; current: number; total: number; title: string; failures: string[] } | null>(null);
+  const [slotJob, setSlotJob] = useState<{ job: BatchJob; card: CompetitorCreativeCard } | null>(null);
+  const slotReadyRef = useRef<((nodes: ExportNodes) => void) | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchParams = useSearchParams();
 
@@ -157,6 +165,85 @@ function BatchPageContent() {
     } catch (cause) {
       setPlanError(cause instanceof Error ? cause.message : '删除失败');
     }
+  }
+
+  async function handleExportAll() {
+    if (!batch || !successJobs.length || exportState?.running) return;
+    const total = successJobs.length;
+    const zip = new JSZip();
+    setExportState({ running: true, current: 0, total, title: '', failures: [] });
+
+    for (let i = 0; i < successJobs.length; i++) {
+      const job = successJobs[i];
+      const card = getCompetitorCreativeCard(job.reference_card_id);
+      if (!job.draft || !card) {
+        setExportState(prev => prev ? { ...prev, failures: [...prev.failures, `${job.id}: 缺少 draft 或 card`] } : prev);
+        continue;
+      }
+
+      setExportState(prev => prev ? { ...prev, current: i + 1, title: job.topic.topic } : prev);
+
+      let nodes: ExportNodes;
+      try {
+        nodes = await new Promise<ExportNodes>(resolve => {
+          slotReadyRef.current = resolve;
+          setSlotJob({ job, card });
+        });
+      } catch (cause) {
+        const msg = cause instanceof Error ? cause.message : '渲染失败';
+        setExportState(prev => prev ? { ...prev, failures: [...prev.failures, `${job.id}: ${msg}`] } : prev);
+        continue;
+      }
+
+      const folderName = seqFolderName(i, total, job.draft.selected_title);
+      const folder = zip.folder(folderName)!;
+
+      try {
+        let coverStatus: CoverStatus;
+        if (job.cover_image_url) {
+          const blob = await fetchUrlAsBlobOrNull(job.cover_image_url);
+          if (blob) {
+            folder.file('封面.png', blob);
+            coverStatus = { kind: 'image', url: job.cover_image_url, downloaded: true };
+          } else {
+            coverStatus = { kind: 'image', url: job.cover_image_url, downloaded: false };
+          }
+        } else if (nodes.coverNode) {
+          const blob = await nodeToPngBlob(nodes.coverNode);
+          folder.file('封面.png', blob);
+          coverStatus = { kind: 'dom' };
+        } else {
+          coverStatus = { kind: 'image_missing' };
+        }
+
+        for (const [pageNo, node] of nodes.innerNodes) {
+          try {
+            const blob = await nodeToPngBlob(node);
+            folder.file(`内页${String(pageNo).padStart(2, '0')}.png`, blob);
+          } catch {
+            // 单张内页失败不阻塞
+          }
+        }
+
+        folder.file('内容.txt', buildBatchTxt(job, { coverStatus }));
+      } catch (cause) {
+        const msg = cause instanceof Error ? cause.message : '未知错误';
+        setExportState(prev => prev ? { ...prev, failures: [...prev.failures, `${job.id}: ${msg}`] } : prev);
+      }
+    }
+
+    setSlotJob(null);
+    slotReadyRef.current = null;
+
+    try {
+      const blob = await zip.generateAsync({ type: 'blob' });
+      saveAs(blob, `批量_${batch.id}.zip`);
+    } catch (cause) {
+      const msg = cause instanceof Error ? cause.message : '打包失败';
+      setExportState(prev => prev ? { ...prev, failures: [...prev.failures, `zip 打包: ${msg}`] } : prev);
+    }
+
+    setExportState(null);
   }
 
   function toggleCard(cardId: string) {
@@ -288,6 +375,18 @@ function BatchPageContent() {
 
                 {tab === 'success' ? (
                   <section className="space-y-3">
+                    {successJobs.length ? (
+                      <div className="flex items-center justify-between border border-neutral-200 bg-white px-4 py-2">
+                        <div className="text-sm font-bold">共 {successJobs.length} 篇成品</div>
+                        <button
+                          className="bg-neutral-950 px-4 py-2 text-xs font-bold text-white disabled:bg-neutral-400"
+                          disabled={!!exportState?.running}
+                          onClick={handleExportAll}
+                        >
+                          {exportState?.running ? `导出中 ${exportState.current}/${exportState.total}` : '一键导出全部（zip）'}
+                        </button>
+                      </div>
+                    ) : null}
                     {!successJobs.length ? <div className="border border-dashed border-neutral-300 bg-white p-8 text-center text-sm text-neutral-500">还没有成品</div> : null}
                     {successJobs.map(job => {
                       const card = getCompetitorCreativeCard(job.reference_card_id);
@@ -354,6 +453,43 @@ function BatchPageContent() {
           </>
         ) : null}
       </div>
+
+      {slotJob ? (
+        <BatchExportSlot
+          job={slotJob.job}
+          card={slotJob.card}
+          onReady={nodes => {
+            const resolve = slotReadyRef.current;
+            slotReadyRef.current = null;
+            resolve?.(nodes);
+          }}
+        />
+      ) : null}
+
+      {exportState ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4">
+          <div className="w-full max-w-md border border-neutral-300 bg-white p-6">
+            <div className="text-sm font-black">批量导出</div>
+            <div className="mt-2 text-xs text-neutral-500">{exportState.current} / {exportState.total}</div>
+            <div className="mt-1 truncate text-sm font-bold text-neutral-900">{exportState.title || '准备中...'}</div>
+            <div className="mt-3 h-2 w-full bg-neutral-200">
+              <div
+                className="h-full bg-neutral-900 transition-[width] duration-150"
+                style={{ width: `${(exportState.current / Math.max(exportState.total, 1)) * 100}%` }}
+              />
+            </div>
+            {exportState.failures.length ? (
+              <div className="mt-3 max-h-32 overflow-auto border-t border-neutral-200 pt-3 text-xs leading-relaxed text-red-700">
+                <div className="font-bold">失败 {exportState.failures.length} 项：</div>
+                <ul className="mt-1 space-y-0.5">
+                  {exportState.failures.map((f, idx) => <li key={idx}>· {f}</li>)}
+                </ul>
+              </div>
+            ) : null}
+            <div className="mt-4 text-center text-xs text-neutral-500">正在串行渲染每篇 DOM 并打包，请勿关闭页面</div>
+          </div>
+        </div>
+      ) : null}
     </main>
   );
 }

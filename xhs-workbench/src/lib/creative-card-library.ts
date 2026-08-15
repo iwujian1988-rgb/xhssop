@@ -17,6 +17,8 @@ const rendererByReference: Record<string, CreativeCardRenderer> = {
   resource_12_delf_vocab_table_overlay: 'vocab_table',
   resource_13_course_roadmap_blue: 'course_roadmap',
   resource_14_collocation_dense_green: 'collocation_dense',
+  resource_16_official_notice: 'official_notice',
+  resource_17_pain_quote: 'pain_quote_big',
 };
 
 const mechanismByType: Record<string, { content: string; click: string }> = {

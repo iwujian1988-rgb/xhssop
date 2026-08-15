@@ -111,6 +111,10 @@ function formatWarning(issue: string) {
     formula_title_missing: '标题候选缺少爆款公式仿写版本。',
     title_candidate_mix_incomplete: '标题候选类型不够完整。',
     cover_items_semantic_duplicate: '封面条目有少量重复，发布前可以人工删改。',
+    topic_similar_to_recent: '本篇选题和最近 7 天某篇相似度较高，发布前可以人工调整角度。',
+    brief_product_fields_missing: 'brief 里商品卖点或购买理由为空，建议补一下再发布。',
+    product_bridge_page_missing: '内页里没有"如何承接商品"的过渡页，发布前可以人工补一页。',
+    caption_product_bridge_missing: '正文缺商品承接句（已自动补写：整理成了什么 + 购买理由 + 评论区/下方链接）。',
   };
   return labels[issue] || issue;
 }
@@ -128,8 +132,49 @@ function DynamicDirectoryCover({ draft, card, presetImageUrl, onImageReady }: { 
 
 type GeneratedImageState = { taskId?: string; status?: string; progress?: number; url?: string; error?: string };
 
+// 生图 API 是异步任务制：submit 返回 task_id 那一刻已经扣款。task_id 存进
+// localStorage，页面刷新/查询报错后凭它继续轮询旧任务，绝不重新提交。
+const IMAGE_POLL_INTERVAL_MS = 4000;
+const IMAGE_MAX_POLLS = 75; // 75 × 4s = 5 分钟（生图模型异步，5 分钟才算超时）
+const IMAGE_MAX_POLL_ERRORS = 8;
+
 function ReferenceImageGenerator({ draft, card, onImageReady }: { draft: ReferenceDrivenDraft; card: CompetitorCreativeCard; onImageReady?: (url: string | null) => void }) {
   const [imageState, setImageState] = useState<GeneratedImageState>({});
+  const taskStorageKey = `xhs-image-task:${card.id}:${draft.id}`;
+
+  async function pollTask(taskId: string) {
+    let consecutiveErrors = 0;
+    for (let attempt = 0; attempt < IMAGE_MAX_POLLS; attempt += 1) {
+      await new Promise(resolve => setTimeout(resolve, IMAGE_POLL_INTERVAL_MS));
+      let task: { id?: string; status?: string; progress?: number; url?: string; error?: { message?: string } };
+      try {
+        const poll = await fetch(`/api/image-task?task_id=${encodeURIComponent(taskId)}`);
+        const parsed = await poll.json();
+        task = typeof parsed?.error === 'string' ? { error: { message: parsed.error } } : parsed;
+        if (!poll.ok) throw new Error(task.error?.message || '文生图任务查询失败');
+      } catch (error) {
+        // 零星网络抖动不算任务失败：任务在服务端可能还在跑，继续查。
+        consecutiveErrors += 1;
+        if (consecutiveErrors >= IMAGE_MAX_POLL_ERRORS) {
+          setImageState(current => ({ ...current, status: 'timeout', error: `连续查询失败（${error instanceof Error ? error.message : '网络错误'}）。任务可能仍在处理，task_id 已保留，可点击"继续查询"。` }));
+          return;
+        }
+        continue;
+      }
+      consecutiveErrors = 0;
+      setImageState({ taskId, status: task.status, progress: task.progress, url: task.url, error: task.error?.message });
+      if (task.status === 'completed') {
+        localStorage.removeItem(taskStorageKey);
+        if (task.url) onImageReady?.(task.url);
+        return;
+      }
+      if (task.status === 'failed') {
+        localStorage.removeItem(taskStorageKey);
+        return;
+      }
+    }
+    setImageState(current => ({ ...current, status: 'timeout', error: '已等待5分钟任务仍未完成。task_id 已保留，可点击"继续查询"，不要急着重新生成（旧任务已扣款）。' }));
+  }
 
   async function generate() {
     onImageReady?.(null);
@@ -144,25 +189,37 @@ function ReferenceImageGenerator({ draft, card, onImageReady }: { draft: Referen
           aspect_ratio: '3:4',
         }),
       });
-      let task = await response.json();
+      const task = await response.json();
       if (!response.ok) throw new Error(task.error || '文生图任务提交失败');
+      localStorage.setItem(taskStorageKey, task.id);
       setImageState({ taskId: task.id, status: task.status, progress: task.progress, url: task.url });
-      for (let attempt = 0; task.id && task.status !== 'completed' && task.status !== 'failed' && attempt < 80; attempt += 1) {
-        await new Promise(resolve => setTimeout(resolve, 4000));
-        const poll = await fetch(`/api/image-task?task_id=${encodeURIComponent(task.id)}`);
-        task = await poll.json();
-        if (!poll.ok) throw new Error(task.error || '文生图任务查询失败');
-        setImageState({ taskId: task.id, status: task.status, progress: task.progress, url: task.url, error: task.error?.message });
-      }
-      if (task.url) onImageReady?.(task.url);
+      await pollTask(task.id);
     } catch (error) {
       setImageState(current => ({ ...current, status: 'failed', error: error instanceof Error ? error.message : '文生图失败' }));
     }
   }
 
+  function resumeTask() {
+    const saved = imageState.taskId;
+    if (!saved) return;
+    setImageState(current => ({ ...current, status: 'polling', error: undefined }));
+    void pollTask(saved);
+  }
+
+  useEffect(() => {
+    // 恢复：上次提交的任务还没到终态就离开/刷新了——凭 localStorage 里的 task_id
+    // 继续查旧任务（它已经扣款），不重新提交。
+    const saved = localStorage.getItem(taskStorageKey);
+    if (saved && /^task_[\w-]+$/.test(saved)) {
+      setImageState({ taskId: saved, status: 'polling' });
+      void pollTask(saved);
+    }
+  }, [taskStorageKey]);
+
   if (imageState.url) return <div><img className="aspect-[3/4] w-full object-cover shadow-xl" src={imageState.url} alt={draft.cover.title} /><div className="mt-3 flex items-center justify-between gap-3 text-xs"><span className="font-bold text-green-700">文生图已完成，请核对文字是否准确</span><button className="border border-neutral-300 px-3 py-1.5 font-bold" onClick={generate}>重新生成</button></div></div>;
 
-  return <div><div className="relative"><img className="aspect-[3/4] w-full object-cover shadow-xl" src={card.reference_image} alt={`${card.name}参考图`} /><span className="absolute left-3 top-3 bg-black px-2 py-1 text-xs font-black text-white">风格参考（仅示意）</span></div><div className="mt-3 border border-fuchsia-200 bg-fuchsia-50 p-3 text-sm leading-relaxed text-fuchsia-950"><b>这类封面用文生图。</b>模板构图提示词已提前写好，生成时只把本篇标题和内容塞进去，不再上传参考图做图生图。</div><button className="mt-3 w-full bg-fuchsia-700 px-4 py-2.5 text-sm font-black text-white disabled:bg-neutral-400" disabled={imageState.status !== undefined && imageState.status !== 'failed'} onClick={generate}>{imageState.status && imageState.status !== 'failed' ? `生成中 ${imageState.progress ?? 0}%` : '按本篇内容文生图'}</button>{imageState.error ? <div className="mt-2 text-sm font-semibold text-red-700">{imageState.error}</div> : null}</div>;
+  const polling = imageState.status !== undefined && imageState.status !== 'failed' && imageState.status !== 'timeout';
+  return <div><div className="relative"><img className="aspect-[3/4] w-full object-cover shadow-xl" src={card.reference_image} alt={`${card.name}参考图`} /><span className="absolute left-3 top-3 bg-black px-2 py-1 text-xs font-black text-white">风格参考（仅示意）</span></div><div className="mt-3 border border-fuchsia-200 bg-fuchsia-50 p-3 text-sm leading-relaxed text-fuchsia-950"><b>这类封面用文生图。</b>模板构图提示词已提前写好，生成时只把本篇标题和内容塞进去，不再上传参考图做图生图。</div>{imageState.status === 'timeout' && imageState.taskId ? <div className="mt-3 flex gap-2"><button className="flex-1 bg-fuchsia-700 px-4 py-2.5 text-sm font-black text-white" onClick={resumeTask}>继续查询此任务（不重复扣款）</button><button className="border border-neutral-300 px-4 py-2.5 text-sm font-bold" onClick={generate}>放弃并重新生成</button></div> : <button className="mt-3 w-full bg-fuchsia-700 px-4 py-2.5 text-sm font-black text-white disabled:bg-neutral-400" disabled={polling} onClick={generate}>{polling ? `生成中 ${imageState.progress ?? 0}%` : '按本篇内容文生图'}</button>}{imageState.error ? <div className="mt-2 text-sm font-semibold text-red-700">{imageState.error}</div> : null}</div>;
 }
 
 export function InnerPagePreview({ page, registerNode }: { page: GeneratedInnerPage; registerNode?: (node: HTMLElement | null) => void }) {

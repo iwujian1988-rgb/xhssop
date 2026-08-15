@@ -71,7 +71,10 @@ export async function callOpenAICompatibleJson(messages: AiMessage[], options: A
           thinking: { type: options.thinking === true ? 'enabled' : 'disabled' },
           response_format: { type: 'json_object' },
         }),
-        signal: AbortSignal.timeout(120000),
+        // 300s：compose 是非流式 maxTokens 5000-6000 的长生成，服务端拥堵时
+        // 100-200s 很常见，120s 会把正常慢请求错杀成 timeout（实测 batch_1786721806516
+        // job_007 连续两次全 attempts 超时）。仍保留上限防半挂 fetch 锁死 runner。
+        signal: AbortSignal.timeout(300000),
       });
 
       if (!res.ok) {

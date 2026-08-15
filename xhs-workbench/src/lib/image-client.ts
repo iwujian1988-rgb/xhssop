@@ -41,16 +41,13 @@ export async function submitImageTask(input: SubmitImageTaskInput): Promise<Imag
       },
       body: JSON.stringify({
         model,
-        // The provider only accepts one prompt field. Keep the exclusion rules in
-        // the same request instead of leaving them as UI-only review guidance.
         prompt: input.negativePrompt?.trim()
           ? `${input.prompt}\n\n【硬性禁止】\n${input.negativePrompt.trim()}`
           : input.prompt,
         aspect_ratio: input.aspectRatio || '3:4',
-        // 有参考图才传；纯文生图不带 images，避免被当图生图半编辑。
         ...(validImages.length ? { images: validImages } : {}),
       }),
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(60000),
     });
   } catch (error) {
     const detail = error instanceof Error
@@ -75,7 +72,7 @@ export async function getImageTask(taskId: string): Promise<ImageTaskResult> {
   try {
     res = await fetch(`${baseUrl}/v1/videos/${encodeURIComponent(taskId)}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(30000),
+      signal: AbortSignal.timeout(60000),
     });
   } catch (error) {
     const detail = error instanceof Error

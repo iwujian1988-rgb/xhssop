@@ -1,6 +1,12 @@
 import type { ProductId } from '@/types/data';
 import { hasForbiddenProductIdentity } from '@/lib/product-prompt-profiles';
 
+// AI 议论文套话正则。来源：editorial-quality.ts:23-37 注释里的 11 种典型 AI 标志
+// （"不是X而是Y"、"问题出在X"、"X 才是 Y 关键"、"通过X才能Y"等）。
+// 抽成 module-level 让 throw message 能用它做诊断，输出具体是哪一句触发的，
+// 而不是只看到一个 "caption_ai_cliche" 字符串没法定位。
+export const AI_CLICHE_PATTERN = /不是.{0,40}而是|不在于.{0,40}而在于|问题(?:就)?出在|问题的关键|不仅仅是.{1,18}.{0,4}更是|在.{1,18}的过程中|才是.{1,12}(?:关键|核心|根本)|通过.{1,18}，.{1,12}才能|让.{1,12}不再|重要性不言而喻|是一个需要.{1,18}的过程|综上所述|^总而言之|^总的来说|首先[，,][^。]{0,80}其次[，,][^。]{0,80}最后[，,]/;
+
 export function normalizeTitleIdentity(value: string, productId?: ProductId) {
   const result = value
     .replace(/法语\s*DELF\s*B2/gi, 'DELF B2')
@@ -32,7 +38,10 @@ export function getPublicEditorialRiskIssues(editorialText: string, caption = ed
   //   - "X 是一个需要 Y 的过程"——循环定义
   //   - "综上所述/总而言之/总的来说"——AI 议论文尾段标志
   //   - "首先.*其次.*最后"——AI 议论文中段标志（在同一句/段落里出现）
-  if (/不是.{0,40}而是|不在于.{0,40}而在于|问题(?:就)?出在|问题的关键|很多(?:备考.{0,12})?同学|其实[，,]?|别只看.{0,20}更要看|让.{1,12}更.{1,8}|不仅仅是.{1,18}.{0,4}更是|在.{1,18}的过程中|才是.{1,12}(?:关键|核心|根本)|通过.{1,18}，.{1,12}才能|让.{1,12}不再|重要性不言而喻|是一个需要.{1,18}的过程|综上所述|^总而言之|^总的来说|首先[，,][^。]{0,80}其次[，,][^。]{0,80}最后[，,]/.test(caption)) issues.push('caption_ai_cliche');
+  // 2026-08-13 收紧：删掉 "其实" / "让X更Y" / "别只看X更要看" / "很多同学" 这种
+  // 真人也常用的句式——它们误伤率太高，反而把真人话当成 AI 套话。
+  // 保留强烈 AI 标志：议论文结构词、绝对句式、循环定义、递进空话。
+  if (AI_CLICHE_PATTERN.test(caption)) issues.push('caption_ai_cliche');
   if (/(商品|资料)(里|中|内).{0,10}(有|没有|包含|不含|收录|未收录)/.test(editorialText)) issues.push('public_inventory_relation_claim');
   if (/(?:挽回|提高|提升|多拿|少丢).{0,8}\d+(?:\s*[-~至]\s*\d+)?\s*分|(?:省下|节省).{0,8}(?:至少)?\s*\d+\s*分钟/.test(editorialText)) issues.push('unsupported_score_or_time_claim');
   if (/精准提分|效率翻倍|分数卡在\s*\d+\s*分左右|考前[^。；\n]{0,20}就能/.test(editorialText)) issues.push('unsupported_outcome_claim');
@@ -40,7 +49,9 @@ export function getPublicEditorialRiskIssues(editorialText: string, caption = ed
   if (/(?:正式信|论坛投稿|DELF|B2).{0,18}(?:严禁|一律|必须)/.test(editorialText)) issues.push('overabsolute_public_rule');
   if (/(?:我的|我们的).{0,12}(?:资料|资料包)(?:里|中)|(?:资料|资料包)(?:里|中).{0,10}(?:整理|收录|包含)/.test(editorialText)) issues.push('public_inventory_relation_claim');
   if (/来自.{0,18}(?:资料|资料包|商品)|(?:资料|资料包)(?:里|中|内|提供)/.test(editorialText)) issues.push('public_inventory_relation_claim');
-  if (/拿高分|高分句|立刻升级|保证提分|稳拿高分|提分的?关键/.test(editorialText)) issues.push('unsupported_outcome_claim');
+  // "高分句"已删：会误杀"高分句型/高分句式整理"这类正常备考内容；
+  // 保留强结果承诺词（与生成/返修 prompt 黑名单保持同步）。
+  if (/拿高分|立刻升级|保证提分|稳拿高分|提分的?关键/.test(editorialText)) issues.push('unsupported_outcome_claim');
   if (/直接套用|直接调用|直接调取|调用功能块|换词就能迁移|替换主题词[，,]?\s*就能|主题词一换/.test(editorialText)) issues.push('overmechanical_content_method');
   if (/230\s*[-~至]\s*280\s*词|(?:至少|≥)\s*\d+\s*(?:个|种|类)?\s*(?:论据|主题词|B2(?:级)?(?:词汇|表达)|虚拟式|条件式|关系从句|连接词|时态)|(?:B2(?:级)?替换|B2(?:级)?表达|主题词|虚拟式|条件式|关系从句|连接词|时态)\s*(?:≥|至少)\s*\d+|每段(?:开头)?\s*(?:必须|都要|至少|有)\s*(?:一个?)?\s*连接词|每段有主题句/.test(editorialText)) issues.push('invented_exam_quantity_rule');
   if (/(?:TEF|TCF|CLB|NCLC).{0,24}(?:官方评分标准|通常要求\s*\d+\s*[-~至]\s*\d+\s*词|三大(?:评分)?维度|少于\s*\d+\s*词)/i.test(editorialText)) issues.push('unsupported_exam_official_rule');

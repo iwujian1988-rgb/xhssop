@@ -165,11 +165,14 @@ async function handleRetryFailed(body: RetryFailedBody) {
   const failedJobs = jobs.filter(job => job.status === 'failed');
   if (!failedJobs.length) return error('没有 failed 状态的 job 可重试', 400);
   for (const job of failedJobs) {
+    // 挂在生图阶段的 job 保留 failure 标记：runOneJob 靠 `failure.stage==='image' && draft`
+    // 识别"compose 已成功、只差图"的状态，跳过 LLM 重跑直接恢复生图任务。
+    const keepFailure = job.failure?.stage === 'image' && job.draft ? job.failure : undefined;
     await saveJob(body.batch_id, {
       ...job,
       status: 'pending',
       attempts: 0,
-      failure: undefined,
+      failure: keepFailure,
       started_at: undefined,
       finished_at: undefined,
     });

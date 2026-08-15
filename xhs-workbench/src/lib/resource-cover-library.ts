@@ -10,7 +10,9 @@ export type ResourceCoverType =
   | 'document_analysis'
   | 'vocab_table_overlay'
   | 'course_roadmap'
-  | 'collocation_dense';
+  | 'collocation_dense'
+  | 'official_notice'
+  | 'pain_quote_big';
 
 export type ResourceCoverDensity = 'low' | 'medium' | 'high' | 'very_high';
 
@@ -273,6 +275,38 @@ export const resourceCoverRefs: ResourceCoverRef[] = [
     promptRecipe: '模仿网格纸、紫色大标题、多段表格和左侧工具栏装饰，内容做成法语写作速查/检查资料。',
     forbiddenUse: ['真人故事', '痛点短句', '课程招募'],
     qualityRisk: '适合资源页，不适合只放一句标题。',
+  },
+  {
+    id: 'resource_16_official_notice',
+    name: '官方通知公告封面',
+    image: img('resource_16_official_notice.png'),
+    type: 'official_notice',
+    contentFit: ['product_showcase', 'selling', 'directory', 'checklist', 'writing_resource'],
+    titleFit: ['resource_showcase', 'system_pack', 'number_list', 'time_sensitive'],
+    sceneFit: ['资料发布', '考前通知', '福利推送', '重点公告'],
+    density: 'medium',
+    textCapacity: 'medium',
+    layout: '浅粉色公告纸，顶部居中黑色加粗大标题，右上角小字日期，中段3段通知正文（每段一行半），右下角红色圆形印章写「备考专用」，四周木质纹理边框。',
+    styleNotes: '官方公告/学习通知的视觉调性：粉色温柔底+黑色严肃字+红色印章权威感。不要广告海报感，不要 PPT 模板感，必须像真实学习社群/老师发的通知单。',
+    promptRecipe: '生成小红书竖版封面，比例 3:4。参考图是一张"备考通知单"风格的公告：浅粉色（#FFF0F0 左右）纸质底，黑色加粗大标题居中靠上，右上角小字日期（年月日格式），中段3段简短通知正文（每段一行半，左对齐），右下角一个红色（#C8281C）圆形印章，印章内写"备考专用"4个白色加粗字（圆形描边+轻微旋转-8度模拟手盖）。四周保留木质纹理边框（深棕色渐变，模拟原木相框）。整体必须像真实备考社群/法语老师手发的学习通知，不是广告海报或PPT模板。文字部分用本篇实际生成的标题、副标题和3段通知正文替换原图文字，保持原排版位置和层级。印章上的"备考专用"4字和主标题必须清晰可读，不能被磨糊。',
+    forbiddenUse: ['单一真人经历', '强情绪痛点', '广告推销口吻', '冒充官方机构'],
+    qualityRisk: '印章+木质边框细节多，AI 容易把字磨糊；标题必须保持清晰可读，印章上的"备考专用"4字必须可识别。',
+  },
+  {
+    id: 'resource_17_pain_quote',
+    name: '极简痛点金句封面',
+    image: img('resource_17_pain_quote.png'),
+    type: 'pain_quote_big',
+    contentFit: ['pain_warning', 'real_experience', 'low_energy_plan', 'exam_rescue', 'mindset'],
+    titleFit: ['pain_warning', 'dont_only', 'low_energy', 'pain_question'],
+    sceneFit: ['痛点共鸣', '错点提醒', '考前避坑', '避雷帖', '翻车复盘'],
+    density: 'low',
+    textCapacity: 'medium',
+    layout: '纯白背景，加粗黑色中文，居中堆叠 4 行构成一句完整金句：第1行"数字+身份"（字号中等），第2行"动词+栽/卡在X上"（其中"X"用黄色横条色块作为背景高亮，文字仍是黑色加粗），第3行"的原因"（字号略小，承接），第4行"行动建议"（字号最大，下方加橙色手绘波浪线作为下划线强调）。',
+    styleNotes: '极简纯文字封面，靠字号对比 + 黄色高亮块 + 橙色波浪线三个元素制造冲击力。整体像真人在便签纸上随手吐槽写下，不要 PPT 模板感、不要装饰图标、不要任何插图。视觉参考：小红书极简文字博主 / 真人吐槽贴的随手写大字风。',
+    promptRecipe: '生成小红书竖版封面，比例 3:4。参考图是一张极简纯文字封面：纯白（#FFFFFF）背景，加粗黑色中文字，居中堆叠 4 行构成一句完整金句。第1行写"数字+身份"短语（如"两位室友"/"三个考友"），字号中等，黑色加粗；第2行写"动词+栽在X上"（如"栽在法语B2上"/"卡在TCF听力上"），其中"X"关键词（即考试名+科目，例如"法语B2"或"TCF听力"）用黄色（#FFD83D）横条色块作为背景高亮，色块上的文字仍是黑色加粗，色块覆盖整个关键词左右留一点 padding；第3行写"的原因"3个字，字号略小，承接第2行；第4行写"行动建议"短语（如"赶紧避开"/"提前绕开"），字号最大（比其他行大约 1.5 倍），下方加橙色（#FF8A3D）手绘波浪线作为下划线强调，波浪线略带手绘抖动感不要笔直。整体必须像真人在便签纸上随手吐槽写下，不要 PPT 模板感、不要装饰图标、不要任何插图、不要边框。文字部分用本篇实际生成的金句替换原图文字，保持 4 行堆叠结构和色彩点缀位置：黄色高亮必须出现在第2行的考试/科目关键词上，橙色波浪线必须出现在第4行行动建议下方。4 行文字必须构成一句通顺的中文。',
+    forbiddenUse: ['第一人称真人案例', '具体姓名/学校', '资料清单', '课程招募', '广告海报感', 'PPT 模板感'],
+    qualityRisk: 'AI 容易把 4 行金句压缩成 1 行或忽略黄块/波浪线，promptRecipe 必须强约束"4 行堆叠 + 第2行黄色横条高亮关键词 + 第4行橙色波浪下划线"三个视觉锚点；关键词拼写必须正确（DELF B2 / TCF / TCF Canada 等）。',
   },
 ];
 

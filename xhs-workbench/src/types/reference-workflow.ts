@@ -16,6 +16,8 @@ export type CreativeCardRenderer =
   | 'vocab_table'
   | 'course_roadmap'
   | 'collocation_dense'
+  | 'official_notice'
+  | 'pain_quote_big'
   | 'ai_scene_overlay';
 
 export type ContentShape =
