@@ -67,6 +67,17 @@ export function autoFixCoverCapacity(cover: NormalizedCover, spec: CoverTemplate
   };
   for (const section of sections) {
     for (const item of section.items) {
+      // primaryFrenchOnly：primary 混进中文尾巴（实测 "bien que + 虚拟式" 返修两次
+      // 仍残留）。法语词头保留为 primary，中文部分并入 secondary——确定性修复
+      // 兜住 prompt 管不住的最后一公里。放在 clip 之前，后续长度裁剪对新值生效。
+      if (spec.primaryFrenchOnly && /[一-鿿]/.test(item.primary || '')) {
+        const split = (item.primary || '').match(/^([A-Za-zÀ-ÿ][^一-鿿]*?)\s*[+＋]?\s*([一-鿿].*)$/);
+        if (split && /[A-Za-zÀ-ÿ]{2}/.test(split[1])) {
+          item.secondary = [split[2], item.secondary].filter(Boolean).join('；');
+          item.primary = split[1].trim();
+          events.push(`分组「${section.heading}」primary 中文尾巴→移入 secondary`);
+        }
+      }
       if (visualLength(item.primary) > spec.maxPrimaryVisualLength) {
         const clipped = clipVisual(item.primary, spec.maxPrimaryVisualLength);
         events.push(`分组「${section.heading}」primary 超长→截断`);
@@ -891,11 +902,32 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
       }));
       if (truncated.length) diagnostic += ` | truncated_hits: ${truncated.join(' | ')}`;
     }
-    if (finalEditorialIssues.includes('caption_ai_cliche')) {
-      // 正文过了 editorial 返修 + audit 之后才在 final_gate 冒出套话，
-      // 通常是 audit 的 corrected_caption 重写注入的。不打出具体命中句没法定位。
-      const m = caption.match(AI_CLICHE_PATTERN);
-      diagnostic += m ? ` | cliche_hit:"${m[0].slice(0, 50)}"(context:"${caption.slice(Math.max(0, caption.indexOf(m[0]) - 15), caption.indexOf(m[0]) + m[0].length + 15)}")` : ' | cliche:no_match_(regex_change?)';
+    if (finalEditorialIssues.includes('caption_ai_cliche') || finalBlockingCoreIssues.includes('caption_ai_cliche')) {
+      // 套话可能藏在正文、封面或内页任何用户可见字段（getCoreIssues 用封面文本、
+      // getEditorialIssues 用正文调同一个检查）。只扫 caption 会漏——实测 job_011
+      // 套话在封面文本里，诊断打不出命中句。全字段扫描并定位。
+      const clicheFields: string[] = [];
+      const scanCliche = (label: string, value: string) => {
+        if (!value) return;
+        const m = value.match(AI_CLICHE_PATTERN);
+        if (m) clicheFields.push(`${label}:"${m[0].slice(0, 40)}"`);
+      };
+      scanCliche('caption', caption);
+      scanCliche('cover.title', cover.title || '');
+      scanCliche('cover.subtitle', cover.subtitle || '');
+      cover.sections.forEach((section, idx) => {
+        scanCliche(`cover.s${idx}.heading`, section.heading || '');
+        section.items.forEach((item, j) => {
+          scanCliche(`cover.s${idx}i${j}.primary`, item.primary || '');
+          scanCliche(`cover.s${idx}i${j}.secondary`, item.secondary || '');
+        });
+      });
+      innerPages.forEach((page, idx) => {
+        scanCliche(`page[${idx}].title`, page.page_title || '');
+        scanCliche(`page[${idx}].lead`, page.lead || '');
+        page.bullets.forEach((bullet, j) => scanCliche(`page[${idx}].b${j}`, bullet || ''));
+      });
+      diagnostic += clicheFields.length ? ` | cliche_hits: ${clicheFields.slice(0, 5).join(' | ')}` : ' | cliche:no_match_(regex_change?)';
     }
     throw new Error(`法语与考试事实审校未通过：final_gate=${[...finalBlockingCoreIssues, ...finalEditorialIssues].join(',')}${diagnostic}`);
   }
@@ -1023,6 +1055,9 @@ export async function auditEducationalContent(input: {
       const primary = sanitizePublicText(asString(correction.primary));
       const secondary = sanitizePublicText(asString(correction.secondary));
       const note = sanitizePublicText(asString(correction.note));
+      // 审校 LLM 的改写项命中 AI 套话就整条弃用，保留原值——与 corrected_caption
+      // 同一防线：审校改写是套话注入源之一。
+      if ([primary, secondary, note].some(text => text && AI_CLICHE_PATTERN.test(text))) continue;
       const baseLocation = `cover.sections[${Number(correction.section_index)}].items[${Number(correction.item_index)}]`;
       if (primary) { item.primary = primary; correctedLocations.add(`${baseLocation}.primary`); }
       if (secondary) { item.secondary = secondary; correctedLocations.add(`${baseLocation}.secondary`); }
@@ -1037,6 +1072,7 @@ export async function auditEducationalContent(input: {
       const bulletIndex = Number(correction.bullet_index);
       const correctedText = sanitizePublicText(asString(correction.corrected_text));
       if (!page || !page.bullets[bulletIndex] || !correctedText) continue;
+      if (AI_CLICHE_PATTERN.test(correctedText)) continue;
       page.bullets[bulletIndex] = correctedText;
       correctedLocations.add(`inner_pages[${Number(correction.page_index)}].bullets[${bulletIndex}]`);
       correctedCount += 1;
@@ -3733,7 +3769,7 @@ const PRODUCT_CTA_POOL = [
 
 export function captionHasProductBridge(caption: string) {
   const hasCta = /评论区|下方链接|私信/.test(caption);
-  const hasMaterial = /资料|清单|对照表|速查|这份|这套/.test(caption);
+  const hasMaterial = /资料|清单|对照表|速查|这份|这套|检查表|时间表|句库|词库|自查/.test(caption);
   return hasCta && hasMaterial;
 }
 
@@ -3741,13 +3777,15 @@ function ensureProductBridge(caption: string, brief: UnifiedContentBrief, seedKe
   if (!caption || captionHasProductBridge(caption)) return caption;
   const cta = pickBySeed(PRODUCT_CTA_POOL, `${seedKey}-bridge-cta`);
   // 购买理由不进通用池——必须贴着本篇内容：selling_point 是什么资料、
-  // buying_reason 是本篇人群的痛点（"模考发现开头结尾耗时太久"），
-  // 拼成"如果你也是这个痛点"的句式，承接句就和内容强相关。
+  // buying_reason 是本篇人群的痛点。两个都是完整分句（陈述句/需求句/动词短语
+  // 都有），不许用"如果你也{pain}"这类固定连接词硬拼——buying_reason 是
+  // "跑题是DELF B2写作最致命的失分点"时拼出"如果你也跑题是……的失分点"病句
+  // （实测 job_001/006/017）。按独立句子直接拼，任何分句形态都通。
   const selling = (brief.selling_point || '这篇的知识点').replace(/[。.]\s*$/, '');
   const pain = (brief.buying_reason || '').replace(/[。.]\s*$/, '');
   const bridge = pain
-    ? `${selling}，如果你也${pain}，直接翻这份就行。${cta}`
-    : `${selling}，我整理成了一份能直接翻的资料。${cta}`;
+    ? `${selling}。${pain}。直接翻这份就行。${cta}`
+    : `${selling}。我整理成了一份能直接翻的资料。${cta}`;
   // 正文长度上限 440：补句可能超，先在句界裁掉尾部再接承接句。
   const budget = 432 - bridge.length;
   if (caption.length > budget) {
@@ -3872,7 +3910,16 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
   const predefinedPool = seoData?.tags ?? [];
   const longTailPool = seoData?.long_tail_keywords ?? [];
   const pickedPredefined = pickBySeedN(predefinedPool, `${seed}-pre`, 2);
-  const pickedLongTail = pickBySeedN(longTailPool, `${seed}-lt`, 2).map(kw => kw.replace(/\s+/g, ''));
+  // 长尾 tag 按 seed 随机注入实测出语义错配（时间分配篇挂 #法语写作替换词）。
+  // 长尾词剥掉通用词根后剩下的"锚词"（替换词/范文/模板…）必须出现在本篇内容里，
+  // 否则这个长尾词跟选题无关，不注入。
+  const stripGenericTagRoots = (kw: string) => kw.replace(/DELF|DALF|TEF|TCF|NCLC|CLB|B2|法语|写作|作文|备考|Canada|production|écrite|\s+/gi, '');
+  const pickedLongTail = pickBySeedN(longTailPool, `${seed}-lt`, 2)
+    .map(kw => kw.replace(/\s+/g, ''))
+    .filter(kw => {
+      const anchor = stripGenericTagRoots(kw);
+      return anchor.length >= 2 && contentContext.includes(anchor);
+    });
   // 撤回 emoji 注入：用户实测发现 tag 里塞 emoji 在小红书算法上是降权信号，
   // 而且 emoji 跟学习类内容调性不符（让笔记显得轻浮）。昨天加的设计判断是错的。
   const seedTags = [...pickedPredefined, ...pickedLongTail];
@@ -3904,19 +3951,30 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
     // 标签只会被淹没在小红书同类垃圾池里，反而拖低笔记的相关性信号。
     .filter(tag => !productId || !/^#(模板|范文|主题|技巧|格式|评分标准|真题|写作任务|句型|连接词|表达|段落|结构|开头|结尾)$/.test(tag));
   // 身份大词上限：#DELFB2 #法语写作 这类大词以前篇篇都出现（实测 96% 的笔记带
-  // #DELFB2、86% 带 #法语写作），整个账号的 tag 像复读机。无论来源是 LLM 原始
-  // 输出、seed 池还是 fallback，最终列表里身份大词最多保留 2 个。
-  const identityTagSet = new Set([
-    ...predefinedPool,
-    ...(seoData?.core_keywords ?? []),
-  ].map(tag => tag.replace(/^#+/, '').replace(/\s+/g, '')));
+  // #DELFB2、86% 带 #法语写作），整个账号的 tag 像复读机。之前只匹配 6 个写死的
+  // default_tags 精确串，#DELFB2写作 #法语B2备考 这类变体全部逃逸（实测
+  // #法语写作 ×10/14、#DELFB2写作 ×8/14）。改成"剥通用词根"判定：把身份/备考
+  // 通用词全部剥掉后什么都不剩的才是纯身份大词，剩下选题词的（#DELFB2写作时间分配）
+  // 不算。无论来源，纯身份大词最多保留 2 个。
+  const IDENTITY_TAG_ROOTS = ['DELFB2', 'DALF', 'TEFTCF', 'NCLC', 'CLB', 'TEF', 'TCF', 'DELF', 'Canada', '法语', '写作', '作文', '备考', '考试', '学习', '考生', 'B2'];
+  const isIdentityBigTag = (bare: string) => {
+    let rest = bare;
+    let changed = true;
+    while (changed) {
+      changed = false;
+      for (const root of IDENTITY_TAG_ROOTS) {
+        const next = rest.replace(new RegExp(root, 'i'), '');
+        if (next !== rest) { rest = next; changed = true; }
+      }
+    }
+    return rest.length === 0;
+  };
   let identityKept = 0;
   return Array.from(new Set(normalized))
     .filter(tag => !tag.includes('范文') || /范文|完整文章|全文示例/.test(contentContext))
     .filter(tag => !tag.includes('模板') || /模板|框架/.test(contentContext))
     .filter(tag => {
-      const bare = tag.replace(/^#/, '');
-      if (!identityTagSet.has(bare)) return true;
+      if (!isIdentityBigTag(tag.replace(/^#/, ''))) return true;
       identityKept += 1;
       return identityKept <= 2;
     })
