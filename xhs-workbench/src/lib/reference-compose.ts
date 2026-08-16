@@ -3,7 +3,7 @@ import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getRoutedTitleFormulas } from '@/lib/full-title-formula-catalog';
 import { AI_CLICHE_PATTERN, getPublicEditorialRiskIssues, hasUnsupportedProductNumberClaim, normalizeTitleIdentity } from '@/lib/editorial-quality';
 import { collectFrenchCheckTargets, findSuspiciousFrenchTokens } from '@/lib/french-spellcheck';
-import { getCoverTemplatePrompt, getCoverTemplateSpec, isCoverTitleLengthOk, coverTitleMaxlength, type CoverTemplateSpec } from '@/lib/cover-template-specs';
+import { getCoverTemplatePrompt, getCoverTemplateSpec, isCoverTitleLengthOk, coverTitleMaxlength, parseContentPromiseCount, type CoverTemplateSpec } from '@/lib/cover-template-specs';
 import { retrieveProductFacts } from '@/lib/product-fact-retrieval';
 import {
   getProductCoverFallbackTitle,
@@ -97,17 +97,75 @@ export function autoFixCoverCapacity(cover: NormalizedCover, spec: CoverTemplate
       if (item.secondary && item.secondary !== secondaryBefore) events.push(`分组「${section.heading}」secondary 尾部截断符→清理`);
     }
     if (section.items.length > maxItems) {
-      events.push(`分组「${section.heading}」${section.items.length}条→截断为${maxItems}条`);
-      section.items = section.items.slice(0, maxItems);
+      // 保护性删除（job_010 实锤：盲砍队尾把文献封面唯一的法语长例句删掉，
+      // document_examples_missing 炸单）。优先删内容最短的条目；带 8+ 字符
+      // 法语串的例句条目最后才动（全组都是例句时按长度兜底）。幸存条目保持原顺序。
+      const beforeCount = section.items.length;
+      const strength = section.items.map((item, idx) => ({
+        idx,
+        hasExample: /[A-Za-zÀ-ÿ]{8,}/.test(`${item.primary} ${item.secondary || ''} ${item.note || ''}`),
+        len: visualLength(item.primary) + visualLength(item.secondary || ''),
+      }));
+      const allExamples = strength.every(entry => entry.hasExample);
+      const dropSet = new Set(
+        strength
+          .filter(entry => allExamples || !entry.hasExample)
+          .sort((a, b) => a.len - b.len)
+          .slice(0, beforeCount - maxItems)
+          .map(entry => entry.idx),
+      );
+      section.items = section.items.filter((_, idx) => !dropSet.has(idx));
+      events.push(`分组「${section.heading}」${beforeCount}条→截断为${maxItems}条`);
     }
   }
   while (sections.length > maxSections) {
     const last = sections.pop()!;
     const target = sections[sections.length - 1];
-    target.items = [...target.items, ...last.items].slice(0, maxItems);
+    const merged = [...target.items, ...last.items];
+    if (merged.length > maxItems) {
+      const strength = merged.map((item, idx) => ({
+        idx,
+        hasExample: /[A-Za-zÀ-ÿ]{8,}/.test(`${item.primary} ${item.secondary || ''} ${item.note || ''}`),
+        len: visualLength(item.primary) + visualLength(item.secondary || ''),
+      }));
+      const allExamples = strength.every(entry => entry.hasExample);
+      const dropSet = new Set(
+        strength
+          .filter(entry => allExamples || !entry.hasExample)
+          .sort((a, b) => a.len - b.len)
+          .slice(0, merged.length - maxItems)
+          .map(entry => entry.idx),
+      );
+      target.items = merged.filter((_, idx) => !dropSet.has(idx));
+    } else {
+      target.items = merged;
+    }
     events.push(`分组超上限，「${last.heading}」并入「${target.heading}」`);
   }
-  return { cover: { ...cover, sections }, events };
+  // 封面数字确定性改写（job_010 炸单链第二环）：截断/并组后条数变了，标题里的
+  // "7步骤"就成了谎言 → cover_count_mismatch 炸单。改成真实条数（幂等：本来就
+  // 对就不动）。事实量词（N大模块/N项清单…指向商品事实）不改数——改数=造谎，
+  // 由 final 阶段的 fact-counter 剥数字逻辑处理。
+  const itemCount = sections.reduce((sum, section) => sum + section.items.length, 0);
+  const FACT_UNIT = /^(?:大模块|大主题|大维度|模块|资料|范文|清单|文体|主题|维度)/;
+  const renumberCountClaim = (text: string): string => text.replace(COVER_COUNT_CLAIM_PATTERN, (whole, num: string, unit: string, offset: number, full: string) => {
+    if (FACT_UNIT.test(unit)) return whole;
+    if (FACT_UNIT.test(full.slice(offset + whole.length, offset + whole.length + 2))) return whole;
+    const expected = SECTION_LEVEL_UNITS.has(unit) ? sections.length : itemCount;
+    const claimed = Number.parseInt(num, 10);
+    if (!Number.isFinite(claimed) || expected <= 0 || claimed === expected) return whole;
+    events.push(`封面数字改写：${whole}→${expected}${unit}`);
+    return `${expected}${unit}`;
+  });
+  return {
+    cover: {
+      ...cover,
+      title: renumberCountClaim(cover.title || ''),
+      subtitle: renumberCountClaim(cover.subtitle || ''),
+      sections,
+    },
+    events,
+  };
 }
 
 export type ProductCard = NonNullable<ReturnType<typeof getCompetitorCreativeCard>>;
@@ -281,10 +339,18 @@ export async function refineSeededTopics(input: RefineSeededTopicsInput): Promis
         '这是选题阶段，不要提前断言具体法语规则、列出未经检索的语法子类型或编造精确数量；具体例句、分类和法语结论留到后续检索与审校。',
         '选题阶段不得预设某句“看似正确其实错/别扭/不地道”。没有具体证据时，只能策划成“按语境区分、比较语域或检查真实错误”，避免后续为了兑现标题把正确法语硬判成错。',
         '选题阶段也不要写“扣分扣在哪、选错就扣分、致命扣分”等官方判分口吻；改成“问题在哪、容易错配、影响表达”。',
+        // Fix F（精修侧）：batch_1786817030706 实测 LLM 在精修时发明“9个问题”，
+        // 而卡片容量是 22+ → 密度闸门逼出 25 项 → 封面反谎规则把标题改成“25项”，
+        // 任务单和成品对不上。数量承诺只能沿用种子卡的真实数字。
+        'topic 和 content_promise 里的数量词（N个/N条/N项/N步等，N≥2）只能沿用 base_topic 里已有的真实数字，禁止新造、禁止改小、禁止换算；base_topic 没有数量词就不要新增数量词。封面条目数由模板容量决定，与你写的数字无关。',
         profile.topicScopePrompt,
         'AI可以补充正确科普与例句；不得虚构商品数量、服务、官方规则、得分和提分时长。',
         'product_bridge写给管理员看，只说明如何自然承接当前商品使用场景，不写内部规则、代码名或“是否收录”的讨论。',
         `当前参考封面：${input.card.name}；内容机制：${input.card.content_mechanism}；点击机制：${input.card.click_mechanism}。`,
+        (() => {
+          const spec = getCoverTemplateSpec(input.card.renderer_id);
+          return spec ? `该封面模板容量：${spec.sectionCount}组×约${spec.itemsPerSection}条，最少${spec.minTotalItems}条有效条目。` : '';
+        })(),
       ].join('\n'),
     },
     {
@@ -332,8 +398,13 @@ export async function refineSeededTopics(input: RefineSeededTopicsInput): Promis
     // complete sentence is better than a 30-character fragment such as
     // "...把常见"; downstream title generation will create the short title.
     const topic = selectProductSafeTaskText(input.productId, asString(proposed.topic), base.topic, true);
-    const uniqueTopic = topic && !seen.has(topic) && topic !== base.topic ? topic : base.topic;
+    // Fix F（确定性兜底）：精修后的数量承诺与种子卡不一致 = LLM 新造/改动了数字
+    // （"9个问题"事故），直接回退种子卡原文，不信 prompt。
+    const topicWithSafeCount = parseContentPromiseCount(topic) !== parseContentPromiseCount(base.topic) ? base.topic : topic;
+    const uniqueTopic = topicWithSafeCount && !seen.has(topicWithSafeCount) && topicWithSafeCount !== base.topic ? topicWithSafeCount : base.topic;
     seen.add(uniqueTopic);
+    const proposedPromise = selectProductSafeTaskText(input.productId, asString(proposed.content_promise), base.content_promise);
+    const safePromise = parseContentPromiseCount(proposedPromise) !== parseContentPromiseCount(base.content_promise) ? base.content_promise : proposedPromise;
     return {
       ...base,
       id: `${base.seed_id || `seed_${index}`}__${input.card.renderer_id}__${nonce}`,
@@ -346,7 +417,7 @@ export async function refineSeededTopics(input: RefineSeededTopicsInput): Promis
       audience: selectProductSafeTaskText(input.productId, asString(proposed.audience), base.audience),
       scene: selectProductSafeTaskText(input.productId, asString(proposed.scene), base.scene),
       pain: selectProductSafeTaskText(input.productId, asString(proposed.pain), base.pain),
-      content_promise: selectProductSafeTaskText(input.productId, asString(proposed.content_promise), base.content_promise),
+      content_promise: safePromise,
       // Product facts are not sent to this lightweight ideation call. Keep the
       // pre-grounded bridge instead of letting the model invent modules/services.
       product_bridge: base.product_bridge,
@@ -361,7 +432,6 @@ export async function refineSeededTopics(input: RefineSeededTopicsInput): Promis
 
 function sanitizeTaskText(value: string, productId?: ProductId) {
   const result = sanitizePublicText(value)
-    .replace(/精准提分/g, '找到改进方向')
     .replace(/高分模板/g, '常用写作框架')
     .replace(/直接调用/g, '按语境调用')
     .replace(/直接调取/g, '按题目调取')
@@ -369,15 +439,10 @@ function sanitizeTaskText(value: string, productId?: ProductId) {
     .replace(/替换主题词就能/g, '重写语境后再')
     .replace(/替换主题词[，,]\s*就能/g, '重写主题词后，再')
     .replace(/就能快速组织出/g, '更容易组织出')
-    .replace(/效率翻倍/g, '更省力')
-    .replace(/精准提分/g, '练得更对路')
-    .replace(/分数卡在\s*\d+\s*分左右/g, '分数容易卡住')
-    .replace(/分数卡在\s*\d+\s*分左右/g, '写作一直卡住')
     .replace(/让我考前[^，。；\n]{0,24}/g, '考前复盘时')
     .replace(/看似正确(?:实则|其实)(?:错误|别扭|不对|不地道)/g, '容易混淆')
     .replace(/必备/g, '常用')
     .replace(/如何用([^，。；]{1,24})代替(?:简单的)?([^，。；]{1,24})$/g, '$1和$2怎么按语境选择')
-    .replace(/(?:稳拿|冲刺|拿到|写出)?高分/g, '写得更稳')
     .replace(/扣分扣在哪/g, '问题在哪')
     .replace(/(?:被)?扣在哪里/g, '问题出在哪里')
     .replace(/(?:被)?扣在/g, '问题在')
@@ -501,18 +566,22 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
         '知识库证据可直接引用或改写；AI原创内容必须保持法语正确，source_type标为ai_original或mixed。来源标记只供内部审校，绝不能显示给用户。',
         'AI补充的科普内容可以正常出现在笔记里，但公开文案不得声称它属于商品，也不得刻意声明它不属于商品。只有给定证据明确证明的商品模块、数量和能力，才允许作为商品事实表达。',
         '商品数量、模块、服务只能来自给定证据。科普、例句、练习可以原创。',
-        '笔记文字标题必须不超过20个字符，中文、英文、数字、空格、全角/半角标点都各算1个字符；必须提供5类候选：资料型、解释型、强钩子型、情绪型、结果型。它负责搜索和点击，必须优先使用恐惧损失、好奇缺口、认知冲突、场景代入之一。禁止机械使用“XXX？YYY”的同一种句式，禁止写成平淡说明书标题。',
+        '笔记文字标题必须不超过20个字符，中文、英文、数字、空格、全角/半角标点都各算1个字符；必须提供5类候选：资料型、解释型、强钩子型、情绪型、结果型。它负责搜索和点击，必须优先使用恐惧损失、好奇缺口、认知冲突、场景代入之一。句式硬限制：候选里带问号的疑问句最多 2 条，“救命”“别再”“为什么”开头的句式各自最多 1 条，其余写陈述句；程序按句式指纹扣分，重复句式会被排到末尾。禁止写成平淡说明书标题。',
         // 笔记文字标题必须贴合真实搜索行为。validated_search_keywords 是小红书
         // 下拉联想验证过的高流量词，标题自然嵌入 1 个能显著提升可搜性。禁止
         // 堆砌——一个标题最多 1 个高频词，且必须服务于选题核心承诺。
         titleKeywords.length
           ? `笔记文字标题应贴合小红书真实搜索流量。validated_search_keywords 字段里的词（${titleKeywords.join('、')}）均经过下拉联想验证，流量真实。每个标题候选最多自然嵌入 1 个高频词，必须服务于选题，禁止堆砌；如果选题与这些词都无关，宁可不用。`
           : '',
-        '75个公式只服务于笔记文字标题：先匹配心理触发器，再仿写公式结构，禁止为了套公式扭曲内容。候选中必须覆盖5个title_type：资料型、解释型、强钩子型、情绪型、结果型；至少包含1个自然原创标题、1个公式仿写标题、1个竞品机制迁移标题。',
+        '75个公式只服务于笔记文字标题：先匹配心理触发器，再仿写公式结构，禁止为了套公式扭曲内容。候选中必须覆盖5个title_type：资料型、解释型、强钩子型、情绪型、结果型；至少包含1个自然原创标题、1个公式仿写标题、1个竞品机制迁移标题。类型只能写在 title_type 字段里，title 字段只放标题文字本身——禁止在标题末尾或中间附加"（资料型）"之类的类型标注。',
         '标题质量硬要求：至少命中2项——具体人群/场景、真实痛点、悬念缺口、反常识、损失感、数字锚点。无情绪、无悬念、无痛点的内部任务名必须重写。',
-        `可参考的强标题方向：${profile.titleExamples.join('；')}。只学方向，不得照抄。`,
         `例如：笔记文字标题负责点击和搜索；封面标题负责让人一眼看懂“${profile.noteIdentity}”的具体资料价值；副标题再说明范围或使用场景。三者不要写成同一句。`,
         '封面标题或副标题若写具体数量（N句/个/条/项/类/组/步/招/要点/关键），N必须严格等于封面实际条目数或分组数。DELF B2客观事实数字（如"3种写作任务"）允许出现在正文，但**禁止**写在封面 title/subtitle——封面格子数与考试事实数字经常对不上，会被审校砍掉。拿不准就不要写数字，让正文承载客观事实。',
+        // 反谎补丁：规则"数字=格子数"遇到事实量词会产生更坏的错——标题编辑器被禁写
+        // 事实数字 7（7大模块），就按分组数改写成"5大模块"，等于造出一个假事实
+        // （batch_1786838937231 job_011 实锤：封面"5大模块全景图"+副题"42条资料"，
+        // 正文却写 7大模块/519条，同一篇自相矛盾）。
+        '特别禁止：把事实计数改写成封面格子数。量词指向商品或考试事实时（大模块/大主题/大维度/种文体/条资料/篇范文/项清单），数字必须等于商品真实数量——封面凑不齐就整个去掉数字（写"模块全景图"而不是"5大模块"），绝不允许把数字改成封面分组数或条目数。',
         '标题必须像中国用户自然说话，读出声不拗口。标题至少有明确对象、具体利益或信息缺口中的两项。',
         '标题写“陷阱/错误/避坑”时正文必须真有对应错误；写“模板/范文”时本篇必须真提供模板或完整范文。禁止为了蹭搜索词改变内容类型。',
         `每个笔记文字标题和封面主标题都必须清楚出现“${profile.noteIdentity}”对应身份，且不得出现另一商品考试名称。`,
@@ -682,19 +751,35 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     throw new Error(`标题或封面返修后仍未达标：${blockingCoreIssues.join(', ')}${diagnostic}`);
   }
 
+  const narrativeSkeleton = pickNarrativeSkeleton(
+    `${input.card.id}|${input.topic.seed_id || input.topic.id}`,
+    crossBatchTopicCheck?.recentSkeletons || [],
+  );
   const editorialResult = await generateEditorialOutput(input, {
     brief,
     selectedTitle,
     cover,
     viralRefs,
     recentTagCounts: crossBatchTopicCheck?.recentTagCounts,
+    recentPageTitles: crossBatchTopicCheck?.recentPageTitles,
+    narrativeSkeleton,
+    recentCaptionEndings: crossBatchTopicCheck?.recentCaptionEndings,
   });
 
   let editorial = asRecord(editorialResult);
   let innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages, `${input.card.id}|${input.topic.id}`), input.evidence);
   let caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, topicId: input.topic.id, coverTitle: cover.title || '' });
   const seoKeywords = buildSeoKeywords(input.productId, input.topic);
-  let tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`, input.card.id);
+  const seedTopicKeywords = getSeedTopicKeywords(input.topic.seed_id || '');
+  let tags = normalizeTags(editorial.tags, seoKeywords, input.productId, [
+    input.topic.topic,
+    input.topic.content_promise,
+    cover.title,
+    cover.subtitle,
+    cover.sections.map(section => section.heading).join(' '),
+    caption,
+    innerPages.map(page => page.page_title).join(' '),
+  ].filter(Boolean).join(' '), input.card.id, crossBatchTopicCheck?.recentTagCounts, seedTopicKeywords);
   innerPages = ensureMinimumInnerPages(innerPages, cover, input.productId);
   caption = ensurePublishableCaption(caption, seoKeywords[0], cover, input.card.id);
   let editorialWarnings = getEditorialIssues(innerPages, caption, seoKeywords, input.evidence, input.productId).filter(issue => !isBlockingEditorialIssue(issue));
@@ -703,7 +788,15 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     editorial = asRecord(await repairEditorialOutput({ brief, selectedTitle, cover, evidence: input.evidence, issues: editorialIssues, seoKeywords, cardId: input.card.id, topicId: input.topic.id, attempt: 1 }));
     innerPages = normalizePageEvidence(normalizePages(editorial.inner_pages, `${input.card.id}|${input.topic.id}`), input.evidence);
     caption = resolveCaptionFromEditorial(editorial, { productId: input.productId, cardId: input.card.id, topicId: input.topic.id, coverTitle: cover.title || '' });
-    tags = normalizeTags(editorial.tags, seoKeywords, input.productId, `${input.topic.topic} ${input.topic.content_promise} ${cover.title}`, input.card.id);
+    tags = normalizeTags(editorial.tags, seoKeywords, input.productId, [
+      input.topic.topic,
+      input.topic.content_promise,
+      cover.title,
+      cover.subtitle,
+      cover.sections.map(section => section.heading).join(' '),
+      caption,
+      innerPages.map(page => page.page_title).join(' '),
+    ].filter(Boolean).join(' '), input.card.id, crossBatchTopicCheck?.recentTagCounts, seedTopicKeywords);
     innerPages = ensureMinimumInnerPages(innerPages, cover, input.productId);
     caption = ensurePublishableCaption(caption, seoKeywords[0], cover, input.card.id);
     const remainingIssues = getEditorialIssues(innerPages, caption, seoKeywords, input.evidence, input.productId);
@@ -718,16 +811,15 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
       if (blockingIssues.includes('caption_length_invalid')) {
         editorialDiag += ` | caption_len=${caption.length}(需220-440)`;
       }
-      if (blockingIssues.includes('unsupported_outcome_claim')) {
-        const m = `${caption} ${innerPages.map(p => `${p.page_title} ${p.lead} ${p.bullets.join(' ')}`).join(' ')}`.match(/拿高分|立刻升级|保证提分|稳拿高分|提分的?关键|精准提分|效率翻倍|分数卡在\s*\d+\s*分左右|考前[^。；\n]{0,20}就能/);
-        if (m) editorialDiag += ` | outcome_hit:"${m[0]}"`;
-      }
       throw new Error(`内页或正文返修后仍未达标：${blockingIssues.join(', ')}${editorialDiag}`);
     }
   }
   // 带货承接 enforcement：LLM 没写承接句就按 seed 轮换确定性补一句，
   // 保证每篇正文都有带货出口（warn 不 block，补完即达标）。
-  caption = ensureProductBridge(caption, brief, `${input.card.id}|${input.topic.seed_id || input.topic.id}`);
+  const recentCaptionEndings = crossBatchTopicCheck?.recentCaptionEndings || [];
+  caption = ensureProductBridge(caption, brief, `${input.card.id}|${input.topic.seed_id || input.topic.id}`, recentCaptionEndings);
+  // 结尾批内复读 enforcement：承接句/CTA 与近期结尾同尾时确定性改写成另一出口。
+  caption = ensureCaptionEndingVariety(caption, recentCaptionEndings);
   let audited = await auditEducationalContent({
     productId: input.productId,
     cover,
@@ -811,6 +903,22 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   };
   selectedTitle = stripForbiddenIdentityFinal(selectedTitle);
   titleCandidates = titleCandidates.map(c => ({ ...c, title: stripForbiddenIdentityFinal(c.title || '') }));
+  // 谎报词标题兜底：候选过滤在 polish 之前跑，polish 可能重新注入"官方授权"式
+  // 标题。选中标题命中谎报词时确定性换掉——优先池里本 seed
+  // 锚定的干净候选，其次 seed 兜底标题；换不出就保留原样走原闸门，不加新炸单点。
+  if (selectedTitle && TITLE_CLAIM_PATTERN.test(selectedTitle)) {
+    const cleanPoolTitle = titleCandidates.find(c => c.title && isCompleteTitle(c.title, 'text') && !TITLE_CLAIM_PATTERN.test(c.title)
+      && (!input.topic.seed_id || isTitleAnchoredToSeed(c.title, input.topic.seed_id)))?.title;
+    const seedFallback = buildSeedTitleFallbacks(input.topic, input.productId);
+    const seedFallbackTitle = [seedFallback.free, seedFallback.reference]
+      .find(title => title && !TITLE_CLAIM_PATTERN.test(title)
+        && (!input.topic.seed_id || isTitleAnchoredToSeed(title, input.topic.seed_id)));
+    const swapTitle = cleanPoolTitle || seedFallbackTitle;
+    if (swapTitle) {
+      console.info(`[final-title-claim] card=${input.card.id} "${selectedTitle}" -> "${swapTitle}"`);
+      selectedTitle = swapTitle;
+    }
+  }
   caption = stripForbiddenIdentityFinal(caption);
   innerPages = innerPages.map(page => ({
     ...page,
@@ -834,7 +942,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     // 最后一环 noteIdentity 前缀必然含本商品身份词，保证链条永远终止在合格标题上，
     // 不会再把"法语B2必背高频表达"这种缺身份词的兜底标题送进 final_gate。
     const fallbackCandidates = [
-      buildCoverTitleFallback(input.topic, input.productId, input.card.renderer_id, cover, recentTitleFingerprints?.coverTitles).title,
+      buildCoverTitleFallback(input.topic, input.productId, input.card.renderer_id, cover, recentTitleFingerprints?.coverTitles, recentTitleFingerprints?.coverSubtitles).title,
       getRendererCoverFallbackTitle(input.productId, input.card.renderer_id, familyFinal),
       getProductCoverFallbackTitle(input.productId),
     ];
@@ -854,9 +962,38 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   }
   cover = finalAutofix.cover;
 
+  // 反谎终检（batch_1786838937231 job_011 实锤）：封面标题/副题的事实计数
+  // （N大模块/N条资料/N篇范文…）若与正文同类计数不一致，确定性剥掉封面数字。
+  // "5大模块全景图"（5=封面分组数）配正文"7大模块"、"42条资料"配"519条"，
+  // 是"封面数字必须等于格子数"规则在事实量词上的副作用——编辑器凑不齐就改数，
+  // 比不写数字更糟。剥数字保事实：5大模块→模块，42条资料→资料。
+  {
+    const COUNTER_RE = /(\d{1,3})\s*(?:大|条|篇|项|种)(模块|资料|范文|清单|文体|主题|维度)/g;
+    const bodyText = `${caption} ${innerPages.map(page => `${page.page_title} ${page.lead} ${page.bullets.join(' ')}`).join(' ')}`;
+    const bodyCounters = new Map<string, Set<number>>();
+    for (const match of bodyText.matchAll(COUNTER_RE)) {
+      const unit = match[2];
+      if (!bodyCounters.has(unit)) bodyCounters.set(unit, new Set());
+      bodyCounters.get(unit)!.add(Number.parseInt(match[1], 10));
+    }
+    const stripConflictingCounters = (value: string): string => value.replace(COUNTER_RE, (whole, num: string, unit: string) =>
+      bodyCounters.get(unit)?.has(Number.parseInt(num, 10)) ? whole : `${unit}`);
+    const titleStripped = stripConflictingCounters(cover.title || '');
+    const subtitleStripped = stripConflictingCounters(cover.subtitle || '');
+    if (titleStripped !== cover.title || subtitleStripped !== cover.subtitle) {
+      console.info(`[final-fact-counter] card=${input.card.id} title="${cover.title}"->"${titleStripped}" subtitle="${(cover.subtitle || '').slice(0, 30)}"->"${subtitleStripped.slice(0, 30)}"`);
+      cover = { ...cover, title: titleStripped, subtitle: subtitleStripped };
+    }
+  }
+
   const finalCoreIssues = getCoreIssues(titleCandidates, cover, input.card.renderer_id, input.evidence, input.productId);
   coreWarnings = finalCoreIssues.filter(issue => !isBlockingCoreIssue(issue));
   const finalBlockingCoreIssues = finalCoreIssues.filter(isBlockingCoreIssue);
+  // 文字标题主题锚定终检：选出的 selected_title 必须命中本 seed 的关键词，
+  // 否则宁可炸单返修也不发一篇标题与内容驴唇不对马嘴的笔记。
+  if (input.topic.seed_id && selectedTitle && !isTitleAnchoredToSeed(selectedTitle, input.topic.seed_id)) {
+    finalBlockingCoreIssues.push('selected_title_off_topic');
+  }
   const finalEditorialAllIssues = getEditorialIssues(innerPages, caption, seoKeywords, input.evidence, input.productId);
   editorialWarnings = finalEditorialAllIssues.filter(issue => !isBlockingEditorialIssue(issue));
   const finalEditorialIssues = finalEditorialAllIssues.filter(isBlockingEditorialIssue);
@@ -892,6 +1029,9 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
         offenders.push(`cover.title="${(cover.title || '').slice(0, 60)}"(缺本商品身份词)`);
       }
       diagnostic = offenders.length ? ` | forbidden_hits: ${offenders.join(' | ')}` : ' | no_field_match_(pattern_miss?)';
+    }
+    if (finalBlockingCoreIssues.includes('selected_title_off_topic')) {
+      diagnostic += ` | off_topic_title: selected_title="${(selectedTitle || '').slice(0, 30)}" seed=${input.topic.seed_id} keywords=${getSeedTopicKeywords(input.topic.seed_id || '').slice(0, 4).join('/')}`;
     }
     if (finalBlockingCoreIssues.includes('cover_item_truncated')) {
       const truncated: string[] = [];
@@ -941,6 +1081,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     inner_pages: innerPages,
     caption,
     tags,
+    narrative_skeleton: narrativeSkeleton.id,
     seo_keywords: seoKeywords,
     accuracy_audit: audited.summary,
     evidence: input.evidence,
@@ -1133,7 +1274,26 @@ export async function auditEducationalContent(input: {
   let dictionaryErrors: string[] = [];
   let dictionaryWarnings: string[] = [];
   try {
-    const findings = await findSuspiciousFrenchTokens(collectFrenchCheckTargets(coverCopy, pagesCopy));
+    // 错句对照类内容里"错："一侧（✗/×/错： 到 ✓/√/对： 之间）是故意写错的
+    // 教学素材，词典层必须跳过——job_007 实测 "une voiture francais" 被
+    // 判成粘词硬错，整个 job 白白多走一轮返修。只豁免词典这一层，上面的
+    // LLM 审校照常看（它懂教学语境）。
+    const stripWrongSide = (text: string) => text
+      .replace(/(?:[✗✘×❌]|错[：:])(.*?)(?=[✓✔√]|对[：:]|正[：:]|$)/g, ' ')
+      .replace(/\s+/g, ' ');
+    const dictionaryCover = {
+      sections: coverCopy.sections.map(section => ({
+        items: section.items.map(item => ({
+          primary: stripWrongSide(item.primary || ''),
+          secondary: item.secondary ? stripWrongSide(item.secondary) : undefined,
+        })),
+      })),
+    };
+    const dictionaryPages = pagesCopy.map(page => ({
+      lead: stripWrongSide(page.lead || ''),
+      bullets: page.bullets.map(bullet => stripWrongSide(bullet || '')),
+    }));
+    const findings = await findSuspiciousFrenchTokens(collectFrenchCheckTargets(dictionaryCover, dictionaryPages));
     dictionaryErrors = findings
       .filter(f => f.certain)
       .map(f => `${f.location}：词典硬校验发现疑似缺空格拼接词"${f.token}"，可能应为"${f.suggestion}"`);
@@ -1164,6 +1324,30 @@ export async function auditEducationalContent(input: {
 // 保留函数签名是为了兼容现有调用点（resolveCaptionFromEditorial / captionMin 计算）。
 function captionSchemaEnabled(): boolean {
   return false;
+}
+
+// 叙事骨架池：caption schema 关闭后完全靠 LLM 自由写，但 viral_references 全是
+// 第一人称失败复盘型爆款，LLM 篇篇学它的骨架（11 篇模拟实测 8/11 同为
+// "我以前惨→后来方法→现在好了"救赎弧，9/11 结尾同款"整理进资料"句式）。
+// 骨架由代码按 seed 确定性指定——不进 prompt 示例池（LLM 必抄文字示例），
+// 只给结构描述。
+const NARRATIVE_SKELETONS = [
+  { id: 'failure_recovery', spec: '失败复盘——第一人称，从一次具体的失败经历（某次模考/练习/被批改的瞬间）切入，自然带出方法；结尾落在方法生效后的具体变化' },
+  { id: 'direct_delivery', spec: '直给清单——开头一两句说清本篇解决什么问题、给出什么交付，直接进入条目展开；不讲故事、不铺情绪' },
+  { id: 'myth_busting', spec: '误区纠偏——开头指出一个多数考生都在用的普遍做法，点破它为什么吃亏，再给正确做法和正误对照' },
+  { id: 'qa_walkthrough', spec: '自问自答——开头抛出读者最可能问的一个问题，正文每段回答一个子问题，层层拆完' },
+  { id: 'scene_timeline', spec: '场景时间线——开头把读者放进具体场景（发卷后十分钟/写正文前五分钟），按时间顺序走每一步该做什么' },
+] as const;
+
+export function pickNarrativeSkeleton(seedKey: string, recentSkeletons: readonly string[] = []): { id: string; spec: string } {
+  // 只在"近期用得最少"的骨架里抽。旧版是排序沉底——但排序不排除，hash 取模
+  // 照样能抽中沉底项（概率不变），实测 13 篇里 myth_busting×7、agent2 批内 3/4。
+  // 硬排除后同骨架不可能连发两篇：被用过一次就退出候选，直到其他骨架追平。
+  const useCount = (id: string) => recentSkeletons.filter(s => s === id).length;
+  const counts = NARRATIVE_SKELETONS.map(s => useCount(s.id));
+  const minCount = Math.min(...counts);
+  const candidates = NARRATIVE_SKELETONS.filter(s => useCount(s.id) === minCount);
+  return candidates[stableHash(`${seedKey}-skeleton`) % candidates.length];
 }
 
 // 从 editorial 结果里抽出 caption 字符串。
@@ -1271,6 +1455,9 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
   cover: NormalizedCover;
   viralRefs?: ViralNote[];
   recentTagCounts?: Map<string, number>;
+  recentPageTitles?: string[];
+  narrativeSkeleton?: { id: string; spec: string };
+  recentCaptionEndings?: string[];
 }) {
   const profile = getProductPromptProfile(input.productId);
   const seoKeywords = buildSeoKeywords(input.productId, input.topic);
@@ -1287,9 +1474,22 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
         '你是资深小红书法语内容编辑。选题、人群、场景、痛点和内容承诺已经锁定，不能另起主题。只返回JSON。',
         '生成4-6张真正给用户看的内页，以及一篇可直接发布的正文。内页不是把正文切片粘贴。',
         '每张内页必须有具体知识、例子、对照、步骤或练习；禁止写幕后设计意图。',
+        // 内页标题跨 job 去重：通用收尾页（复盘/自查/怎么用）LLM 会反复写同一
+        // 个标题（batch_1786754651839："常见错误这样检查"×3、"写完之后这样复盘"×3）。
+        // 喂回近期已用标题，要求写贴本篇主题的具体标题。
+        context.recentPageTitles && context.recentPageTitles.length
+          ? `recent_page_titles 列出近期笔记已用过的内页标题：禁止逐字重复、禁止只换个名词的同款改写。尤其收尾页（复盘/自查/考场调用/怎么用）不许写成万能标题（"写完之后这样复盘""常见错误这样检查"这类），必须带上本篇的具体主题词。`
+          : '',
+        // 页型单调实测（batch_1786754651839：15 篇里 5 篇 6 页全是 knowledge_list）：
+        // 整篇一个版式读起来像同一页复制 6 遍。要求至少混排 3 种页型。
+        'page_type 混排硬要求：整篇内页至少覆盖 3 种不同 page_type（knowledge_list/example_explain/wrong_right/steps 任选组合，product_bridge 收尾）；禁止全部页都写 knowledge_list——有例子就写 example_explain，有对错对照就写 wrong_right，有动作序列就写 steps。',
         useSchema
           ? `正文按 caption_parts 字段结构化输出（模板由系统按本篇 seed 强制指定），由系统拼装成最终长文；字段约束见下。template 字段必须等于系统指定的值，不得自由切换。`
           : '正文280-420个中文字符，分成4-6个短段、每段约60-90字，每段写满具体内容；正文独立承载使用方法、关键提醒和自然商品承接，不是图片的附注，禁止只写两三句就收尾。',
+        // 叙事骨架由系统按 seed 指定（user 消息里 narrative_skeleton 字段）。
+        // viral_references 的爆款全是失败复盘型，不指定的话整批 caption 都是
+        // 同一个"我以前惨→现在好"骨架（11 篇模拟实测 8/11）。
+        'narrative_skeleton 是系统为本篇指定的叙事骨架，开头、行文推进方式和结尾都必须按它写，不得更换；骨架与爆款参考的节奏冲突时以骨架为准。',
         '商品事实只能来自证据；正确科普、法语例句、练习可以原创。公开文案不讨论AI补充内容是否收录在商品里，既不声称包含，也不声明不包含。',
         'AI原创科普以稳妥常识和法语用法为主，不编造现实数据、比例、年份或未经证据支持的具体地区损失与医学因果。',
         '逐条核对法语语法、搭配、语域和适用场景；不确定就删除。不要把学习建议描述成官方强制规则。',
@@ -1303,18 +1503,19 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
           ? `validated_search_keywords 已经过小红书下拉联想验证，真实有流量。正文里自然嵌入 1-2 个（前 80 字优先），禁止堆砌；tag 必须组合成带商品身份的复合形式，但只能描述本篇真实内容：没有完整范文就不能写“范文”，没有模板就不能写“模板”。禁止输出单独的「#模板」「#范文」「#技巧」这类无主标签。`
           : '',
         // tag 撞款根治：身份大词（#DELFB2 #法语写作 这类）以前篇篇都出现，
-        // 整个账号的 tag 像复读机。大词只留 2 个做定位，其余必须从本篇内容里长出来。
-        'tag 硬规则：总共 6-8 个。身份大词（商品名/考试名/“法语写作”这类泛身份词）最多 2 个；其余 4-6 个必须是只有本篇内容才会用到的具体 tag——从内页实际知识点、法语条目、场景、题型里提炼（例如本篇讲正式信开头，就写正式信相关的具体 tag），不要写放在任何一篇都成立的泛 tag。user 消息里的 overused_tags 列出近期已过度使用的 tag，这些最多保留 1 个。',
+        // 整个账号的 tag 像复读机。大词只留 2 个做定位，其余从验证词池组合。
+        // 旧版规则"从内页知识点提炼具体 tag"实测教 LLM 发明没人搜的描述型
+        // 短语（#审题草稿技巧 #正文控时方法）——tag 没人搜就没有流量，
+        // 改成只能从 validated_search_keywords 池组合（确定性检查同步拦截）。
+        'tag 硬规则：总共 6-10 个。身份大词（商品名/考试名/“法语写作”这类泛身份词）最多 2 个；其中 2 个必须直接取自本篇正文/封面真实出现的内容词（知识点、题型、场景词——本篇讲什么就写什么词，不得发明本篇没有讲的词）；其余从 user 消息的 validated_search_keywords 池里选词、与身份词组合成复合 tag（组合结构 = 身份词/科目词 + 池内搜索词，本篇讲什么就从池里挑最贴近的词）。禁止自创内容描述型短语当 tag——像小标题、像方法论归纳、四个字以上但不是搜索词的（没人会搜）一律不写。程序会剥掉身份词根校验剩余锚词是否命中搜索词池，不命中的 tag 直接丢弃。overused_tags 列出近期已过度使用的 tag，这些最多保留 1 个。',
         // schema 模式下，AI 套话被字段结构消除，不再需要 prompt 黑名单。
         useSchema ? '' : '禁止以下AI套话（出现即判低质）：1）“不是X而是Y”“不在于X而在于Y”；2）“问题出在”“的关键是”“问题的关键”；3）“很多备考同学都会遇到”“很多同学”；4）递进空话“不仅仅是X，更是Y”“X让Y更Z”“X让Y不再Z”；5）翻译腔“在X的过程中”；6）结论空话“X才是关键/核心/根本”“重要性不言而喻”“通过X才能Y”“X是一个需要Y的过程”；7）议论文标志“综上所述”“总而言之”“总的来说”“首先……其次……最后”；8）句首“其实，”开头的让步句。',
-        // 与质检 unsupported_outcome_claim 正则同步（生成侧黑名单，返修侧同款）。
-        '效果承诺黑名单（命中即打回）：不得出现“拿高分”“稳拿高分”“提分的关键”“保证提分”“精准提分”“效率翻倍”“立刻升级”“分数卡在N分左右”，以及任何“考前……就能……”句式（不只限提分，如“考前一周就能上手”同样命中）。只写方法和自查维度，不承诺结果。',
         profile.editorialScopePrompt,
         '内页要承接封面未展开的信息：短条目在封面，完整解释、例句、对照、使用条件和练习进入内页。内页顺序应形成”看懂主题→获得方法→看到例子→能够自查→自然了解商品”的阅读链。',
         // 带货规格：之前只有禁令（禁库存说明、禁归属声明），LLM 学到的最安全做法
         // 是干脆不提商品 → 39 篇里只有 13 篇提到。禁令保留但精确化，同时给出
         // 正向规格：承接句必须写，且必须给购买理由，CTA 只用评论区/下方链接。
-        '商品承接（带货硬要求）：正文最后一段必须有一句承接句，写法 = 我把它整理成了什么（能力用 locked_brief.selling_point，商品事实只能来自证据）+ 一个购买理由 + CTA。购买理由必须贴着本篇内容写：本篇讲时间分配就写省时，讲语气就写改语气不用再猜，讲题型识别就写30秒定文体——禁止写"冲刺期不用东拼西凑"这种放任何一篇都成立的通用理由。CTA 只允许两种写法：“评论区”互动式或“点下方链接”直给式，二选一。禁止的是清单式库存说明（“资料里有/包含/收录N个模块”）和效果承诺（提分/拿高分），不是禁止提商品；承接句要像真人顺口一提，不要写成广告段。',
+        '商品承接（带货硬要求）：正文最后一段必须有一句承接句，包含三个要素——指明这份资料/清单是什么（能力用 locked_brief.selling_point，商品事实只能来自证据）、一个购买理由、CTA。句式由本篇叙事骨架决定：直给清单可以直接说"资料在下方链接"，误区纠偏可以从"别再按老办法"过渡，场景时间线可以落在"进考场前过一遍"。承接句的开头和收尾都不许和 recent_caption_endings 里出现过的写法雷同（同一种 CTA 收尾连用两篇就是复读）——同一批笔记连着发，结尾句式一样就像复读机。购买理由必须贴着本篇内容写：本篇讲时间分配就写省时，讲语气就写改语气不用再猜，讲题型识别就写30秒定文体——禁止写"冲刺期不用东拼西凑"这种放任何一篇都成立的通用理由。CTA 只允许两种写法：“评论区”互动式或“点下方链接”直给式，二选一。禁止的是清单式库存说明（“资料里有/包含/收录N个模块”），不是禁止提商品；承接句要像真人顺口一提，不要写成广告段。',
         // 爆款模仿：用户消息里 viral_references 是 2 篇真实爆款正文开头。
         // 学开头的节奏（第一人称 + 具体场景 + 自然自嘲），不要写成”考前冲刺时”这种硬前缀。
         // 不要照抄爆款的具体内容（爆款讲的可能不是 DELF）。
@@ -1342,6 +1543,16 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
             .sort((a, b) => b[1] - a[1])
             .slice(0, 10)
             .map(([tag, count]) => `${tag}(近${count}篇)`)
+          : [],
+        // 近期已用内页标题（原文，最近 60 条）：逐字重复即撞款。
+        recent_page_titles: context.recentPageTitles
+          ? Array.from(new Set(context.recentPageTitles)).slice(-60)
+          : [],
+        // 本篇叙事骨架（系统按 seed 指定，LLM 不得更换）。
+        narrative_skeleton: context.narrativeSkeleton || undefined,
+        // 近期正文结尾句（原文，最近 30 条）：承接句写法不得与这些雷同。
+        recent_caption_endings: context.recentCaptionEndings
+          ? Array.from(new Set(context.recentCaptionEndings)).slice(-30)
           : [],
         // 爆款模仿：2 篇真实爆款正文开头。
         // 学的是"第一人称/具体场景/自然自嘲"的节奏，不是抄具体内容。
@@ -1555,10 +1766,11 @@ function normalizeBulletText(value: string) {
     .replace(/有没有遗漏让步段或结论/g, '观点是否有必要的限定和结论')
     .replace(/正式信避免缩写（如“c'est”改为“cela est”）/g, '正式信里少用聊天式缩写，语气保持完整')
     .replace(/30秒避坑清单/g, '写前避坑清单')
-    .replace(/秒判/g, '快速判断')
+    // 前面带数字/数词的"秒判"（三十秒判对文体 / 30秒判断）是正常中文，别改写
+    .replace(/(?<![零一二两三四五六七八九十百千0-9〇])秒判/g, '快速判断')
     .replace(/严重影响得分/g, '明显影响表达')
     .replace(/导致低分/g, '让表达不稳')
-    .replace(/换主题词就能/g, '换主题时要重写语境')
+    .replace(/换主题词就能/g, '换主题后重写语境再')
     .replace(/只替换主题词和例子/g, '围绕新题重写主题词和例子')
     .replace(/只替换主题词/g, '围绕新题重写主题词')
     .replace(/\s{2,}/g, ' ')
@@ -1765,11 +1977,9 @@ async function repairEditorialOutput(input: {
         '商品承接不要写“我的/我们的资料里有、资料提供、内容来自资料”等库存说明；数量只可使用证据中原样存在的数字。',
         // 带货承接（返修侧同款正向规格）：failed_checks 里出现
         // caption_product_bridge_missing 时按此补写承接句。
-        '带货承接硬要求：正文最后一段必须有一句承接句 = 我把它整理成了什么（selling_point 能力，商品事实来自证据）+ 一个购买理由（必须贴本篇内容：讲什么考点就说拿它解决什么）+ CTA（只允许“评论区”或“点下方链接”两种写法）。禁库存说明、效果承诺和通用理由。',
-        '禁止万能、必背、捷径、阅卷老师看重、百分比、考官追着给分、白考、保分、必过；禁止虚构省时、挽回分数、保证提分；禁止幕后设计说明和"不是……而是……"套话。',
-        // 与质检 unsupported_outcome_claim 正则同步：这些词命中即 block，
-        // 生成和返修 prompt 都必须明确禁掉，否则返修后照写必挂。
-        '效果承诺黑名单（命中即打回）：不得出现"拿高分""稳拿高分""提分的关键""保证提分""精准提分""效率翻倍""立刻升级""分数卡在N分左右"，以及任何"考前……就能……"句式（不只限提分，如"考前一周就能上手"同样命中）。只写方法和自查维度，不承诺结果。',
+        '带货承接硬要求：正文最后一段必须有一句承接句 = 我把它整理成了什么（selling_point 能力，商品事实来自证据）+ 一个购买理由（必须贴本篇内容：讲什么考点就说拿它解决什么）+ CTA（只允许“评论区”或“点下方链接”两种写法）。禁库存说明和通用理由。',
+        // 风格腔调黑名单（营销腔），效果承诺类已按用户 2026-08-16 拍板撤销。
+        '禁止万能、必背、捷径、阅卷老师看重、百分比、考官追着给分；禁止幕后设计说明和"不是……而是……"套话。',
         // AI cliché 黑名单（命中即 block，重写时必须避开）。
         // 这些句式是 LLM 议论文/总结体标志，会让笔记读起来像机器写的。
         'AI套话硬禁令（命中即判低质，必须换说法）：1）"不是X而是Y""不在于X而在于Y"；2）"问题出在""问题的关键"；3）"不仅仅是X，更是Y"递进空话；4）"在X的过程中"翻译腔；5）"X才是关键/核心/根本"结论空话（如"短句互动才是自然的关键"→改成"短句互动直接影响语气是否自然"）；6）"通过X，才能Y"条件空话；7）"X让Y不再Z"焦虑式；8）"重要性不言而喻"循环定义；9）"X是一个需要Y的过程"循环定义；10）"综上所述""总而言之""总的来说"议论文尾段；11）"首先，…其次，…最后，…"议论文中段。',
@@ -1855,9 +2065,8 @@ async function repairCoreOutput(input: {
         '75个公式只用于笔记文字标题且只是灵感库，不是硬模板。公式仿写候选的formula_id原样返回；自然原创或竞品机制迁移候选允许formula_id写free_original或reference_migration。',
         '必须返回5个20字以内的笔记文字标题；这里的“字”按小红书肉眼字数算，汉字、英文字母、数字、空格、全角/半角标点都各算1个字。标题通常14-18字，少于13字会显得信息量不足，除非钩子极强；宁可14-18字完整，不要20字卡边断尾。',
         'title_type分别为资料型、解释型、强钩子型、情绪型、结果型；至少包含1个自然原创、1个公式仿写、1个竞品机制迁移，且心理触发不同。至少3个标题要有明显点击钩子：恐惧、好奇、反常识、场景代入、结果承诺或数字锚点。',
-        '标题允许适度使用“大全、必背、万能、考官、稳过、7天、提分”等强钩子词，但不能冒充官方授权、内部押题或真实承诺；标题钩子必须能被本篇封面和正文降落。',
+        '标题允许适度使用“大全、必背、万能、考官、稳过、7天、提分”等强钩子词，但不能冒充官方授权或内部押题；标题钩子必须能被本篇封面和正文降落。',
         '平淡的知识点名称、资料说明和内部任务名必须重写。标题要像人会点的小红书笔记。',
-        `可参考的强标题方向：${profile.titleExamples.join('；')}。只学点击机制，不得照抄。`,
         '标题写“陷阱/错误/避坑”时正文必须真有对应错误；写“模板/范文”时本篇必须真提供模板或完整范文。禁止为了蹭搜索词改变内容类型。',
         titleKeywords.length
           ? `笔记文字标题应贴合小红书真实搜索流量。validated_search_keywords（${titleKeywords.join('、')}）均经过下拉联想验证，每个标题最多自然嵌入 1 个高频词，禁止堆砌；与选题无关就别硬塞。`
@@ -1871,7 +2080,7 @@ async function repairCoreOutput(input: {
         '法语和备考规则必须准确，禁止把建议写成官方硬规则。',
         '禁止自创“至少N个B2词汇、虚拟式、连接词”等数量门槛；虚拟式只在语义需要时使用。',
         examFactRules,
-        '禁止虚构“省下N分钟、挽回N分、保证提分”等效果；禁止用“严禁/必须”把学习建议包装成官方规则。',
+        '禁止用“严禁/必须”把学习建议包装成官方规则。',
         '不同法语结构不能机械互换。禁止“用 bien que 代替 mais”“用 en revanche 代替 mais”一类写法，必须解释语义和使用条件。',
         'Et、mais、parce que、on、je pense que、beaucoup de、gens本身是中性常用表达，不得标成口语、非正式或错误；两个正确表达只能按语义、语气和场景对比。Cordialement不得写成所有正式信的最低标准。',
         profile.contentScopePrompt,
@@ -1917,11 +2126,21 @@ async function repairCoreOutput(input: {
 function chooseSafeTitle(value: unknown, candidates: TitleCandidate[], fallback: string, context = fallback, productId?: ProductId, seedId?: string, recentSelectedTitles?: Set<string>, recentAllCandidates?: Set<string>, recentTitleTemplates?: Map<string, number>) {
   const proposed = sanitizeTitleLikeText(asString(value));
   const seedContext = { seedId, productId, recentSelectedTitles, recentAllCandidates, recentTitleTemplates };
-  const safeCandidates = candidates
-    .filter(item => isNaturalTitle(item.title) && !isWeakCommercialTitle(item.title))
+  const baseSafe = candidates
+    // 完整性硬过滤：残句标题（clip 切半/LLM 半截话）永远不进候选——选中残句
+    // 会触发 needsTitleRewrite 二次调用，等于自己造问题自己烧钱修。
+    .filter(item => isNaturalTitle(item.title) && !isWeakCommercialTitle(item.title) && isCompleteTitle(item.title, 'text'))
     .sort((a, b) => titleSelectionScore(b.title, context, seedContext) - titleSelectionScore(a.title, context, seedContext));
+  // 锚定硬过滤：seed 配了关键词时，未锚定标题只有在全池都未锚定时才允许兜底。
+  // 之前只靠 titleImpactScore -8 软扣——兜底公式候选全员未锚定时照样烂里挑烂，
+  // 实测论坛语气笔记选中了"任务识别"标题（agent2 job_001）。
+  const anchoredSafe = seedId ? baseSafe.filter(item => isTitleAnchoredToSeed(item.title, seedId)) : baseSafe;
+  const safeCandidates = anchoredSafe.length ? anchoredSafe : baseSafe;
   const proposedCandidate = safeCandidates.find(item => item.title === proposed);
-  return ensureTextTitleDisplayIdentity(proposedCandidate?.title || safeCandidates[0]?.title || candidates[0]?.title || fallback, productId);
+  return ensureTextTitleDisplayIdentity(
+    proposedCandidate?.title || safeCandidates[0]?.title || candidates.find(item => isCompleteTitle(item.title, 'text'))?.title || fallback,
+    productId,
+  );
 }
 
 function ensureTextTitleDisplayIdentity(value: string, productId?: ProductId) {
@@ -1959,7 +2178,18 @@ async function polishTitlesAfterContent(input: {
 }> {
   const first = await callTitleEditor(input, false);
   let polished = normalizeTitleEditorResult(first, input);
-  if (needsTitleRewrite(polished.titleCandidates, polished.selectedTitle, polished.cover.title)) {
+  if (needsTitleRewrite(
+    polished.titleCandidates,
+    polished.selectedTitle,
+    polished.cover.title,
+    {
+      seedId: input.topic.seed_id,
+      productId: input.productId,
+      recentSelectedTitles: input.recentTitleFingerprints?.selectedTitles,
+      recentAllCandidates: input.recentTitleFingerprints?.allCandidates,
+      recentTitleTemplates: input.recentTitleFingerprints?.selectedTitleTemplates,
+    },
+  )) {
     const second = await callTitleEditor({
       ...input,
       titleCandidates: polished.titleCandidates,
@@ -2069,9 +2299,10 @@ function callTitleEditor(input: {
         '可用钩子：恐惧损失、好奇缺口、认知冲突、场景代入、结果承诺、资料稀缺、大全收藏、时效更新。',
         '每个文字标题至少命中 2 个张力点：具体人群/场景、真实痛点、悬念缺口、反常识、损失感、数字锚点、搜索关键词。',
         '不要为了不超20字写成10字左右的短标题；标题要尽量写到14-18字，把对象、场景、痛点、结果说清楚。禁止结尾悬空，如“别再只盯语”“问题出在”“格式不”“这5个常”“早该”“每”“哪科最”。',
-        '尽量覆盖资料型/解释型/强钩子型/情绪型/结果型这 5 种类型；同一类型可以多写一个强候选，让程序从强候选里选最好的。不要全部写成“XXX？先YYY”句式。',
+        '尽量覆盖资料型/解释型/强钩子型/情绪型/结果型这 5 种类型；同一类型可以多写一个强候选，让程序从强候选里选最好的。',
+        '句式硬限制（程序会按句式指纹扣分）：候选池里带问号的疑问句式最多 2 条；“救命”“为什么”“别再”开头或包含的情绪/命令/设问句式各自最多 1 条；其余必须是陈述句。历史已用过的句式再出现会被直接排到末尾。',
         '必须先把普通标题爆改，不要直接写说明书式标题。禁止平淡如“资料整理好了”“怎么准备”“知识点清单”。',
-        '允许适度使用强词：大全、必背、万能、考官、稳过、7天、提分、救命、别再、白练、最后检查；但不要冒充官方授权、内部押题或真实保证。',
+        '允许适度使用资料强度词：大全、必背、考官视角、7天、最后检查；但救命/别再这类呼喊式开头已经严重过量，不要再产出，也不要冒充官方授权、内部押题或真实保证。',
         `身份词硬约束：每个文字标题（含候选池）必须自然包含“${profile.noteIdentity}”或“${profile.shortIdentity}”。变体如“B2写作”“TEF写作”也接受，但不允许只写“B2”漏掉“写作”、或只写“TEF”漏掉写作/口语/听力等具体科目。违反此规则的候选会被直接丢弃，不要再生成。`,
         seedTopicKeywords.length
           ? `主题锚定硬约束（seed_topic_anchor）：本篇选题的关键词集是 [${seedTopicKeywords.join('、')}]。每个文字标题候选必须命中其中至少 1 个关键词，否则视为离题、会被丢弃。封面标题不强制，但命中会更稳。不要写与本 seed 无关的通用鸡汤标题。`
@@ -2147,7 +2378,6 @@ function callTitleEditor(input: {
           text_title_rule: '文字标题可以更完整，优先 14-20 个可见字，允许搜索词和爆款钩子结合。',
         },
         avoid_low_traffic_keywords: avoidedKeywords,
-        strong_title_examples: profile.titleExamples,
         cover_content: {
           item_count: input.cover.sections.reduce((sum, section) => sum + section.items.length, 0),
           section_count: input.cover.sections.length,
@@ -2161,6 +2391,26 @@ function callTitleEditor(input: {
           evidence: clip(item.evidence || item.source_excerpt || '', 120),
         })),
         output_schema: {
+          // 封面字段放最前：2600 token 预算下输出被截断时，排在 schema 尾部的
+          // selected_cover_title/alternate_cover_titles 整个丢失 → 15 个 job 里
+          // 5 个封面整套掉进本地兜底池（batch_1786754651839）。放前面后，再截
+          // 也只会截掉文字标题池的尾巴，封面不再陪葬。
+          selected_cover_title: {
+            template_id: input.card.renderer_id,
+            title: '',
+            subtitle: '',
+            title_type: '资料|大全|时效|稀缺|情绪|结果|反常识',
+            reason: '',
+            fit_score: 0,
+          },
+          alternate_cover_titles: [{
+            template_id: '',
+            title: '',
+            subtitle: '',
+            title_type: '',
+            reason: '',
+            fit_score: 0,
+          }],
           text_title_pools: {
             material: [{ title: '', formula_id: '', trigger_type: '', reason: '', risk_flags: [], score: 0 }],
             explanation: [{ title: '', formula_id: '', trigger_type: '', reason: '', risk_flags: [], score: 0 }],
@@ -2179,26 +2429,12 @@ function callTitleEditor(input: {
             score: 0,
           }],
           selected_text_title: '',
-          selected_cover_title: {
-            template_id: input.card.renderer_id,
-            title: '',
-            subtitle: '',
-            title_type: '资料|大全|时效|稀缺|情绪|结果|反常识',
-            reason: '',
-            fit_score: 0,
-          },
-          alternate_cover_titles: [{
-            template_id: '',
-            title: '',
-            subtitle: '',
-            title_type: '',
-            reason: '',
-            fit_score: 0,
-          }],
         },
       }),
     },
-  ], { maxTokens: 2600, retries: 2, temperature: rewrite ? 0.75 : 0.68 });
+    // 15 条池 + 5 类候选 + 封面标题都带 reason，2600 不够（截断实测砍掉尾部
+    // 封面字段）。4200 与其他返修调用对齐。
+  ], { maxTokens: 4200, retries: 2, temperature: rewrite ? 0.75 : 0.68 });
 }
 
 function normalizeTitleEditorResult(
@@ -2242,7 +2478,7 @@ function normalizeTitleEditorResult(
     seedContext.recentTitleTemplates,
   );
   let selectedCoverTitle = normalizeCoverTitleCandidate(record.selected_cover_title, input.card.renderer_id, input.productId);
-  const fallbackCoverTitle = buildCoverTitleFallback(input.topic, input.productId, input.card.renderer_id, input.cover, input.recentTitleFingerprints?.coverTitles);
+  const fallbackCoverTitle = buildCoverTitleFallback(input.topic, input.productId, input.card.renderer_id, input.cover, input.recentTitleFingerprints?.coverTitles, input.recentTitleFingerprints?.coverSubtitles);
   if (!selectedCoverTitle || isWeakCoverTitle(selectedCoverTitle.title, input.productId)) {
     selectedCoverTitle = fallbackCoverTitle;
   }
@@ -2445,15 +2681,22 @@ function assembleCoverFromParts(
   key: string,
   recentCoverTitles?: Set<string>,
   titleLengthRange: [number, number] = [8, 18],
+  recentCoverSubtitles?: Set<string>,
+  // 副标题池全撞时的替代来源：本篇 LLM 内容（content_promise 等）截取。
+  // 写死池每分支只有 3 条，同分支同天第二个 job 必撞——"差的那点分就在这步"
+  // 一个 batch 出现两次就是这么来的。
+  subtitleFallbackText?: string,
 ): [string, string] {
   const dayKey = new Date().toISOString().slice(0, 10);
   const [minLen, maxLen] = titleLengthRange;
+  const freshSubtitles = parts.subtitles.filter(s => !recentCoverSubtitles?.has(fingerprintTitle(s)));
   let firstFit: [string, string] | null = null;
   for (let attempt = 0; attempt < 12; attempt += 1) {
     const seedKey = `${key}|${dayKey}|${attempt}`;
+    const subtitlePool = freshSubtitles.length ? freshSubtitles : (subtitleFallbackText ? [subtitleFallbackText] : parts.subtitles);
     const candidate: [string, string] = [
       `${pickBySeedN(identityPool, `${seedKey}-id`, 1)[0]}${pickBySeedN(parts.subjects, `${seedKey}-subj`, 1)[0]}${pickBySeedN(parts.problems, `${seedKey}-prob`, 1)[0]}`,
-      pickBySeedN(parts.subtitles, `${seedKey}-sub`, 1)[0],
+      pickBySeedN(subtitlePool, `${seedKey}-sub`, 1)[0],
     ];
     if (candidate[0].length < minLen || candidate[0].length > maxLen) continue;
     if (!firstFit) firstFit = candidate;
@@ -2468,6 +2711,7 @@ function buildCoverTitleFallback(
   templateId: CreativeCardRenderer,
   cover: NormalizedCover,
   recentCoverTitles?: Set<string>,
+  recentCoverSubtitles?: Set<string>,
 ): CoverTitleCandidate {
   const text = `${topic.seed_id || ''} ${topic.topic} ${topic.pain} ${topic.content_promise} ${cover.title} ${cover.subtitle}`;
   const spec = getCoverTemplateSpec(templateId);
@@ -2557,6 +2801,8 @@ function buildCoverTitleFallback(
     `${variantKey}-${branchKey}`,
     recentCoverTitles,
     spec?.titleLengthRange || [8, 18],
+    recentCoverSubtitles,
+    topic.content_promise || topic.pain || '',
   );
 
   return {
@@ -2603,18 +2849,27 @@ function isCompleteTitle(value: string, role: 'cover' | 'text') {
   return true;
 }
 
-function needsTitleRewrite(candidates: TitleCandidate[], selectedTitle: string, coverTitle: string) {
-  const bestScore = Math.max(0, ...candidates.map(item => titleImpactScore(item.title)));
-  const selectedScore = titleImpactScore(selectedTitle);
-  const coverScore = titleImpactScore(coverTitle);
+function needsTitleRewrite(
+  candidates: TitleCandidate[],
+  selectedTitle: string,
+  coverTitle: string,
+  context?: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> },
+) {
+  // 必须带 context 打分：裸打只有身份词/数字/清单项可拿（上限 7 分），
+  // 而 selected 门槛是 9 分 → 永远触发第二轮，每篇白烧一次 LLM 调用。
+  const bestScore = Math.max(0, ...candidates.map(item => titleImpactScore(item.title, context)));
+  const selectedScore = titleImpactScore(selectedTitle, context);
+  const coverScore = titleImpactScore(coverTitle, context);
   const repeatedQuestionPattern = candidates.filter(item => /[锛?？].{0,8}(?:先|看|用|查)/.test(item.title)).length >= 3;
+  // 池内残句不再触发重写（2026-08-16 撤掉 candidates.some 完整性条件）：
+  // 残句已不可能中选（chooseSafeTitle 完整性硬过滤），池子是内部数据不是
+  // 发布物；之前靠它触发的二次标题调用是"每篇固定多烧 1 次"的主因之一。
   return bestScore < 11
     || selectedScore < 9
     || coverScore < 7
     || repeatedQuestionPattern
     || !isCompleteTitle(selectedTitle, 'text')
-    || !isCompleteTitle(coverTitle, 'cover')
-    || candidates.some(item => !isCompleteTitle(item.title, 'text'));
+    || !isCompleteTitle(coverTitle, 'cover');
 }
 
 function polishHumanTitleText(value: string, productId?: ProductId) {
@@ -2643,7 +2898,7 @@ function isNaturalTitle(value: string) {
 
 function isWeakCommercialTitle(value: string) {
   if (isUnnaturalTitle(value)) return true;
-  if (!/[？?!！]/.test(value) && !/\d/.test(value) && !/别再|先别|警告|常犯|总|越|反而|像A2|不高级|卡住|跑题|白费|漏|错|太晚|不懂|不会|乱|别扭|差在哪|问题在这|一页|交卷前|考前/i.test(value)) {
+  if (!/[？?!！]/.test(value) && !/\d/.test(value) && !/别再|先别|警告|常犯|总|越|反而|像A2|不高级|卡住|卡在|跑题|白费|白练|翻车|瞎练|丢分|错过|后悔|漏|错|太晚|不懂|不会|乱|别扭|差在哪|问题在这|一页|交卷前|考前/i.test(value)) {
     return true;
   }
   return /^(?:法语|DELF|B2|TEF|TCF).{0,8}(?:知识点|学习方案|资料|清单|指南|手册|怎么准备|这样准备|这样看|这样用|这样分|先看|先选对)/.test(value)
@@ -2654,15 +2909,16 @@ function isWeakCommercialTitle(value: string) {
 function titleImpactScore(value: string, context?: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> }): number {
   let score = 0;
   if (isUnnaturalTitle(value)) score -= 12;
-  if (/写不好|说不长|听不懂|背了也用不上|一直在扣分|老丢分|扣分|写不出来|用不上|没方向/.test(value)) score += 4;
   if (/法语|DELF|B2|TEF|TCF/i.test(value)) score += 3;
-  if (/[？?!！]/.test(value)) score += 2;
   if (/\d/.test(value)) score += 2;
-  if (/别再|先别|停止|警告|常犯|错误|避坑|白费|漏|错|跑题|卡住|乱|别扭|像A2|不高级|太晚|不懂|不会|差在哪|问题在这|根本原因/i.test(value)) score += 5;
-  if (/为什么|其实|反而|不是|到底|真的|原来|没想到|看懂也会|背了还|背范文反而|资料越多/.test(value)) score += 4;
-  if (/大全|必背|万能|考官|稳过|提分|冲刺|急救|救命|白考|白费|别乱|别硬背|别再|官方必背|最爱看/.test(value)) score += 4;
-  if (/交卷前|考前|写完|一到考场|刚开始|没时间|没方向|零基础|B2考生/.test(value)) score += 3;
   if (/一页|这张表|这几类|这\d+[处类项步句个]|清单|体系|地图/.test(value)) score += 2;
+  // 钩子信号（2026-08-16 前台验收：11 job 标题 7/7 全是资料目录型，"没让人
+  // 好奇点进去"）。疑问钩子/损失反差/考试时刻各一次性加分，AI 目录腔扣分。
+  // 三类合计封顶 +8，仍低于句式复读 -12——钩子救不活本批已用句式，多样性不破。
+  if (/[？?]/.test(value)) score += 3;
+  if (/(翻车|白练|白费|丢分|卡在|错过|后悔|别再|瞎练)/.test(value)) score += 3;
+  if (/(模考|考场|交卷|开考|考完|出分|首考)/.test(value)) score += 2;
+  if (/(量化|一站式|全覆盖|全方位)/.test(value)) score -= 4;
   if (/怎么准备|这样准备|学习方案|知识点|指南|手册|内容整理/.test(value)) score -= 5;
   if (/^法语B2写作[:：].{2,}$/.test(value)) score -= 2;
   if (value.length > 20) score -= 2;
@@ -2688,13 +2944,19 @@ function titleImpactScore(value: string, context?: { seedId?: string; productId?
   if (context?.recentSelectedTitles?.has(fp)) score -= 100;
   else if (context?.recentAllCandidates?.has(fp)) score -= 6;
   // 句式模板去重：治"别再 X""X，直接扣分"被反复用。
-  // 同模板在 batch 历史里出现 ≥2 次 → 当前候选再撞同模板，重扣；
-  // 出现 1 次 → 轻扣（允许偶尔复用，但不能堆叠）。
+  // 旧版同时存在一张"强词加分表"（救命/别再/大全 +4~+5），加分把轻扣完全
+  // 盖住——1914 条候选里"别再"×220、"？"×283，评分器自己就是句式复读机。
+  // 加分表已删；同句式在 batch 历史里出现过 1 次就重扣（同句式每批最多中选 1 次）。
   if (context?.recentTitleTemplates) {
     const tpl = titleTemplateFingerprint(value);
-    const cnt = context.recentTitleTemplates.get(tpl) || 0;
-    if (cnt >= 2) score -= 10;
-    else if (cnt >= 1) score -= 4;
+    if (tpl) {
+      const cnt = context.recentTitleTemplates.get(tpl) || 0;
+      // 疑问句式分层：问号是钩子第一工具，"用过 1 次就 -12"等于全月只准发
+      // 1 条问句标题，直接对冲钩子加分。1-2 次轻扣，满 3 次才重罚；
+      // 功能词模板（先看/一页/清单…）维持一次即罚。
+      if (tpl === '疑问句式') score -= cnt >= 3 ? 12 : cnt >= 1 ? 4 : 0;
+      else if (cnt >= 1) score -= 12;
+    }
   }
   return score;
 }
@@ -2724,6 +2986,11 @@ function titleSignalTokens(value: string) {
   return Array.from(new Set(tokens || []));
 }
 
+// 标题谎报词拦截：效果承诺类（提分/必过/保分等）已按用户 2026-08-16 拍板撤销，
+// 只拦谎报事实类——冒充官方授权/内部押题/100%。发布面风险扫描不含标题候选池，
+// 选中前的拦截全靠这层 + polish 后的确定性换标题。
+const TITLE_CLAIM_PATTERN = /内部押题|内部资料|官方授权|百分百|100\s*%|考官追着给分/;
+
 function filterTitleCandidatesByContent(
   candidates: TitleCandidate[],
   topic: MigratedTopic,
@@ -2731,6 +2998,7 @@ function filterTitleCandidatesByContent(
 ) {
   const context = `${topic.topic} ${topic.content_promise} ${cover.title} ${cover.subtitle} ${cover.sections.map(section => section.heading).join(' ')}`;
   return candidates.filter(item => {
+    if (TITLE_CLAIM_PATTERN.test(item.title)) return false;
     if (/范文/.test(item.title) && !/范文|完整文章|全文示例/.test(context)) return false;
     if (/模板/.test(item.title) && !/模板|框架|格式|句式/.test(context)) return false;
     if (/陷阱|错误|避坑/.test(item.title) && !/陷阱|错误|误区|避坑|纠错|错题/.test(context)) return false;
@@ -3099,7 +3367,11 @@ function buildTitleChoiceCandidates(topic: MigratedTopic, productId: ProductId, 
   const profile = getProductPromptProfile(productId);
   const base = profile.shortIdentity;
   const writing = profile.noteIdentity;
-  const topicName = topic.topic_type === 'product_showcase' ? '资料库' : inferTitleTopicName(text);
+  // 兜底标题的 topic 名优先取 seed 配置的纯中文关键词（如"论坛投稿""时态选择"），
+  // 保证兜底标题天然锚定本篇主题；inferTitleTopicName 的关键词桶做未配置 seed 的后备
+  // （它没有时态/语气桶，时态笔记曾被错标成"句式表达"）。
+  const seedTopicLabel = getSeedTopicKeywords(topic.seed_id || '').find(kw => /^[一-鿿]{2,5}$/.test(kw));
+  const topicName = topic.topic_type === 'product_showcase' ? '资料库' : (seedTopicLabel || inferTitleTopicName(text));
   const usage = inferTitleUsage(text);
   const material = topic.topic_type === 'product_showcase'
     ? buildProductShowcaseTitle(productId, writing)
@@ -3191,7 +3463,7 @@ function buildEmotionTitle(productId: ProductId, text: string, fallback: string)
     if (/听力/.test(text)) return 'TEF/TCF听力刷很多题还听不懂？';
     return 'TEF/TCF备考越努力越乱的人，先停一下';
   }
-  if (/评分|检查|交卷|自查/.test(text)) return '救命，DELF B2写作不是不会写';
+  if (/评分|检查|交卷|自查/.test(text)) return 'DELF B2写作写完别急着交，先自查这几处';
   if (/范文|模板/.test(text)) return '法语B2写作卡住的人，真的别再硬背范文了';
   if (/格式|文体|任务/.test(text)) return 'DELF B2写作总跑题的人，先别急着下笔';
   if (/词汇|句式|连接词/.test(text)) return 'B2写作写完像A2？可能不是词汇量的问题';
@@ -3321,14 +3593,9 @@ function scrubCheapClaims(text: string) {
     .replace(/万能/g, '常用')
     .replace(/必背/g, '常用')
     .replace(/捷径/g, '方法')
-    .replace(/高分/g, '更稳')
-    .replace(/精准提分/g, '找到改进方向')
-    .replace(/提分方向/g, '改进方向')
-    .replace(/分数卡在\s*\d+\s*分左右/g, '写作一直卡住')
     .replace(/格式分/g, '格式问题')
     .replace(/(?:我|我的)整理方法/g, '可以这样整理')
     .replace(/让我考前[^，。；\n]{0,24}/g, '考前复盘时')
-    .replace(/考场不超时/g, '考场更不慌')
     .replace(/练了好几篇还是B1/g, '练了好几篇还是像B1')
     .replace(/直接降分/g, '影响整体表达')
     .replace(/直接扣掉\s*\d+(?:\s*[-~至]\s*\d+)?\s*分/g, '影响格式表现')
@@ -3342,12 +3609,8 @@ function scrubCheapClaims(text: string) {
     .replace(/调用功能块/g, '按题目选表达模块')
     .replace(/替换主题词[，,]?\s*就能/g, '重写主题词后，再')
     .replace(/就能快速组织出/g, '更容易组织出')
-    .replace(/效率翻倍/g, '更省力')
-    .replace(/精准提分/g, '练得更对路')
-    .replace(/分数卡在\s*\d+\s*分左右/g, '分数容易卡住')
     .replace(/必查/g, '重点查')
     .replace(/白考/g, '白费')
-    .replace(/保分|必过|包过/g, '提分')
     .replace(/扣\s*\d+\s*分/g, '容易丢分')
     .replace(/\d+\s*%/g, '不少')
     .replace(/百分之\d*/g, '不少')
@@ -3359,13 +3622,6 @@ function scrubCheapClaims(text: string) {
     .replace(/督学/g, '规划')
     .replace(/课时/g, '内容')
     .replace(/学习权利/g, '使用说明')
-    .replace(/考前[^。；\n，]{0,20}就能/g, '考前按步骤复盘，更稳')
-    .replace(/拿高分/g, '得分更稳')
-    .replace(/高分句/g, '常用句')
-    .replace(/立刻升级/g, '会更稳')
-    .replace(/保证提分/g, '提分方向更清晰')
-    .replace(/稳拿高分/g, '得分更稳')
-    .replace(/提分的?关键/g, '重要一环')
     .replace(/★+/g, '')
     .replace(/[，、。；]{2,}/g, '，')
     .replace(/\s{2,}/g, ' ')
@@ -3438,7 +3694,8 @@ function ensureCoverIdentity(
   const explainShorthand = (value: string) => value
     .replace(/vocabulaire\s*B2/gi, 'B2词汇')
     .replace(/\bconcordance\b/gi, '时态配合')
-    .replace(/\baccords?\b/gi, '性数配合')
+    // 负向后行断言：d'accord / l'accord 是完整法语词，不是缩写，不能翻成"性数配合"
+    .replace(/(?<!['’])\baccords?\b/gi, '性数配合')
     .replace(/\bsubj\.?\b/gi, '虚拟式')
     .replace(/\bcond\.?\b/gi, '条件式');
   const sanitizeCoverText = (value: string) => scrubCheapClaims(sanitizePublicText(value));
@@ -3654,6 +3911,28 @@ function getCoreIssues(
   if (spec?.primaryFrenchOnly && cover.sections.some(section => section.items.some(item => /[一-鿿]/.test(item.primary || '')))) {
     issues.push('cover_primary_not_french');
   }
+  // plain_experience：条目必须是"完整中文句子组成的段落"（spec 硬要求），
+  // 严禁"法语短语+中文翻译"词条。这条之前只写在 LLM 指令里没有闸门——
+  // job_009 实测整张封面全是 "lire la consigne deux fois — 读题两遍"
+  // 式词条，发出来就是一张假"经验贴"。两个确定性判据，任一命中走返修：
+  //   1) 条目是纯法语/无中文，或"法语—中文翻译"对 → 词条不是句子；
+  //   2) 单段中文字数 < spec 要求（70-110 字/段）的 8 成 → 伪段落堆叠。
+  if (spec?.renderer === 'plain_experience') {
+    const countCjk = (text: string) => (text.match(/[一-鿿]/g) || []).length;
+    const isPhraseEntry = (text: string) =>
+      !text.trim() ? false : /^[A-Za-zÀ-ÿ'’\- ]+\s*[—\-–:：]/.test(text.trim()) || countCjk(text) === 0;
+    if (cover.sections.some(section => section.items.some(item =>
+      isPhraseEntry(item.primary) || (item.secondary ? isPhraseEntry(item.secondary) : false)))) {
+      issues.push('plain_experience_phrase_entry');
+    }
+    if (cover.sections.some(section => {
+      const paragraphCjk = section.items.reduce(
+        (sum, item) => sum + countCjk(item.primary || '') + countCjk(item.secondary || ''), 0);
+      return paragraphCjk < 56;
+    })) {
+      issues.push('plain_experience_paragraph_too_short');
+    }
+  }
   if (!isCoverTitleLengthOk(spec, cover.title.length)) issues.push('cover_title_length_invalid');
   // official_notice 封面标题必须走真实公文格式；标题编辑器/兜底常把它改写成
   // "B2作文先查这6项"这类小红书钩子，与模板公告纸版式严重错配，硬挡。
@@ -3679,16 +3958,20 @@ function getCoreIssues(
   if (!hasRequiredProductIdentity(productId, cover.title) || hasForbiddenProductIdentity(productId, publicText)) {
     issues.push('product_identity_mismatch');
   }
-  issues.push(...getPublicEditorialRiskIssues(publicText));
-  if (/(?:\bEt\b|\bMais\b|Parce que|Je pense que|\bOn peut\b|Beaucoup de|Des gens)[^。；\n]{0,18}(?:口语|非正式|错误)/i.test(publicText)) {
+  // 风险面只扫封面，不含标题候选池（job_006 实锤：落选候选里的"不是…而是…"
+  // 把整 job 炸成 caption_ai_cliche no_match——候选不发布就不该有否决权；
+  // 承诺型候选另在 filterTitleCandidatesByContent 拦截，防被选中发布）。
+  const coverRiskText = `${cover.title} ${cover.sections.map(section => `${section.heading} ${section.items.map(item => `${item.primary} ${item.secondary || ''}`).join(' ')}`).join(' ')}`;
+  issues.push(...getPublicEditorialRiskIssues(coverRiskText));
+  if (/(?:\bEt\b|\bMais\b|Parce que|Je pense que|\bOn peut\b|Beaucoup de|Des gens)[^。；\n]{0,18}(?:口语|非正式|错误)/i.test(coverRiskText)) {
     issues.push('neutral_french_misclassified_as_oral');
   }
-  if (/Cordialement[^。；\n]{0,18}(?:最低标准|一律|所有|任何)/i.test(publicText)) {
+  if (/Cordialement[^。；\n]{0,18}(?:最低标准|一律|所有|任何)/i.test(coverRiskText)) {
     issues.push('overabsolute_register_rule');
   }
-  if (/短信|简讯/.test(publicText) && /DELF B2|法语B2/i.test(publicText)) issues.push('off_scope_writing_task');
-  if (/官方授权|内部押题|内部资料|100\s*%|百分百|考官追着给分|保证(?:提分|通过|稳过)/.test(publicText)) issues.push('cheap_or_unsupported_claim');
-  if (/(商品|资料)(里|中|内).{0,10}(有|没有|包含|不含|收录|未收录)/.test(publicText)) issues.push('public_inventory_relation_claim');
+  if (/短信|简讯/.test(coverRiskText) && /DELF B2|法语B2/i.test(coverRiskText)) issues.push('off_scope_writing_task');
+  if (/官方授权|内部押题|内部资料|100\s*%|百分百|考官追着给分/.test(coverRiskText)) issues.push('cheap_or_unsupported_claim');
+  if (/(商品|资料)(里|中|内).{0,10}(有|没有|包含|不含|收录|未收录)/.test(coverRiskText)) issues.push('public_inventory_relation_claim');
   const allowedSourceIds = collectEvidenceSourceIds(evidence);
   const sourceMismatch = cover.sections.some(section => {
     if (section.source_type === 'ai_original') return section.source_ids.length > 0;
@@ -3698,16 +3981,16 @@ function getCoreIssues(
     return section.source_ids.some(id => !allowedSourceIds.has(id));
   });
   if (sourceMismatch) issues.push('cover_source_evidence_mismatch');
-  if (/每段.{0,8}必须.{0,8}空行|Cordialement.{0,8}(错误|禁用)|每个论点.{0,10}必须.{0,10}(数据|例子)/i.test(publicText)) issues.push('overabsolute_exam_rule');
-  if (/至少\s*\d+\s*个.{0,8}(B2.{0,4}词|词汇|虚拟式|连接词)|每段.{0,8}(必须|至少).{0,8}(连接词|例子|数据)/i.test(publicText)) issues.push('invented_quantity_rule');
-  if (/\b(?:vocabulaire\s*B2|concordance|accords?)\b(?![^。；，\n]{0,12}(?:词汇|时态|一致|配合|阴阳性|单复数))/i.test(publicText)) issues.push('unexplained_french_shorthand');
+  if (/每段.{0,8}必须.{0,8}空行|Cordialement.{0,8}(错误|禁用)|每个论点.{0,10}必须.{0,10}(数据|例子)/i.test(coverRiskText)) issues.push('overabsolute_exam_rule');
+  if (/至少\s*\d+\s*个.{0,8}(B2.{0,4}词|词汇|虚拟式|连接词)|每段.{0,8}(必须|至少).{0,8}(连接词|例子|数据)/i.test(coverRiskText)) issues.push('invented_quantity_rule');
+  if (/\b(?:vocabulaire\s*B2|concordance|accords?)\b(?![^。；，\n]{0,12}(?:词汇|时态|一致|配合|阴阳性|单复数))/i.test(coverRiskText)) issues.push('unexplained_french_shorthand');
   if (spec?.family === 'phrase' && cover.sections.some(section => section.items.some(item => !/[A-Za-zÀ-ÿ]/.test(item.primary) || !item.secondary))) issues.push('french_chinese_pair_required');
   if (spec?.family === 'flashcard' && cover.sections.some(section => section.items.some(item => !/[A-Za-zÀ-ÿ]/.test(item.primary) || !item.secondary || !item.note))) issues.push('flashcard_fields_incomplete');
   if (spec?.family === 'document' && cover.sections.flatMap(section => section.items)
     .filter(item => /[A-Za-zÀ-ÿ]{8,}/.test(`${item.primary} ${item.secondary || ''} ${item.note || ''}`)).length < 1) issues.push('document_examples_missing');
-  if ((spec?.family === 'offer' || spec?.family === 'roadmap') && /一对一|直播课|老师批改|无限答疑|陪学|督学|课时|学习权利/.test(publicText)) issues.push('unsupported_service_claim');
-  if ((spec?.family === 'experience' || spec?.family === 'pain') && /我.{0,12}(上岸|通过|考到|拿到|亲测|亲身|用了\d+|学了\d+)/.test(publicText)) issues.push('fabricated_first_person_experience');
-  if (spec?.family === 'document' && /官方真题|历年真题|原题|真题原文/.test(publicText)) issues.push('unverified_exam_source');
+  if ((spec?.family === 'offer' || spec?.family === 'roadmap') && /一对一|直播课|老师批改|无限答疑|陪学|督学|课时|学习权利/.test(coverRiskText)) issues.push('unsupported_service_claim');
+  if ((spec?.family === 'experience' || spec?.family === 'pain') && /我.{0,12}(上岸|通过|考到|拿到|亲测|亲身|用了\d+|学了\d+)/.test(coverRiskText)) issues.push('fabricated_first_person_experience');
+  if (spec?.family === 'document' && /官方真题|历年真题|原题|真题原文/.test(coverRiskText)) issues.push('unverified_exam_source');
   return issues;
 }
 
@@ -3718,8 +4001,6 @@ function isBlockingCoreIssue(issue: string) {
 function classifyCoreIssue(issue: string): 'block' | 'autofix' | 'warn' {
   const warnIssues = new Set([
     'public_inventory_relation_claim',
-    'unsupported_score_or_time_claim',
-    'unsupported_outcome_claim',
     'overmechanical_content_method',
     'free_original_title_missing',
     'reference_migration_title_missing',
@@ -3762,9 +4043,32 @@ function classifyCoreIssue(issue: string): 'block' | 'autofix' | 'warn' {
 //   2) 这里确定性校验 + 兜底补写：缺承接句就按 seed 轮换补一句，保证每篇正文
 //      都有带货出口，但不弄死 job。
 // CTA 只用两种出口：评论区 / 点下方链接（用户定的规矩，不要花式 CTA）。
-const PRODUCT_CTA_POOL = [
-  '需要的话评论区告诉我。',
-  '点下方链接直接带走。',
+// 但每种出口备 3 条写法：之前全管线只有 2 条固定 CTA + 收尾改写器又只会换成
+// 固定 2 条替换语，11 篇里 7 篇被改成同 2 个字符串（×4/×3），改写器自己成了
+// 复读源。变体刻意让句尾各不相同——收尾复读检测比的是公共后缀，尾巴不同就
+// 不会互相误判，同出口轮换也就不会撞近期结尾。
+const PRODUCT_CTA_FORUM = [
+  '评论区告诉我你最卡的一步。',
+  '想看完整例句，评论区说一声。',
+  '评论区聊聊你练到哪部分了。',
+];
+const PRODUCT_CTA_LINK = [
+  '完整内容点下方链接直接带走。',
+  '点下方链接，翻开就能用。',
+  '资料就在下方链接，考前直接翻。',
+];
+// 承接句的"怎么拿到"连接段。之前固定写"直接翻这份就行"——batch_1786754651839
+// 里 15 篇有 9 篇 caption 以同一个"直接翻这份就行。点下方链接直接带走。"收尾。
+// 连接段改成与分句形态无关的完整短句池，按 seed 轮换。
+const PRODUCT_BRIDGE_CONNECTORS = [
+  '直接翻这份就行。',
+  '不用再自己整理。',
+  '考前过一遍就够了。',
+  '写之前扫一眼就够。',
+  '照着勾就行。',
+  '卡住的时候直接查。',
+  '拿来就能对。',
+  '按这个顺序走。',
 ];
 
 export function captionHasProductBridge(caption: string) {
@@ -3773,9 +4077,15 @@ export function captionHasProductBridge(caption: string) {
   return hasCta && hasMaterial;
 }
 
-function ensureProductBridge(caption: string, brief: UnifiedContentBrief, seedKey: string): string {
-  if (!caption || captionHasProductBridge(caption)) return caption;
-  const cta = pickBySeed(PRODUCT_CTA_POOL, `${seedKey}-bridge-cta`);
+function ensureProductBridge(caption: string, brief: UnifiedContentBrief, seedKey: string, recentEndings: readonly string[] = []): string {
+  // LLM 自己已经写出承接句（CTA + 资料指代都齐）时不再补写——job_009 实测
+  // caption 已有"点下方链接，模考前照着走一遍"，兜底又接一段，双 CTA 收尾。
+  // 结尾是否复读交给后面的 ensureCaptionEndingVariety 管。
+  if (captionHasProductBridge(caption)) return caption;
+  // CTA 池只有两条（用户定的规矩：只用评论区/点下方链接两种出口），确定性
+  // 按 seed 抽会整批复读（实测 "点下方链接直接带走。" 同批 ×2）。改成先排除
+  // 与近期结尾同尾的写法，两条都撞时取撞得少的那条。
+  const cta = pickCtaAvoidingRecentEndings(`${seedKey}-bridge-cta`, recentEndings);
   // 购买理由不进通用池——必须贴着本篇内容：selling_point 是什么资料、
   // buying_reason 是本篇人群的痛点。两个都是完整分句（陈述句/需求句/动词短语
   // 都有），不许用"如果你也{pain}"这类固定连接词硬拼——buying_reason 是
@@ -3783,9 +4093,10 @@ function ensureProductBridge(caption: string, brief: UnifiedContentBrief, seedKe
   // （实测 job_001/006/017）。按独立句子直接拼，任何分句形态都通。
   const selling = (brief.selling_point || '这篇的知识点').replace(/[。.]\s*$/, '');
   const pain = (brief.buying_reason || '').replace(/[。.]\s*$/, '');
+  const connector = pickBySeed(PRODUCT_BRIDGE_CONNECTORS, `${seedKey}-bridge-conn`);
   const bridge = pain
-    ? `${selling}。${pain}。直接翻这份就行。${cta}`
-    : `${selling}。我整理成了一份能直接翻的资料。${cta}`;
+    ? `${selling}。${pain}。${connector}${cta}`
+    : `${selling}。我整理成了一份能直接翻的资料。${connector}${cta}`;
   // 正文长度上限 440：补句可能超，先在句界裁掉尾部再接承接句。
   const budget = 432 - bridge.length;
   if (caption.length > budget) {
@@ -3794,6 +4105,81 @@ function ensureProductBridge(caption: string, brief: UnifiedContentBrief, seedKe
     caption = cut > 120 ? trimmed.slice(0, cut + 1) : trimmed;
   }
   return `${caption}${caption.endsWith('\n') ? '' : '\n'}${bridge}`;
+}
+
+function normalizeEndingForCompare(value: string): string {
+  return value.replace(/[\s，。；：、！？!?·…《》「」“”‘’'"（）()【】\[\]]/g, '');
+}
+
+function commonSuffixLength(a: string, b: string): number {
+  let i = 0;
+  while (i < a.length && i < b.length && a[a.length - 1 - i] === b[b.length - 1 - i]) i += 1;
+  return i;
+}
+
+// caption 结尾与近期结尾同尾（规范化后公共后缀 ≥6 字）即算复读。
+// 只比对最近 2 条：CTA 出口只有两种，窗口拉太长会把两种出口的写法全堵死
+// （首版 window=3 + 池子只有 2 条时，7/11 篇的结尾全被判定复读，改写器
+// 把整批换成同 2 个固定字符串——enforcement 自己造出了新的复读）。
+export function captionEndingRepeatsRecent(caption: string, recentEndings: readonly string[]): boolean {
+  if (!caption || recentEndings.length === 0) return false;
+  const tailKey = normalizeEndingForCompare(caption).slice(-12);
+  if (tailKey.length < 6) return false;
+  return recentEndings
+    .filter(Boolean)
+    .slice(-2)
+    .some(recent => commonSuffixLength(tailKey, normalizeEndingForCompare(recent).slice(-12)) >= 6);
+}
+
+function pickCtaAvoidingRecentEndings(seedKey: string, recentEndings: readonly string[]): string {
+  const pool = [...PRODUCT_CTA_FORUM, ...PRODUCT_CTA_LINK];
+  if (!recentEndings.length) return pickBySeed(pool, seedKey);
+  const overlapCount = (cta: string) => recentEndings.filter(recent =>
+    commonSuffixLength(
+      normalizeEndingForCompare(cta).slice(-12),
+      normalizeEndingForCompare(recent).slice(-12),
+    ) >= 6).length;
+  const safe = pool.filter(cta => overlapCount(cta) === 0);
+  if (safe.length) return pickBySeed(safe, seedKey);
+  // 全撞的极端情况：取与近期撞得最少的那条，避免假死锁。
+  return pool.reduce((best, cta) => (overlapCount(cta) < overlapCount(best) ? cta : best));
+}
+
+// caption 结尾批内复读兜底：LLM 写的结尾句与近期同尾时，把最后一个 CTA 分句
+// 整段替换成另一出口的写法（实测 agent4 三篇全以"评论区说一声"收尾——
+// recent_caption_endings 只喂了 prompt 没有 enforcement，拦不住）。
+function ensureCaptionEndingVariety(caption: string, recentEndings: readonly string[]): string {
+  if (!captionEndingRepeatsRecent(caption, recentEndings)) return caption;
+  const forumIdx = caption.lastIndexOf('评论区');
+  const linkIdx = caption.lastIndexOf('下方链接');
+  const markerIdx = Math.max(forumIdx, linkIdx);
+  if (markerIdx < 0) return caption;
+  const clauseStart = Math.max(
+    caption.lastIndexOf('，', markerIdx),
+    caption.lastIndexOf('。', markerIdx),
+    caption.lastIndexOf('；', markerIdx),
+    caption.lastIndexOf('\n', markerIdx),
+  ) + 1;
+  let sentenceEnd = caption.length;
+  const punctMatch = caption.slice(markerIdx).match(/[。！？\n]/);
+  if (punctMatch && punctMatch.index !== undefined) sentenceEnd = markerIdx + punctMatch.index + 1;
+  // 替换语从"另一出口"的变体池里抽，同样避开近期结尾——固定 2 条替换语
+  // 的旧版把整批判成同 2 个收尾（见 PRODUCT_CTA_FORUM 注释）。
+  const oppositePool = forumIdx >= linkIdx ? PRODUCT_CTA_LINK : PRODUCT_CTA_FORUM;
+  const safePool = oppositePool.filter(cta => !captionEndingRepeatsRecent(cta, recentEndings));
+  const replacement = pickBySeed(safePool.length ? safePool : oppositePool, `ending-rewrite-${caption.length}-${markerIdx}`);
+  let next = `${caption.slice(0, clauseStart)}${replacement}${caption.slice(sentenceEnd)}`;
+  if (next.length > 440) {
+    // 替换句比原句长导致超限时，在替换句之前的句界裁头，保住结尾。
+    const headLimit = clauseStart - (next.length - 440);
+    const cut = Math.max(
+      next.lastIndexOf('。', headLimit),
+      next.lastIndexOf('；', headLimit),
+      next.lastIndexOf('\n', headLimit),
+    );
+    if (cut > 120) next = next.slice(cut + 1);
+  }
+  return next;
 }
 
 function getEditorialIssues(
@@ -3805,6 +4191,11 @@ function getEditorialIssues(
 ) {
   const issues: string[] = [];
   if (pages.length < 4 || pages.length > 6) issues.push('inner_page_count_invalid');
+  // 页型单调（整篇全是一种 page_type）：warn 级可见——生成侧 prompt 已硬要求
+  // 至少混排 3 种；这里兜底让 checks/质检脚本能看到没做到的 job。
+  if (pages.length >= 4 && new Set(pages.map(page => page.page_type)).size < 3) {
+    issues.push('inner_page_type_monotone');
+  }
   if (pages.some(page => page.page_title.length < 8 || page.page_title.length > 24)) issues.push('inner_page_title_invalid');
   if (pages.some(page => page.bullets.length < 3)) issues.push('inner_page_content_too_thin');
   // caption schema 已废弃；统一阈值与 prompt 要求的 280-420 对齐（给 60 字宽容）。
@@ -3813,7 +4204,15 @@ function getEditorialIssues(
   if (seoKeywords[0] && !caption.slice(0, 100).includes(seoKeywords[0])) issues.push('core_keyword_missing_from_opening');
   const editorialText = `${caption} ${pages.map(page => `${page.page_title} ${page.lead} ${page.bullets.join(' ')}`).join(' ')}`;
   if (hasForbiddenProductIdentity(productId, editorialText)) issues.push('product_identity_mismatch');
-  if (/万能|必背|捷径|阅卷老师|考官|白考|保分|必过|包过|★/.test(editorialText)) issues.push('editorial_low_quality_phrase');
+  if (/万能|必背|捷径|阅卷老师|考官|★/.test(editorialText)) issues.push('editorial_low_quality_phrase');
+  // 断句破洞：生成/裁剪把词吞掉留下的残句，读者一眼能看出来。两类实锤模式：
+  //   1) 标点/换行后紧跟"的"（正常行文不会出现"，的…"；排除"的确/的话"）；
+  //   2) "这份/这套"后接动名词就断句——中心语被吞（job_009 实测
+  //      "整理在这份备考，"——"备考资料"只剩前半）。
+  if (/[\n，、；：。！？]的(?![确地话])/.test(editorialText)
+    || /[这每][份套](?:备考|复习|自学|冲刺)[，、；：。！？]/.test(editorialText)) {
+    issues.push('broken_sentence_hole');
+  }
   issues.push(...getPublicEditorialRiskIssues(editorialText, caption));
   if (/(?:\bEt\b|\bMais\b|Parce que|Je pense que|\bOn peut\b|Beaucoup de|Des gens)[^。；\n]{0,24}(?:口语|非正式|错误)/i.test(editorialText)) {
     issues.push('neutral_french_misclassified_as_oral');
@@ -3840,7 +4239,6 @@ function classifyEditorialIssue(issue: string): 'block' | 'autofix' | 'warn' {
   const warnIssues = new Set([
     // 运营/SEO/带货强度问题：应该提示或自动补，不应该中断生成。
     'core_keyword_missing_from_opening',
-    'unsupported_score_or_time_claim',
     'unsupported_product_quantity_claim',
     'overabsolute_public_rule',
     'unsupported_fixed_time_advice',
@@ -3850,6 +4248,8 @@ function classifyEditorialIssue(issue: string): 'block' | 'autofix' | 'warn' {
     'editorial_low_quality_phrase',
     // 带货承接缺失由 ensureProductBridge 确定性补写，绝不能 block 整个 job。
     'caption_product_bridge_missing',
+    // 页型单调：prompt 已硬要求混排，没做到可见但不卡死 job。
+    'inner_page_type_monotone',
   ]);
   const autofixIssues = new Set([
     // 可由前后处理确定性清洗的语言风格问题。
@@ -3899,9 +4299,19 @@ function isSameQuotedCorrection(problem: string) {
   return quoted.length >= 2 && quoted[0] === quoted[1];
 }
 
-function normalizeTags(value: unknown, seoKeywords: string[], productId?: ProductId, contentContext = '', seed = 'default') {
+// 整池按 seed 洗牌（稳定：同 seed 同顺序）。注入道要的是"全池过滤后取前 N"，
+// pickBySeedN 抽 N 个再过滤会在命中词稀疏时饿死整条道（24 词池 7 个能命中，
+// 抽 6 个期望命中 1.75 < 2，selftest 实测整道空）。
+function shuffleTagPool(pool: readonly string[], salt: string): string[] {
+  return pool
+    .map((word, i) => ({ word, k: stableHash(`${salt}:${i}:${word}`) }))
+    .sort((x, y) => x.k - y.k)
+    .map(entry => entry.word);
+}
+
+function normalizeTags(value: unknown, seoKeywords: string[], productId?: ProductId, contentContext = '', seed = 'default', recentTagCounts?: Map<string, number>, seedKeywords: readonly string[] = []) {
   const raw = Array.isArray(value) ? value.map(asString).filter(Boolean) : [];
-  const fallbacks = seoKeywords.slice(0, 5);
+  const ctxCompact = contentContext.replace(/\s+/g, '');
   // 新：从 seo_tags 数据池子按 seed 抽样，让 15 篇笔记的 tag 不再雷同。
   //   - predefinedTags：大词标签（#DELFB2 #法语B2 ...），抽 2 个
   //   - longTailTags：长尾关键词转成 #xxx 形式，抽 2 个
@@ -3914,48 +4324,7 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
   // 长尾词剥掉通用词根后剩下的"锚词"（替换词/范文/模板…）必须出现在本篇内容里，
   // 否则这个长尾词跟选题无关，不注入。
   const stripGenericTagRoots = (kw: string) => kw.replace(/DELF|DALF|TEF|TCF|NCLC|CLB|B2|法语|写作|作文|备考|Canada|production|écrite|\s+/gi, '');
-  const pickedLongTail = pickBySeedN(longTailPool, `${seed}-lt`, 2)
-    .map(kw => kw.replace(/\s+/g, ''))
-    .filter(kw => {
-      const anchor = stripGenericTagRoots(kw);
-      return anchor.length >= 2 && contentContext.includes(anchor);
-    });
-  // 撤回 emoji 注入：用户实测发现 tag 里塞 emoji 在小红书算法上是降权信号，
-  // 而且 emoji 跟学习类内容调性不符（让笔记显得轻浮）。昨天加的设计判断是错的。
-  const seedTags = [...pickedPredefined, ...pickedLongTail];
-
-  // 单字高频词（#模板 #范文）作为标签无意义，必须组合成带商品身份的复合标签。
-  // 这一步只在 LLM 没给够 tag、走 fallback 时才生效；LLM 自己写的复合标签
-  // （例如「#DELFB2写作模板」）原样保留。
-  const identity = productId ? getProductPromptProfile(productId).tagIdentity : 'DELFB2';
-  const compoundFromValidated = productId
-    ? getTitleReferenceKeywords(productId)
-        .slice(0, 3)
-        .map(word => `${identity}${word}`)
-    : [];
-  const normalized = [...raw, ...seedTags, ...fallbacks, ...compoundFromValidated]
-    .map(tag => tag
-      .replace(/高分范文/g, '范文拆解')
-      .replace(/高分/g, '')
-      .replace(/精准提分/g, '写作复盘')
-      .replace(/任务完成扣分/g, '任务完成自查')
-      .replace(/语体扣分/g, '语体自查')
-      .replace(/隐形扣分点/g, '易错点')
-      .replace(/扣分点/g, '易错点')
-      .replace(/扣分/g, '易错点'))
-    .map(tag => `#${tag.replace(/^#+/, '').replace(/\s+/g, '')}`)
-    .filter(tag => !/^#(AU|CH|FW|GD|JF|CL|ER|CB)-\w*/i.test(tag) && tag.length >= 3 && tag.length <= 18)
-    // 过滤跨商品身份：商品 2 的标签里不得出现 DELF/DALF/B2写作；商品 1 不得出现 TEF/TCF/CLB。
-    .filter(tag => !productId || !hasForbiddenProductIdentity(productId, tag.replace(/^#/, '')))
-    // 过滤掉无主单词标签：#模板 #范文 #技巧 这种脱离商品身份的高频词作为
-    // 标签只会被淹没在小红书同类垃圾池里，反而拖低笔记的相关性信号。
-    .filter(tag => !productId || !/^#(模板|范文|主题|技巧|格式|评分标准|真题|写作任务|句型|连接词|表达|段落|结构|开头|结尾)$/.test(tag));
-  // 身份大词上限：#DELFB2 #法语写作 这类大词以前篇篇都出现（实测 96% 的笔记带
-  // #DELFB2、86% 带 #法语写作），整个账号的 tag 像复读机。之前只匹配 6 个写死的
-  // default_tags 精确串，#DELFB2写作 #法语B2备考 这类变体全部逃逸（实测
-  // #法语写作 ×10/14、#DELFB2写作 ×8/14）。改成"剥通用词根"判定：把身份/备考
-  // 通用词全部剥掉后什么都不剩的才是纯身份大词，剩下选题词的（#DELFB2写作时间分配）
-  // 不算。无论来源，纯身份大词最多保留 2 个。
+  // 身份大词判定提前定义：下面"LLM tag 必须可被搜索"的过滤也要用它放行纯身份词。
   const IDENTITY_TAG_ROOTS = ['DELFB2', 'DALF', 'TEFTCF', 'NCLC', 'CLB', 'TEF', 'TCF', 'DELF', 'Canada', '法语', '写作', '作文', '备考', '考试', '学习', '考生', 'B2'];
   const isIdentityBigTag = (bare: string) => {
     let rest = bare;
@@ -3969,7 +4338,176 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
     }
     return rest.length === 0;
   };
+  // 频率封顶按锚词判，不只按全名：历史里 #DELFB2议论文 用满 3 次后，fallback
+  // 换个裸写法塞 #议论文 仍能漏网（selftest 实测）。把 ≥3 次的 tag 连同剥掉
+  // 身份词根后的锚词一起做成集合，两处拦截点共用。
+  const overusedAnchors = new Set<string>();
+  if (recentTagCounts) {
+    for (const [tag, count] of recentTagCounts) {
+      if (count < 3) continue;
+      overusedAnchors.add(tag.replace(/^#+/, '').toLowerCase());
+      const anchor = stripGenericTagRoots(tag).toLowerCase();
+      if (anchor) overusedAnchors.add(anchor);
+    }
+  }
+  // fallback 只垫底：身份词直接可用，内容词必须锚定本篇内容——裸塞 #议论文
+  // 到范文/正式信篇就是"时间分配篇挂 #法语写作替换词"的翻版（selftest cardB-D 实测）。
+  const fallbacks = seoKeywords.slice(0, 5).filter(word => {
+    const bare = word.replace(/\s+/g, '');
+    if (isIdentityBigTag(bare)) return true;
+    const anchor = stripGenericTagRoots(bare);
+    return anchor.length >= 2 && (contentContext.includes(anchor) || ctxCompact.includes(anchor));
+  });
+  // tag 必须可被搜索（确定性拦截，与 core prompt 的 tag 硬规则同步）：
+  // LLM 自己发明的描述型短语（#审题草稿技巧 #正文控时方法）没人搜，剥掉
+  // 身份词根后锚词必须命中验证搜索词池，否则丢弃。池子来源的 tag 不查。
+  const validatedPool = productId
+    ? [...getXhsSearchKeywords(productId).primary, ...getXhsSearchKeywords(productId).secondary]
+        .map(word => word.replace(/\s+/g, '').toLowerCase())
+    : [];
+  const rawSearchable = raw.filter(tag => {
+    if (!productId || validatedPool.length === 0) return true;
+    const bare = tag.replace(/^#+/, '').replace(/\s+/g, '');
+    if (isIdentityBigTag(bare)) return true;
+    const anchor = stripGenericTagRoots(bare);
+    if (!anchor) return true;
+    const a = anchor.toLowerCase();
+    // 锚词包含池词时池词必须 ≥3 字：否则 #审题草稿技巧 靠 2 字池词"技巧"
+    // 的子串匹配就能逃逸（实测漏网）。反向（锚词是池词的子串，如 7自测⊂clb7自测）
+    // 任意长度都放行。
+    const poolOk = validatedPool.some(word =>
+      (word.length >= 3 && a.includes(word)) || (a.length >= 2 && word.includes(a)));
+    if (!poolOk) return false;
+    // 主题锚定：池子只保证"有人搜"，不保证"跟本篇搭"——论坛语气笔记挂
+    // #DELFB2建议信、时态笔记挂 #DELFB2建议信 都过了池检查（实测 agent2
+    // job_001 / agent1 job_004）。seed 配了关键词时，锚词必须出现在本篇内容
+    // 或 seed 关键词里，否则丢弃。seed 未配置不查（避免误杀，与标题锚定同策略）。
+    if (seedKeywords.length) {
+      const contextual = anchor.length >= 2
+        && (contentContext.includes(anchor) || ctxCompact.includes(anchor)
+          || seedKeywords.some(kw => kw.toLowerCase().includes(a) || a.includes(kw.toLowerCase())));
+      if (!contextual) return false;
+    }
+    // 万能 tag 频率封顶：#B2写作表达 这类池内"泛词"跟任何选题都配，11 篇模拟
+    // 实测 6/11 篇都挂它——内容上下文匹配拦不住（建议信篇选题里写"建议"不写
+    // "建议信"，首版误杀 37/66）。改用近期使用频率做确定性拦截：同一 tag 近期
+    // 已出现在 ≥3 篇笔记里就丢弃，prompt 层 overused_tags 只降权不删，这里补刀。
+    if (recentTagCounts && ((recentTagCounts.get(bare) || 0) >= 3 || overusedAnchors.has(a) || overusedAnchors.has(bare.toLowerCase()))) return false;
+    return true;
+  });
+  const pickedLongTail = shuffleTagPool(longTailPool, `${seed}-lt`)
+    .map(kw => kw.replace(/\s+/g, ''))
+    .filter(kw => {
+      const anchor = stripGenericTagRoots(kw);
+      return anchor.length >= 2 && (contentContext.includes(anchor) || ctxCompact.includes(anchor));
+    })
+    .slice(0, 2);
+  // 撤回 emoji 注入：用户实测发现 tag 里塞 emoji 在小红书算法上是降权信号，
+  // 而且 emoji 跟学习类内容调性不符（让笔记显得轻浮）。昨天加的设计判断是错的。
+  const seedTags = [...pickedPredefined, ...pickedLongTail];
+  // 锚词占用表：LLM tag 先占坑，四条注入道抽到已占锚词的词就跳过换下一个。
+  // 不互斥的话四条道各自随机再靠收口去重，等于每篇都围绕同一小撮锚词复读
+  // （selftest 同内容 4 seed 实测 unique 只有 10）。
+  const usedAnchors = new Set<string>();
+  for (const tag of [...rawSearchable, ...pickedLongTail]) {
+    const anchor = stripGenericTagRoots(tag.replace(/^#+/, '')).toLowerCase();
+    if (anchor) usedAnchors.add(anchor);
+  }
+
+  // 2026-08-16 用户拍板 tag 方案：四条注入道各按 seed 随机 2 个，池子全量开放。
+  //   ① 验证搜索词池直接注入（identity + 池词）
+  //   ② seo_tags 数据池（predefined 2 + long_tail 2，上面已抽）
+  //   ③ SEO 核心词/选题搜索词
+  //   ④ 复合道（identity + 标题参考词池，池子扩到全量 secondary）
+  // 加上 LLM 按正文写的 2 个内容词，最终 6-10 个。复合 tag 锚词必须出现在
+  // 本篇内容里（contentContext 已含正文），锚词去重兜底防同词多份。
+  // 旧病根：fallback 固定 slice(0,5) 全是身份词，占满身份上限后内容 tag
+  // 全靠 LLM，LLM tag 再被窄内容匹配（只查选题+封面标题）误杀，7/7 篇
+  // 只剩 2-3 个身份词（batch_1786838937231 实测）。
+  const tagIdentityBase = productId ? getProductPromptProfile(productId).tagIdentity : 'DELFB2';
+  const injectCompoundTags = (pool: readonly string[], salt: string, count: number) => {
+    if (!productId || pool.length === 0) return [];
+    // 整池洗牌后按序保留命中本篇内容的 count 个：抽固定个数再过滤会在
+    // 命中词稀疏时饿死整条道（seed1 实测 0/2 命中）。
+    return shuffleTagPool(pool, salt)
+      .map(word => word.replace(/\s+/g, ''))
+      .filter(word => {
+        const anchor = stripGenericTagRoots(word);
+        if (anchor.length < 2) return false;
+        if (usedAnchors.has(anchor.toLowerCase())) return false;
+        return ctxCompact.includes(anchor) || ctxCompact.toLowerCase().includes(anchor.toLowerCase());
+      })
+      .slice(0, count)
+      .map(word => {
+        const anchor = stripGenericTagRoots(word).toLowerCase();
+        if (anchor) usedAnchors.add(anchor);
+        return `${tagIdentityBase}${word}`;
+      });
+  };
+  const validatedWords = productId
+    ? [...getXhsSearchKeywords(productId).primary, ...getXhsSearchKeywords(productId).secondary]
+    : [];
+  const validatedCompound = injectCompoundTags(validatedWords, `${seed}-vp`, 2);
+  const compoundFromValidated = injectCompoundTags(productId ? getTitleReferenceKeywords(productId) : [], `${seed}-compound`, 2);
+  const seoCompound = pickBySeedN(seoKeywords, `${seed}-seo`, 2)
+    .map(word => word.replace(/\s+/g, ''))
+    .filter(word => {
+      if (!word || isIdentityBigTag(word)) return false;
+      const anchor = stripGenericTagRoots(word);
+      if (anchor.length < 2) return false;
+      if (usedAnchors.has(anchor.toLowerCase())) return false;
+      return ctxCompact.includes(anchor) || ctxCompact.toLowerCase().includes(anchor.toLowerCase());
+    })
+    .map(word => {
+      const anchor = stripGenericTagRoots(word).toLowerCase();
+      if (anchor) usedAnchors.add(anchor);
+      return `${tagIdentityBase}${word}`;
+    });
+  const normalized = [...rawSearchable, ...pickedLongTail, ...validatedCompound, ...compoundFromValidated, ...seoCompound, ...pickedPredefined, ...fallbacks]
+    .map(tag => tag
+      .replace(/任务完成扣分/g, '任务完成自查')
+      .replace(/语体扣分/g, '语体自查')
+      .replace(/隐形扣分点/g, '易错点')
+      .replace(/扣分点/g, '易错点')
+      .replace(/扣分/g, '易错点'))
+    .map(tag => `#${tag.replace(/^#+/, '').replace(/\s+/g, '')}`)
+    .filter(tag => !/^#(AU|CH|FW|GD|JF|CL|ER|CB)-\w*/i.test(tag) && tag.length >= 3 && tag.length <= 18)
+    // 过滤跨商品身份：商品 2 的标签里不得出现 DELF/DALF/B2写作；商品 1 不得出现 TEF/TCF/CLB。
+    .filter(tag => !productId || !hasForbiddenProductIdentity(productId, tag.replace(/^#/, '')))
+    // 过滤掉无主单词标签：#模板 #范文 #技巧 这种脱离商品身份的高频词作为
+    // 标签只会被淹没在小红书同类垃圾池里，反而拖低笔记的相关性信号。
+    .filter(tag => !productId || !/^#(模板|范文|主题|技巧|格式|评分标准|真题|写作任务|句型|连接词|表达|段落|结构|开头|结尾)$/.test(tag))
+    // 纯拉丁字 tag（#forum）：中文用户不搜英文 tag，只有考试身份词（DELFB2/
+    // TEFCanada 这类）允许纯拉丁，其余丢弃（实测 agent2 job_001 挂 #forum）。
+    .filter(tag => !/^[#A-Za-z0-9]+$/.test(tag) || isIdentityBigTag(tag.replace(/^#/, '')))
+    // 统一收口：主题锚定和频率封顶之前只查 LLM 原始 tag（rawSearchable），
+    // seedTags/fallbacks/compound 兜底来源不查——#DELFB2建议信 挂在论坛/
+    // 投诉/性数笔记上、#DELFB2题型 ×4，全是从这条后门进来的（agent1 实测）。
+    // 无论来源，非身份 tag 一律过同样的检查：seed 配了关键词时锚词必须出现
+    // 在本篇内容或 seed 关键词里；同一 tag 近期 ≥3 篇用过就丢。
+    .filter(tag => {
+      const bare = tag.replace(/^#/, '');
+      if (isIdentityBigTag(bare)) return true;
+      const anchor = stripGenericTagRoots(bare);
+      if (!anchor) return true;
+      const a = anchor.toLowerCase();
+      if (seedKeywords.length) {
+        const contextual = anchor.length >= 2
+          && (contentContext.includes(anchor) || ctxCompact.includes(anchor)
+            || seedKeywords.some(kw => kw.toLowerCase().includes(a) || a.includes(kw.toLowerCase())));
+        if (!contextual) return false;
+      }
+      if (recentTagCounts && ((recentTagCounts.get(bare) || 0) >= 3 || overusedAnchors.has(a) || overusedAnchors.has(bare.toLowerCase()))) return false;
+      return true;
+    });
+  // 身份大词上限：#DELFB2 #法语写作 这类大词以前篇篇都出现（实测 96% 的笔记带
+  // #DELFB2、86% 带 #法语写作），整个账号的 tag 像复读机。判定逻辑（剥通用词根）
+  // 已上移到 seedTags 段之前，供"LLM tag 必须可被搜索"过滤共用。
+  // 无论来源，纯身份大词最多保留 2 个。
   let identityKept = 0;
+  // 锚词去重：#DELFB2真题 和 #法语B2真题 剥掉身份词根后锚词相同（真题），
+  // 同篇并存就是同义复读（实测 agent1 job_002）。非身份 tag 按锚词只留第一个。
+  const seenAnchors = new Set<string>();
   return Array.from(new Set(normalized))
     .filter(tag => !tag.includes('范文') || /范文|完整文章|全文示例/.test(contentContext))
     .filter(tag => !tag.includes('模板') || /模板|框架/.test(contentContext))
@@ -3978,7 +4516,16 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
       identityKept += 1;
       return identityKept <= 2;
     })
-    .slice(0, 8);
+    .filter(tag => {
+      const bare = tag.replace(/^#/, '');
+      if (isIdentityBigTag(bare)) return true;
+      const anchor = stripGenericTagRoots(bare).toLowerCase();
+      if (!anchor) return true;
+      if (seenAnchors.has(anchor)) return false;
+      seenAnchors.add(anchor);
+      return true;
+    })
+    .slice(0, 10);
 }
 
 function visualLength(value: string) {
@@ -4045,6 +4592,10 @@ function sanitizeTitleLikeText(value: string) {
   return value
     .replace(/\b[A-Z]{1,3}-\d{3}\b/g, '')
     .replace(/官方授权|内部押题|内部资料/g, '')
+    // LLM 偶尔把类型标注（资料型/解释型…）写进标题文字里（实测 5-agent 模拟
+    // Agent D 全部 3 篇中招），title_type 才是类型该待的字段。这里剥离发生在
+    // normalizeTitles/chooseSafeTitle 共用入口，候选与选中标题全覆盖。
+    .replace(/[（(]\s*(?:资料型|解释型|强钩子型|情绪型|结果型)\s*[)）]/g, '')
     .replace(/考官追着给分/g, '考官想看的表达')
     .replace(/[“”"]/g, '')
     .replace(/[，、。；]{2,}/g, '，')
@@ -4091,10 +4642,6 @@ function clip(value: string, max: number) {
 function sanitizePublicText(value: string) {
   return value
     .replace(/立刻变得/g, '会更')
-    .replace(/立刻升级/g, '更稳')
-    .replace(/精准提分/g, '找到改进方向')
-    .replace(/提分方向/g, '改进方向')
-    .replace(/分数卡在\s*\d+\s*分左右/g, '写作一直卡住')
     .replace(/(?:我|我的)整理方法/g, '可以这样整理')
     .replace(/我的整理/g, '这种整理')
     .replace(/我后来发现/g, '后来会发现')
@@ -4106,14 +4653,13 @@ function sanitizePublicText(value: string) {
     .replace(/调用功能块/g, '按题目选表达模块')
     .replace(/替换主题词就能/g, '重写语境后再')
     .replace(/替换主题词[，,]\s*就能/g, '重写主题词后，再')
-    .replace(/换主题词就能/g, '换主题时要重写语境')
+    .replace(/换主题词就能/g, '换主题后重写语境再')
     .replace(/只替换主题词和例子/g, '围绕新题重写主题词和例子')
     .replace(/只替换主题词/g, '围绕新题重写主题词')
     .replace(/就能快速组织出/g, '更容易组织出')
     .replace(/\d+\s*篇范文/g, '范文库')
     .replace(/\d+\s*类识别表/g, '任务识别清单')
     .replace(/\d+\s*秒判对文体/g, '先判对文体')
-    .replace(/效率翻倍/g, '更省力')
     .replace(/格式分/g, '格式问题')
     .replace(/练习中常见的过这种情况/g, '练习中常见这种情况')
     .replace(/练习中常见的存了大量/g, '不少人存了大量')
@@ -4133,7 +4679,8 @@ function sanitizePublicText(value: string) {
     .replace(/有没有遗漏让步段或结论/g, '观点是否有必要的限定和结论')
     .replace(/正式信避免缩写（如“c'est”改为“cela est”）/g, '正式信里少用聊天式缩写，语气保持完整')
     .replace(/30秒避坑清单/g, '写前避坑清单')
-    .replace(/秒判/g, '快速判断')
+    // 前面带数字/数词的"秒判"（三十秒判对文体 / 30秒判断）是正常中文，别改写
+    .replace(/(?<![零一二两三四五六七八九十百千0-9〇])秒判/g, '快速判断')
     .replace(/严重影响得分/g, '明显影响表达')
     .replace(/导致低分/g, '让表达不稳')
     .replace(/不好，，/g, '不好，')
@@ -4145,7 +4692,7 @@ function sanitizePublicText(value: string) {
     .replace(/评分标准听了也点头/g, '表达更容易被听懂')
     .replace(/严禁/g, '不建议')
     .replace(/直接套用/g, '参考后按题目改写')
-    .replace(/换词就能迁移/g, '换主题时要重写语境')
+    .replace(/换词就能迁移/g, '换主题后要重写语境')
     .replace(/主题词一换/g, '换主题时重写例句')
     .replace(/对照DELF B2写作备考资料中的检查清单/g, '对照一份DELF B2写作检查清单')
     .replace(/DELF B2备考资料里除了/g, '系统备考时，除了')
@@ -4178,10 +4725,6 @@ function sanitizePublicText(value: string) {
     .replace(/考官追着给分/g, 'B2高阶表达')
     .replace(/考官最想要/g, '评分标准看重')
     .replace(/考官/g, '评分标准')
-    .replace(/立刻升级/g, '更稳')
-    .replace(/精准提分/g, '找到改进方向')
-    .replace(/提分方向/g, '改进方向')
-    .replace(/分数卡在\s*\d+\s*分左右/g, '写作一直卡住')
     .replace(/(?:我|我的)整理方法/g, '可以这样整理')
     .replace(/我的整理/g, '这种整理')
     .replace(/我后来发现/g, '后来会发现')
@@ -4202,14 +4745,13 @@ function sanitizePublicText(value: string) {
     .replace(/调用功能块/g, '按题目选表达模块')
     .replace(/替换主题词就能/g, '重写语境后再')
     .replace(/替换主题词[，,]\s*就能/g, '重写主题词后，再')
-    .replace(/换主题词就能/g, '换主题时要重写语境')
+    .replace(/换主题词就能/g, '换主题后重写语境再')
     .replace(/只替换主题词和例子/g, '围绕新题重写主题词和例子')
     .replace(/只替换主题词/g, '围绕新题重写主题词')
     .replace(/就能快速组织出/g, '更容易组织出')
     .replace(/\d+\s*篇范文/g, '范文库')
     .replace(/\d+\s*类识别表/g, '任务识别清单')
     .replace(/\d+\s*秒判对文体/g, '先判对文体')
-    .replace(/效率翻倍/g, '更省力')
     .replace(/格式分/g, '格式问题')
     .replace(/练习中常见的过这种情况/g, '练习中常见这种情况')
     .replace(/练习中常见的存了大量/g, '不少人存了大量')
@@ -4229,7 +4771,8 @@ function sanitizePublicText(value: string) {
     .replace(/有没有遗漏让步段或结论/g, '观点是否有必要的限定和结论')
     .replace(/正式信避免缩写（如“c'est”改为“cela est”）/g, '正式信里少用聊天式缩写，语气保持完整')
     .replace(/30秒避坑清单/g, '写前避坑清单')
-    .replace(/秒判/g, '快速判断')
+    // 前面带数字/数词的"秒判"（三十秒判对文体 / 30秒判断）是正常中文，别改写
+    .replace(/(?<![零一二两三四五六七八九十百千0-9〇])秒判/g, '快速判断')
     .replace(/严重影响得分/g, '明显影响表达')
     .replace(/导致低分/g, '让表达不稳')
     .replace(/不好，，/g, '不好，')
@@ -4241,7 +4784,7 @@ function sanitizePublicText(value: string) {
     .replace(/评分标准听了也点头/g, '表达更容易被听懂')
     .replace(/严禁/g, '不建议')
     .replace(/直接套用/g, '参考后按题目改写')
-    .replace(/换词就能迁移/g, '换主题时要重写语境')
+    .replace(/换词就能迁移/g, '换主题后要重写语境')
     .replace(/主题词一换/g, '换主题时重写例句')
     .replace(/对照DELF B2写作备考资料中的检查清单/g, '对照一份DELF B2写作检查清单')
     .replace(/DELF B2备考资料里除了/g, '系统备考时，除了')
@@ -4265,8 +4808,6 @@ function sanitizePublicText(value: string) {
     .replace(/百分之[一二三四五六七八九十百零]+(?:的)?(?:考生|人|同学)?(?:都)?(?:不知道|会用|常用)/g, '很多人容易忽略')
     .replace(/★+/g, '')
     .replace(/白考/g, '复习白费')
-    .replace(/保分/g, '稳住基础')
-    .replace(/必过|包过/g, '考前实用')
     .replace(/扣\s*\d+\s*分/g, '容易丢分')
     .replace(/(?:被)?默默扣分/g, '影响整体表现')
     .replace(/扣分扣在哪/g, '问题在哪')

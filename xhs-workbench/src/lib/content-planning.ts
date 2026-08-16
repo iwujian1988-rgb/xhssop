@@ -388,7 +388,7 @@ function buildCandidates(
               proof_asset: evidenceAsset.text,
               detail_example: pain.text,
               note_angle: `${painCluster.name}，用「${evidenceAsset.text}」证明「${sellingCluster.name}」。`,
-              product_claim_limit: '只能承诺提供复习路径、资料整理、检查依据和表达参考，不能承诺提分、保过或替代真实训练。',
+              product_claim_limit: '只能承诺提供复习路径、资料整理、检查依据和表达参考，不能承诺替代真实训练。',
             },
             recommended_note_formats: noteFormats,
             title_options: titleOptions,

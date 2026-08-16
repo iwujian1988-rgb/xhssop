@@ -1,4 +1,4 @@
-import { getImageTask, submitImageTask, type ImageTaskResult } from '@/lib/image-client';
+import { getImageTask, loadReferenceImage, submitImageTask, type ImageTaskResult } from '@/lib/image-client';
 import { buildReferenceImagePrompt, referenceImageNegativePrompt } from '@/lib/reference-image-prompt';
 import type { CompetitorCreativeCard, DenseDirectoryCoverPayload } from '@/types/reference-workflow';
 
@@ -17,11 +17,16 @@ export async function submitCoverImageTask(
   card: CompetitorCreativeCard,
   cover: DenseDirectoryCoverPayload,
 ): Promise<CoverImageTaskHandle> {
-  const prompt = buildReferenceImagePrompt(card, cover);
+  // 先把参考图真正读出来（缺文件会得到 null），再决定用哪种 prompt——
+  // 图生图 prompt 声称"已附带参考图"，图没传上去时模型会被命令追随一张
+  // 不存在的图（resource_16 缺文件时就是这个坑）。
+  const referenceImage = card.reference_image ? await loadReferenceImage(card.reference_image) : null;
+  const prompt = buildReferenceImagePrompt(card, cover, Boolean(referenceImage));
   const task = await submitImageTask({
     prompt,
     negativePrompt: referenceImageNegativePrompt,
     aspectRatio: '3:4',
+    referenceImages: referenceImage ? [referenceImage] : [],
   });
   if (!task.id) throw new Error('生图任务提交成功但接口没有返回 task_id');
   return { taskId: task.id };
@@ -36,8 +41,8 @@ export type CoverImageWaitResult =
   | { ok: false; terminal: false; error: string };
 
 const POLL_INTERVAL_MS = 4000;
-// 生图模型是异步的：5 分钟才算超时。
-const MAX_POLL_MS = 5 * 60 * 1000;
+// 生图模型是异步的：实测图生图任务可跑 5.5 分钟，预算留到 8 分钟。
+const MAX_POLL_MS = 8 * 60 * 1000;
 // 连续 8 次查询失败（约 32 秒完全不可达）才放弃；零星抖动只重试不判死。
 const MAX_CONSECUTIVE_ERRORS = 8;
 
@@ -50,7 +55,7 @@ export async function waitForCoverImageTask(
   for (;;) {
     await sleep(POLL_INTERVAL_MS);
     if (Date.now() >= deadline) {
-      return { ok: false, terminal: false, error: `生图任务 ${taskId} 超过5分钟未完成（任务可能仍在处理，凭 task_id 可恢复查询，不要重新提交）` };
+      return { ok: false, terminal: false, error: `生图任务 ${taskId} 超过8分钟未完成（任务可能仍在处理，凭 task_id 可恢复查询，不要重新提交）` };
     }
     let task: ImageTaskResult;
     try {

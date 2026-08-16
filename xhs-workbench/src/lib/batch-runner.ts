@@ -248,6 +248,9 @@ async function recordUsageStores(
     coverSubtitle: draft.cover.subtitle || '',
     topic: job.topic.topic || draft.brief.topic || '',
     tags: draft.tags || [],
+    pageTitles: (draft.inner_pages || []).map(page => page.page_title),
+    narrativeSkeleton: draft.narrative_skeleton || '',
+    caption: draft.caption || '',
   }).catch(cause => console.error('record title usage failed:', cause));
 }
 

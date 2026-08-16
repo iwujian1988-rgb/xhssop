@@ -182,6 +182,18 @@ export function getCoverTemplateSpec(renderer: CreativeCardRenderer) {
   return renderer === 'ai_scene_overlay' ? undefined : coverTemplateSpecs[renderer];
 }
 
+// 解析选题/承诺文本里的"条目数量承诺"（N项/N条/N步/N个开头…）。
+// 用途：发牌时过滤物理上兑现不了的数量承诺，精修选题时兜底回退 LLM 新造的数字。
+// 刻意排除分钟/秒/小时/天/周/种/档/分：它们是时长、分类事实或分数，不是条目数。
+// N=0/1 不算承诺；多个数量取最大（主承诺）。返回 null 表示没有数量承诺。
+const PROMISE_COUNT_UNIT = '(?:个问题|个要点|个步骤|个开头|个收尾|个救命题|个动作|个维度|个场景|个检查点|个信号|个陷阱|个错误|个表达|个句型|个主题|道题|篇|项|步|招|条|类|组|句|题|个)';
+export function parseContentPromiseCount(text: string): number | null {
+  const counts = [...String(text).matchAll(new RegExp(`(\\d{1,3})\\s*${PROMISE_COUNT_UNIT}`, 'g'))]
+    .map(match => Number.parseInt(match[1], 10))
+    .filter(count => Number.isFinite(count) && count >= 2);
+  return counts.length ? Math.max(...counts) : null;
+}
+
 export function getCoverTemplatePrompt(renderer: CreativeCardRenderer) {
   const spec = getCoverTemplateSpec(renderer);
   if (!spec) return '';

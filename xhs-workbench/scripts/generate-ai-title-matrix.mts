@@ -189,8 +189,8 @@ async function generateTitlesForProduct(productId: ProductId, inputs: InputRow[]
         'selected_text_title 和 text_titles[].title 都必须带商品身份：商品1用法语B2/DELF B2/B2写作，商品2用TEF/TCF/CLB/加拿大法语。',
         '20字符以内也必须是一句完整标题，不能像被截断的半句话；禁止以“这/先/把/的/，/：”等悬空词结尾。',
         '同一商品同一批模板的 selected_text_title 不得重复；即使选题相近，也要根据封面模板改成不同对象、场景或钩子。',
-        '不要所有标题都写成“AAA？BBB”。疑问句最多占三分之一。',
-        '允许适当强钩子：大全、必背、万能、考官、稳过、7天、提分、救命、别再、白练、最后检查。',
+        '句式硬限制：整批结果里带问号的疑问句最多三分之一；“救命”“别再”“为什么”开头的句式整批最多 1 条，其余写陈述句。',
+        '允许适当资料强度词：大全、必背、考官视角、7天、最后检查。救命/别再这类呼喊式开头已经严重过量，不要再产出。',
         '但不要冒充官方授权、内部押题、真实保证。',
         '',
         '封面标题按模板匹配：',
@@ -202,7 +202,6 @@ async function generateTitlesForProduct(productId: ProductId, inputs: InputRow[]
         '',
         '标题必须口语、具体、有对象感。不要“知识库长啥样”“展开速查表”这种说明书味。',
         `商品身份：${profile.noteIdentity}`,
-        `可参考的强标题味道：${profile.titleExamples.join('；')}`,
       ].join('\n'),
     },
     {

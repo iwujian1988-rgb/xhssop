@@ -113,8 +113,7 @@ chains:
     - 加拿大移民
     - TEF Canada
     - TCF Canada
-    conflict_notes:
-    - 不能写成保证提分；只能说用于整理思路和表达。
+    conflict_notes: []
   delf_b2_mistake_contrast:
     name: DELF B2｜错题对照 / 扣分点
     version_scope: v1_core
@@ -233,4 +232,4 @@ chains:
     - DELF B2 范文
     - B2 写作资料包
     conflict_notes:
-    - 不要承诺 30 天必过；不要把 CLB7 和 DELF B2 混用。
+    - 不要把 CLB7 和 DELF B2 混用。

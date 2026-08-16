@@ -180,13 +180,21 @@ function ReferenceImageGenerator({ draft, card, onImageReady }: { draft: Referen
     onImageReady?.(null);
     setImageState({ status: '正在提交文生图...' });
     try {
+      // 先确认参考图文件真的存在（HEAD 同源静态文件），再决定用图生图还是
+      // 文生图 prompt——两半必须同时定，缺图时 prompt 却说"已附带参考图"
+      // 会让模型追随一张不存在的图。
+      let hasReference = false;
+      if (card.reference_image) {
+        try { hasReference = (await fetch(card.reference_image, { method: 'HEAD' })).ok; } catch { hasReference = false; }
+      }
       const response = await fetch('/api/image-generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          prompt: buildReferenceImagePrompt(card, draft.cover),
+          prompt: buildReferenceImagePrompt(card, draft.cover, hasReference),
           negative_prompt: referenceImageNegativePrompt,
           aspect_ratio: '3:4',
+          reference_images: hasReference ? [card.reference_image] : [],
         }),
       });
       const task = await response.json();
@@ -219,7 +227,7 @@ function ReferenceImageGenerator({ draft, card, onImageReady }: { draft: Referen
   if (imageState.url) return <div><img className="aspect-[3/4] w-full object-cover shadow-xl" src={imageState.url} alt={draft.cover.title} /><div className="mt-3 flex items-center justify-between gap-3 text-xs"><span className="font-bold text-green-700">文生图已完成，请核对文字是否准确</span><button className="border border-neutral-300 px-3 py-1.5 font-bold" onClick={generate}>重新生成</button></div></div>;
 
   const polling = imageState.status !== undefined && imageState.status !== 'failed' && imageState.status !== 'timeout';
-  return <div><div className="relative"><img className="aspect-[3/4] w-full object-cover shadow-xl" src={card.reference_image} alt={`${card.name}参考图`} /><span className="absolute left-3 top-3 bg-black px-2 py-1 text-xs font-black text-white">风格参考（仅示意）</span></div><div className="mt-3 border border-fuchsia-200 bg-fuchsia-50 p-3 text-sm leading-relaxed text-fuchsia-950"><b>这类封面用文生图。</b>模板构图提示词已提前写好，生成时只把本篇标题和内容塞进去，不再上传参考图做图生图。</div>{imageState.status === 'timeout' && imageState.taskId ? <div className="mt-3 flex gap-2"><button className="flex-1 bg-fuchsia-700 px-4 py-2.5 text-sm font-black text-white" onClick={resumeTask}>继续查询此任务（不重复扣款）</button><button className="border border-neutral-300 px-4 py-2.5 text-sm font-bold" onClick={generate}>放弃并重新生成</button></div> : <button className="mt-3 w-full bg-fuchsia-700 px-4 py-2.5 text-sm font-black text-white disabled:bg-neutral-400" disabled={polling} onClick={generate}>{polling ? `生成中 ${imageState.progress ?? 0}%` : '按本篇内容文生图'}</button>}{imageState.error ? <div className="mt-2 text-sm font-semibold text-red-700">{imageState.error}</div> : null}</div>;
+  return <div><div className="relative"><img className="aspect-[3/4] w-full object-cover shadow-xl" src={card.reference_image} alt={`${card.name}参考图`} /><span className="absolute left-3 top-3 bg-black px-2 py-1 text-xs font-black text-white">风格参考（仅示意）</span></div><div className="mt-3 border border-fuchsia-200 bg-fuchsia-50 p-3 text-sm leading-relaxed text-fuchsia-950"><b>这类封面用图生图。</b>上方参考图会随本篇标题和内容一起发给模型，风格、配色、版式以参考图为准。</div>{imageState.status === 'timeout' && imageState.taskId ? <div className="mt-3 flex gap-2"><button className="flex-1 bg-fuchsia-700 px-4 py-2.5 text-sm font-black text-white" onClick={resumeTask}>继续查询此任务（不重复扣款）</button><button className="border border-neutral-300 px-4 py-2.5 text-sm font-bold" onClick={generate}>放弃并重新生成</button></div> : <button className="mt-3 w-full bg-fuchsia-700 px-4 py-2.5 text-sm font-black text-white disabled:bg-neutral-400" disabled={polling} onClick={generate}>{polling ? `生成中 ${imageState.progress ?? 0}%` : '按本篇内容文生图'}</button>}{imageState.error ? <div className="mt-2 text-sm font-semibold text-red-700">{imageState.error}</div> : null}</div>;
 }
 
 export function InnerPagePreview({ page, registerNode }: { page: GeneratedInnerPage; registerNode?: (node: HTMLElement | null) => void }) {

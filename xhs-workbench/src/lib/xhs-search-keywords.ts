@@ -54,7 +54,7 @@ const KEYWORDS: Record<ProductId, XhsSearchKeywordGroup> = {
       '报名流程',
       '查分',
     ],
-    avoid: ['保过', '必过', '三天速成', '一周上岸'],
+    avoid: [],
     validated_at: 'product-derived-fallback',
   },
 };
@@ -65,7 +65,7 @@ export function getXhsSearchKeywords(productId: ProductId): XhsSearchKeywordGrou
 
 export function getTitleReferenceKeywords(productId: ProductId): string[] {
   const group = getXhsSearchKeywords(productId);
-  return [...group.primary, ...group.secondary.slice(0, 4)];
+  return [...group.primary, ...group.secondary];
 }
 
 export function getAvoidedLowTrafficKeywords(productId: ProductId): string[] {

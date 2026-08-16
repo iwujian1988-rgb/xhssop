@@ -19,11 +19,11 @@ export default function ReferenceCoverRenderer({ renderer, payload, className = 
   if (spec?.renderMode === 'image_to_image') {
     return <article className={`reference-image-template ${className}`} aria-label={payload.title}>
       {referenceImage ? <img src={referenceImage} alt={`${spec.name}参考图`} /> : null}
-      <div className="reference-image-template__badge">文生图模板</div>
-      <div className="reference-image-template__pending">模板提示词已就绪<br/>等待文生图</div>
+      <div className="reference-image-template__badge">图生图模板</div>
+      <div className="reference-image-template__pending">参考图 + 本篇文案<br/>等待图生图</div>
       <div className="reference-image-template__note">
         <b>{spec.name}</b>
-        <span>用提前写好的构图提示词 + 本篇文案直接文生图</span>
+        <span>参考图决定风格版式，本篇文案决定内容，一起发给模型图生图</span>
       </div>
       <style>{`.reference-image-template{position:relative;width:100%;aspect-ratio:3/4;overflow:hidden;background:#ececec;box-shadow:0 20px 48px rgba(0,0,0,.18)}.reference-image-template>img{width:100%;height:100%;object-fit:cover;filter:saturate(.55) brightness(.75)}.reference-image-template__badge{position:absolute;top:14px;left:14px;padding:7px 10px;background:#111;color:#fff;font-size:12px;font-weight:800}.reference-image-template__pending{position:absolute;top:42%;right:8%;left:8%;padding:16px;background:rgba(0,0,0,.78);color:#fff;text-align:center;font-size:22px;font-weight:900;line-height:1.35}.reference-image-template__note{position:absolute;right:12px;bottom:12px;left:12px;display:flex;flex-direction:column;gap:3px;padding:12px;background:rgba(255,255,255,.96);font-size:12px;line-height:1.35}.reference-image-template__note b{font-size:14px}`}</style>
     </article>;

@@ -43,17 +43,16 @@ export function getPublicEditorialRiskIssues(editorialText: string, caption = ed
   // 保留强烈 AI 标志：议论文结构词、绝对句式、循环定义、递进空话。
   if (AI_CLICHE_PATTERN.test(caption)) issues.push('caption_ai_cliche');
   if (/(商品|资料)(里|中|内).{0,10}(有|没有|包含|不含|收录|未收录)/.test(editorialText)) issues.push('public_inventory_relation_claim');
-  if (/(?:挽回|提高|提升|多拿|少丢).{0,8}\d+(?:\s*[-~至]\s*\d+)?\s*分|(?:省下|节省).{0,8}(?:至少)?\s*\d+\s*分钟/.test(editorialText)) issues.push('unsupported_score_or_time_claim');
-  if (/精准提分|效率翻倍|分数卡在\s*\d+\s*分左右|考前[^。；\n]{0,20}就能/.test(editorialText)) issues.push('unsupported_outcome_claim');
+  // 2026-08-16 用户拍板：效果承诺类限制全部撤销（unsupported_score_or_time_claim /
+  // unsupported_outcome_claim 及生成/返修 prompt 黑名单、静默改写层同步删除）。
+  // 保留的是谎报事实类：官方授权/内部押题/100%（见 cheap_or_unsupported_claim）、
+  // 服务谎称（一对一/老师批改）、虚构亲历。
   if (/用\s*[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'’.-]{1,24}(?:代替|替换|换成)|(?:mais|donc|bien que|en revanche).{0,8}(?:换|替换).{0,18}/i.test(editorialText)) issues.push('unsafe_mechanical_language_replacement');
   if (/(?:正式信|论坛投稿|DELF|B2).{0,18}(?:严禁|一律|必须)/.test(editorialText)) issues.push('overabsolute_public_rule');
   if (/(?:我的|我们的).{0,12}(?:资料|资料包)(?:里|中)|(?:资料|资料包)(?:里|中).{0,10}(?:整理|收录|包含)/.test(editorialText)) issues.push('public_inventory_relation_claim');
   if (/来自.{0,18}(?:资料|资料包|商品)|(?:资料|资料包)(?:里|中|内|提供)/.test(editorialText)) issues.push('public_inventory_relation_claim');
-  // "高分句"已删：会误杀"高分句型/高分句式整理"这类正常备考内容；
-  // 保留强结果承诺词（与生成/返修 prompt 黑名单保持同步）。
-  if (/拿高分|立刻升级|保证提分|稳拿高分|提分的?关键/.test(editorialText)) issues.push('unsupported_outcome_claim');
   if (/直接套用|直接调用|直接调取|调用功能块|换词就能迁移|替换主题词[，,]?\s*就能|主题词一换/.test(editorialText)) issues.push('overmechanical_content_method');
-  if (/230\s*[-~至]\s*280\s*词|(?:至少|≥)\s*\d+\s*(?:个|种|类)?\s*(?:论据|主题词|B2(?:级)?(?:词汇|表达)|虚拟式|条件式|关系从句|连接词|时态)|(?:B2(?:级)?替换|B2(?:级)?表达|主题词|虚拟式|条件式|关系从句|连接词|时态)\s*(?:≥|至少)\s*\d+|每段(?:开头)?\s*(?:必须|都要|至少|有)\s*(?:一个?)?\s*连接词|每段有主题句/.test(editorialText)) issues.push('invented_exam_quantity_rule');
+  if (/230\s*[-~至]\s*280\s*词|(?:至少|≥)\s*\d+\s*(?:个|种|类)?\s*(?:论据|主题词|B2(?:级)?(?:词汇|表达)|虚拟式|条件式|关系从句|连接词|时态)|(?:B2(?:级)?替换|B2(?:级)?表达|主题词|虚拟式|条件式|关系从句|连接词|时态)\s*(?:≥|至少)\s*\d+|每段(?:开头)?\s*(?:必须|都要|至少|有)\s*(?:一个?)?\s*连接词/.test(editorialText)) issues.push('invented_exam_quantity_rule');
   if (/(?:TEF|TCF|CLB|NCLC).{0,24}(?:官方评分标准|通常要求\s*\d+\s*[-~至]\s*\d+\s*词|三大(?:评分)?维度|少于\s*\d+\s*词)/i.test(editorialText)) issues.push('unsupported_exam_official_rule');
   if (/全程\s*用\s*vous|避免泛指\s*on|正式信.{0,12}(?:不能|禁止|避免).{0,6}\bon\b/i.test(editorialText)) issues.push('overabsolute_register_rule');
   if (/把\s*[A-Za-zÀ-ÿ][A-Za-zÀ-ÿ\s'’.-]{1,24}换成\s*[A-Za-zÀ-ÿ]/i.test(editorialText)) issues.push('unsafe_mechanical_language_replacement');

@@ -144,7 +144,7 @@ export default function StudioPage() {
 
 function ReferenceChoice({ card, active, onClick }: { card: CompetitorCreativeCard; active: boolean; onClick: () => void }) {
   const mode = getCoverTemplateSpec(card.renderer_id)?.renderMode;
-  const modeName = mode === 'image_to_image' ? '模板文生图' : mode === 'hybrid' ? '真实底图+程序排字' : '程序精排';
+  const modeName = mode === 'image_to_image' ? '参考图图生图' : mode === 'hybrid' ? '真实底图+程序排字' : '程序精排';
   return <button className={`grid w-full grid-cols-[72px_1fr] gap-3 border p-2 text-left ${active ? 'border-red-500 bg-red-50' : 'border-neutral-200 hover:border-neutral-400'}`} onClick={onClick}><img className="aspect-[3/4] w-full object-cover" src={card.reference_image} alt={card.name} /><span className="min-w-0 py-1"><span className="block text-sm font-black">{card.name}</span><span className="mt-1 block text-xs text-neutral-500">{card.density} density · {modeName}</span></span></button>;
 }
 

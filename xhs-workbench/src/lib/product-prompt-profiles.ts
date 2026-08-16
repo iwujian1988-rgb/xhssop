@@ -12,7 +12,6 @@ export interface ProductPromptProfile {
   contentScopePrompt: string;
   editorialScopePrompt: string;
   auditScopePrompt: string;
-  titleExamples: string[];
   examFactRules: string;
   seoKeywords: string[];
   tagIdentity: string;
@@ -31,17 +30,6 @@ const profiles: Record<ProductId, ProductPromptProfile> = {
     contentScopePrompt: '当前是商品1。所有用户可见内容只能写DELF B2写作，禁止出现TEF、TCF、CLB、NCLC或加拿大移民语境；面向用户时说"写作题型/文体"，不要说"写作任务"；题型只含正式信、建议信、投诉/反对信和论坛投稿，不得引入口语考试、短信或简讯。',
     editorialScopePrompt: '商品1正文与内页只能围绕DELF B2写作，不得混入TEF/TCF/CLB或加拿大移民语境。学习建议不能冒充DELF官方强制规则。',
     auditScopePrompt: '仅拦截与商品1有关的明确考试事实错误：DELF B2写作少于250词、正式信与论坛投稿混用、敬语适用范围明显错误。不要审查TEF/TCF规则，也不要做额外教研扩展。',
-    titleExamples: [
-      'DELF B2写作模板别乱套',
-      '7天冲B2写作，先救这步',
-      '考官最爱看的不是高级词',
-      '稳过B2的人先查这张表',
-      '法语B2作文像A2？问题在这',
-      'DELF B2写作别再背范文',
-      '写完法语作文，先别急着交',
-      '法语B2写作总跑题？先查这3处',
-      'DELF B2正式信最容易错这步',
-    ],
     examFactRules: '权威考试规则优先：DELF B2写作要求至少250词，不得写230-280词；官方没有规定必须几个论据、B2词、主题词、虚拟式、条件式、关系从句或每段一个连接词。on、à mon avis等表达不能脱离语境一律禁用。',
     seoKeywords: ['DELF B2写作', '法语写作', 'DELF B2备考'],
     tagIdentity: 'DELFB2',
@@ -69,18 +57,7 @@ const profiles: Record<ProductId, ProductPromptProfile> = {
     contentScopePrompt: '当前是商品2。所有用户可见内容只能属于TEF/TCF Canada、CLB/NCLC或加拿大法语备考语境，禁止出现DELF、DALF或DELF B2写作。涉及报名、费用、政策和评分换算时只使用给定证据，拿不准就提示以官网为准。',
     editorialScopePrompt: '商品2正文与内页只能围绕TEF/TCF Canada、CLB/NCLC和加拿大法语备考，不得混入DELF/DALF语境。听说读写方法可以原创，但不能冒充官方规则、押题或固定提分承诺。',
     auditScopePrompt: '商品2只审查法语例句、释义、TEF/TCF名称、CLB/NCLC表述和给定证据支持的考试事实。报名日期、费用、政策、题型变化等时效信息没有证据时不得补写；不要套用DELF写作250词、正式信或论坛投稿规则。',
-    titleExamples: [
-      '3个月冲CLB7，先别乱刷',
-      '想稳过CLB7，先测这一步',
-      'TEF/TCF资料别再乱收了',
-      '官方必背模板？先看这张表',
-      'TEF还是TCF？别急着报名',
-      'CLB7四科差在哪？先测这一步',
-      'TEF/TCF备考越刷越乱？先停',
-      '加拿大法语备考资料别再乱收',
-      'TCF听力临考猛刷题有用吗',
-    ],
-    examFactRules: 'TEF/TCF Canada、CLB/NCLC、报名、费用、政策、题型、字数、评分维度和分数换算只能使用当前证据；不得套用DELF写作规则。没有逐字证据时，不得写“官方评分标准、通常要求200-250词、三大评分维度、少于180词会影响表达”等官方规则口吻，只能写成“练习自查维度/备考复盘清单”。不得把学习建议写成官方配额，也不得承诺固定天数提分、保过或押题命中。',
+    examFactRules: 'TEF/TCF Canada、CLB/NCLC、报名、费用、政策、题型、字数、评分维度和分数换算只能使用当前证据；不得套用DELF写作规则。没有逐字证据时，不得写“官方评分标准、通常要求200-250词、三大评分维度、少于180词会影响表达”等官方规则口吻，只能写成“练习自查维度/备考复盘清单”。不得把学习建议写成官方配额，也不得承诺押题命中。',
     seoKeywords: ['TEF TCF Canada', 'CLB7法语', '加拿大法语备考'],
     tagIdentity: 'TEFTCFCanada',
     coverFallbackTitles: {

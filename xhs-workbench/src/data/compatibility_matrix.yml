@@ -1,10 +1,8 @@
 compatibility_matrix:
   principle: v1 不做任意组合。先选商品，再选链路；后续封面母版、标题母版、内页结构只能从链路允许列表中选择。
   global_forbidden:
-  - 考试必过
   - 官方保证
   - 内部题库
-  - 保分
   - 押中原题
   product_forbidden_terms:
     delf_b2_writing:

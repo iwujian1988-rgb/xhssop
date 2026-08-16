@@ -147,7 +147,6 @@ cover_templates:
     - 必须能看出避坑价值
     forbidden:
     - 不要伪造考试评分
-    - 不要承诺必过
     - 不要混入 TEF/TCF 术语到 DELF 链路
   plan_table:
     name: 计划表型
@@ -170,5 +169,4 @@ cover_templates:
     - 数字时间感
     forbidden:
     - 不要写成单纯鸡汤
-    - 不要承诺 30 天必过
     - 不要让 AI 生成文字

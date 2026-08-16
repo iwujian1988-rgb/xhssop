@@ -200,6 +200,9 @@ export interface ReferenceDrivenDraft {
   inner_pages: GeneratedInnerPage[];
   caption: string;
   tags: string[];
+  /** 本篇 caption 的叙事骨架 id（failure_recovery 等 5 种，代码按 seed 指定）。
+   *  记录进 title-usage-store，喂回下一批让骨架分布可观测、可去重。 */
+  narrative_skeleton?: string;
   seo_keywords: string[];
   accuracy_audit: {
     approved: boolean;

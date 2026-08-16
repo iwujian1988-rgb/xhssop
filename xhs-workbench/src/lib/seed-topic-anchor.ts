@@ -77,9 +77,6 @@ const SEED_TOPIC_KEYWORDS: Record<string, string[]> = {
   delf_warmup_routine: [
     '热身', '考场热身', '5分钟热身', '10分钟热身', '进入状态', '破冰',
   ],
-  delf_agreement_pitfalls: [
-    '性数一致', '阴阳性', '单复数', '形容词配合', '过去分词配合', '配合错误',
-  ],
   delf_tense_usage: [
     'B2写作时态', '时态选择', '复合过去时', '未完成过去时', '时态混用', '语式',
   ],
@@ -97,24 +94,6 @@ const SEED_TOPIC_KEYWORDS: Record<string, string[]> = {
   ],
   delf_forum_response: [
     '论坛投稿', 'forum', '论坛语气', '网友互动', '论坛回复', '半正式',
-  ],
-  delf_subjunctive_scenes: [
-    '虚拟式', 'subjonctif', '5个场景', '情绪怀疑', 'il faut que', '虚拟式场景',
-  ],
-  delf_conditional_argument: [
-    '条件式', 'conditionnel', '假设论证', 'hypothèse', 'si条件句', '条件式论证',
-  ],
-  delf_emphasis_writing: [
-    '强调结构', "c'est qui", "c'est que", "c'est à que", '强调句', '强调句型',
-  ],
-  delf_inversion_register: [
-    '倒装', 'inversion', '正式倒装', '提问倒装', '让步倒装', '倒装句',
-  ],
-  delf_pronoun_condense: [
-    '代词', 'COD', 'COI', 'en y', '双代词', '代词收紧',
-  ],
-  delf_negation_variants: [
-    '否定表达', 'ne plus', 'ne jamais', 'ne rien', 'ne personne', '否定多样化',
   ],
   delf_theme_environment: [
     '环境主题', 'recyclage', 'pollution', 'éco-responsabilité', '新能源', '碳足迹',
@@ -160,6 +139,114 @@ const SEED_TOPIC_KEYWORDS: Record<string, string[]> = {
   ],
   delf_showcase_correction_set: [
     '批改案例', '案例集', '批改集', '自学顺序', '错误类型', '批改流程',
+  ],
+
+  // ===== 三车道重建：车道 1 爆款钩子（24 条） =====
+  delf_hook_first_sentence: [
+    '第一句', '开头', '憋不出', '落笔', '开不了头', '12个开头',
+  ],
+  delf_hook_5day_letter: [
+    '5天', '速成', '7步骤', '每天', '拆到每天', '5天速成',
+  ],
+  delf_hook_20_sentences: [
+    '20条', '整句', '组合', '替换', '组合示例', '改两个词',
+  ],
+  delf_hook_forum_openers: [
+    '论坛', '网友感', '功能表达', '半正式', '论坛语气', '网友',
+  ],
+  delf_hook_3hour_sweep: [
+    '3小时', '句法', '扫一遍', '100条', '考前3小时', '过一遍',
+  ],
+  delf_grammar_top4: [
+    '语法错', '丢分', '错误类型', '对照', '典型错误', '9类',
+  ],
+  delf_hook_30s_task: [
+    '30秒', '文体', '归零', '判文体', '识别', '判错',
+  ],
+  delf_hook_closing_swap: [
+    '结尾', '收尾', 'Cordialement', '结论句', '12个收尾', '换着用',
+  ],
+  delf_hook_second_paragraph: [
+    '第二段', '没话说', '论据', '观点', '展开', '填',
+  ],
+  delf_hook_title_read: [
+    '信号词', '跑题', '读题', '审题', '任务要求', '漏看',
+  ],
+  delf_hook_wordcount: [
+    '字数', '篇幅', '写不够', '太密', '段落长度', '数字数',
+  ],
+  delf_hook_essay_template: [
+    '议论文', '骨架', '流程', '结构', 'essai', '搭骨架',
+  ],
+  delf_hook_letter7step: [
+    '60分钟', '7步', '时长', '超时', '时间表', '7步走',
+  ],
+  delf_hook_report_article: [
+    'article', 'rapport', '低频文体', '照搬', '标准结构', '别慌',
+  ],
+  delf_hook_rescue_pack: [
+    '救命', '空白', '救命题', '应急', '考场草稿', '5个救命',
+  ],
+  delf_hook_opinion_cards: [
+    '观点卡', '观点', '例子', '论据', '卡片', '50条',
+  ],
+  delf_hook_transition_bank: [
+    '过渡', '因果', '递进', '衔接', '连接', '干巴巴',
+  ],
+  delf_hook_one_per_day: [
+    '4周', '8篇', '每天', '照表', '60分钟', '一天',
+  ],
+  delf_hook_last_night: [
+    '前一晚', '36项', '排查', '清单', '考前一晚', '5分钟',
+  ],
+  delf_hook_mock_to_real: [
+    '模考', '实考', '自评', '翻车', '落差', '6题',
+  ],
+  delf_hook_stop_practicing: [
+    '瞎练', '定位', '诊断', '档位', '5道题', '别再练',
+  ],
+  delf_hook_hard_topics: [
+    '主题', '矩阵', '交叉', '生僻', '主题准备', '10个主题',
+  ],
+  delf_hook_brain_blank: [
+    '空白', '紧张', '启动', '开考', '十分钟', '救回来',
+  ],
+  delf_hook_common_top10: [
+    '常见错', '类型', '自查', '低级', '典型错误', '交上去',
+  ],
+
+  // ===== 三车道重建：车道 2 粗知识点（4 条） =====
+  delf_coarse_5_modules: [
+    '全景', '模块', '先后', '地图', '7大', '先学哪个',
+  ],
+  delf_coarse_full_walkthrough: [
+    '流程对比', '三大文体', '并排', '流程图', '正式信', '议论文',
+  ],
+  delf_coarse_task_compare: [
+    '对照表', '选文体', '判断依据', '5种', '文体', '一张表',
+  ],
+  delf_coarse_5steps: [
+    '打分', '维度', '考官', '提分', '评分', '5个维度',
+  ],
+
+  // ===== 三车道重建：车道 3 showcase（6 条） =====
+  delf_showcase_diagnosis_path: [
+    '诊断', '3档', '先测再学', '路径', '自测', '问卷',
+  ],
+  delf_showcase_theme_matrix: [
+    '主题矩阵', '配齐', '交叉', '矩阵', '主题', '观点词汇句法',
+  ],
+  delf_showcase_exam_rules: [
+    '考场规矩', '装包', '低级失误', '16条', '收卷', '取消资格',
+  ],
+  delf_showcase_self_eval_6: [
+    '自评', '6题', '打分', '复盘', '反馈', '几个分',
+  ],
+  delf_showcase_essay_lib: [
+    '范文', '可替换', '拆', '22篇', '范文库', '拆表达',
+  ],
+  delf_showcase_checklist36: [
+    '36项', '逐条勾', '交卷前', '检查清单', 'E1', '7类',
   ],
 
   // ===== TEF/TCF 加拿大（50 条） =====
@@ -335,7 +422,12 @@ export function isTitleAnchoredToSeed(title: string, seedId: string): boolean {
   return keywords.some(kw => {
     // 含 ASCII 字母的关键词走小写比对（donc/mais/TEF）
     if (/^[a-z]+$/i.test(kw)) return lower.includes(kw.toLowerCase());
-    return title.includes(kw);
+    if (title.includes(kw)) return true;
+    // 纯中文关键词 ≥4 字时，标题含其前 2 字也算锚定：自然标题常用短形
+    // （"性数一致"的短形是"性数"），只做全串匹配会误杀完全对题的标题
+    // （实测 job_008 "性数错一个，B2写作整段白写" 被 off_topic 闸门打死）。
+    if (/^[一-鿿]{4,}$/.test(kw)) return title.includes(kw.slice(0, 2));
+    return false;
   });
 }
 

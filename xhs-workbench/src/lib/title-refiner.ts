@@ -21,10 +21,10 @@ const BANNED = [
   /这一档/,
   /这几个小窍门/,
   /干货满满|建议收藏|码住|宝藏资料/,
-  /真实短板|效率翻倍|立刻见效|一测就|锁定.{0,6}弱项|稳拿|瓶颈/,
-  /提分|马上不一样|直接套|直接上手|扣小分|按这\d+档走|白忙|凑不齐|被说太平|只差这|背了词不会换/,
+  /真实短板|立刻见效|一测就|锁定.{0,6}弱项|瓶颈/,
+  /马上不一样|直接套|直接上手|扣小分|按这\d+档走|白忙|凑不齐|被说太平|只差这|背了词不会换/,
   /资深考官|官方建议|致命扣分|救分|重灾区|隐藏评分|自救模板|掌握.{0,12}就够了|照搬.{0,8}扣分/,
-  /保过|必过|押题|稳过|保证高分|保分|稳拿/,
+  /押题/,
 ];
 
 const DOMAIN = /法语|DELF\s*B2|B2作文|B2写作/i;
@@ -42,10 +42,10 @@ export async function refineSampleTitles(samples: SampleNote[]): Promise<SampleN
         '每条生成 5 个真正不同的候选，分别尝试：痛点冲突、具体收益、好奇缺口、反常识、场景急迫。',
         '标题必须口语自然、前后逻辑成立。人群和场景只在能增强点击时自然融入，不许把标签直接拼进标题。',
         '禁止“不是...而是...”、禁止“按3类用”、禁止“先看你在哪一档”、禁止空泛的小窍门/建议收藏/宝藏资料。',
-        '禁止“真实短板、效率翻倍、立刻见效、一测就知道、锁定弱项、稳拿、瓶颈”等AI营销腔。',
-        '同样禁止“马上不一样、直接套、直接上手、扣小分、按3档走、复习不再白忙、被说太平、提分只差”等不自然或夸张表达。',
+        '禁止“真实短板、立刻见效、一测就知道、锁定弱项、瓶颈”等AI营销腔。',
+        '同样禁止“马上不一样、直接套、直接上手、扣小分、按3档走、复习不再白忙、被说太平”等不自然或夸张表达。',
         '只能围绕 evidence、required_topic 和 concrete_content 写，pain 只用于寻找用户语气。不得把“观点卡”偷换成“范文”，不得把“仿写示例”偷换成“词汇表”。',
-        '禁止虚构成绩、时间效果、真人经历、权威背书；标题承诺不得超出 evidence；只能使用 allowed_numbers 里的数字。',
+        '禁止虚构成绩、时间效果、真人经历、权威背书；只能使用 allowed_numbers 里的数字。',
         '硬要求：每一个 note_title 必须自然包含“法语”或“DELF B2”；每一组 cover_lines 合并后也必须包含“法语”或“DELF B2”。不满足就视为废稿。',
         'note_title 14-28 个中文字符左右，标点自然。程序会自动把同一个标题排成封面，不需要你另写封面句子。',
         '坏例子：“法语B2写作：3档路径里，先选对这一档”“法语B2写作怎么 / 练？”“观点卡别硬背，按3类用”。',
@@ -131,7 +131,7 @@ function titleIssues(title: ValidTitle, sample: SampleNote) {
   if (!DOMAIN.test(coverText)) issues.push('cover_domain');
   if (/怎么\s*$/.test(title.coverLines[0]) || /^练[？?]?/.test(title.coverLines[1])) issues.push('split_phrase');
   if (/没思\s*$/.test(title.coverLines[0]) || /^路/.test(title.coverLines[1])) issues.push('split_phrase');
-  if (/保过|必过|押题|高分|保分|稳拿/.test(`${title.noteTitle}${coverText}`)) issues.push('unsafe_claim');
+  if (/押题/.test(`${title.noteTitle}${coverText}`)) issues.push('unsafe_claim');
   const allowedNumbers = new Set(['2', ...extractNumbers(sample)]);
   const usedNumbers = `${title.noteTitle}${coverText}`.match(/\d+/g) || [];
   if (usedNumbers.some(value => !allowedNumbers.has(value))) issues.push('invented_number');

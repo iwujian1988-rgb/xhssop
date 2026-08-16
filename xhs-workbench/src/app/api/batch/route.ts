@@ -99,6 +99,11 @@ async function handlePlan(body: PlanBody) {
   await createBatch(batch);
 
   const seenTopics = new Set<string>();
+  // 批内发牌上下文：上一张卡发过的 seed 和确认的选题文本要传给下一张卡，
+  // 否则各卡独立选牌会把同一个 seed 发 5 次（batch_1786754651839 的
+  // delf_pain_logic_jump），不同 seed 也会收敛到同一知识点。
+  const batchUsedSeedIds: string[] = [];
+  const batchUsedTopicTexts: string[] = [];
   let seq = 1;
 
   for (const cardId of body.card_ids) {
@@ -115,6 +120,8 @@ async function handlePlan(body: PlanBody) {
       direction,
       limit: topicsPerCard,
       recentSeedIds,
+      batchUsedSeedIds,
+      batchUsedTopicTexts,
     });
     const topics = seededTopics.length ? await refineSeededTopics({
       productId: body.product_id,
@@ -132,6 +139,8 @@ async function handlePlan(body: PlanBody) {
       const topicKey = `${card.renderer_id}:${topic.seed_id || topic.topic}`;
       if (seenTopics.has(topicKey)) continue;
       seenTopics.add(topicKey);
+      if (topic.seed_id) batchUsedSeedIds.push(topic.seed_id);
+      batchUsedTopicTexts.push(`${topic.topic} ${topic.content_promise || ''} ${(topic.dynamic_fact_terms || []).join(' ')}`);
       const job: BatchJob = {
         id: formatJobId(seq),
         seq,

@@ -115,6 +115,24 @@ function pickOne(items: string[]) {
   return items[Math.floor(Math.random() * items.length)] || '';
 }
 
+// 把 cover.sections 拼成"分组标题 + 逐条条目"的正文文本。
+// 文生图/图生图两条路径共用，保证两边看到的清单一字不差。
+function buildSectionText(card: CompetitorCreativeCard, cover: DenseDirectoryCoverPayload) {
+  // official_notice 走公文段落格式："一、通知对象..."而不是"1. 通知对象..."
+  const isOfficialNotice = card.renderer_id === 'official_notice';
+  const sectionNumber = (index: number) => isOfficialNotice
+    ? `${CHINESE_NUMERALS[index] ?? `${index + 1}.`}、`
+    : `${index + 1}. `;
+
+  return cover.sections.map((section, index) => [
+    `${sectionNumber(index)}${section.heading}`,
+    ...section.items.map(item => {
+      const note = item.note ? stripInternalIds(item.note) : '';
+      return `- ${item.primary}${item.secondary ? `｜${item.secondary}` : ''}${note ? `（${note}）` : ''}`;
+    }),
+  ].join('\n')).join('\n');
+}
+
 // 内部目录 ID（CH-085 / AU-001 / JF-011 / GRAM-0001 等）绝不能进入文生图 prompt，
 // 否则图像模型会一五一十地把它们画到封面上。item.note 经常带这种 ID，组装 prompt 前先剥。
 function stripInternalIds(text: string): string {
@@ -128,7 +146,57 @@ function stripInternalIds(text: string): string {
 
 const CHINESE_NUMERALS = ['一', '二', '三', '四', '五', '六', '七', '八', '九', '十'];
 
-export function buildReferenceImagePrompt(card: CompetitorCreativeCard, cover: DenseDirectoryCoverPayload) {
+// 图生图模式：prompt 只负责"画什么内容"，"长什么样"完全交给参考图。
+// 实测（2026-08-15 对照实验）：一旦 prompt 里写风格描述，文字就会压过参考图，
+// 产出和参考图毫不相干；只有 prompt 明确"风格以参考图为唯一权威"时才保真。
+// hasReference：调用方必须先确认参考图真的能随任务发出去（文件存在、能读出
+// base64）再传 true。之前只看 card.reference_image 字符串是否存在——
+// resource_16 的图文件缺失时，图没传上去，prompt 却说"已附带参考图"，
+// 模型被命令追随一张不存在的图。
+export function buildReferenceImagePrompt(
+  card: CompetitorCreativeCard,
+  cover: DenseDirectoryCoverPayload,
+  hasReference: boolean,
+) {
+  if (hasReference) return buildReferenceFirstPrompt(card, cover);
+  return buildTextOnlyPrompt(card, cover);
+}
+
+function buildReferenceFirstPrompt(card: CompetitorCreativeCard, cover: DenseDirectoryCoverPayload) {
+  const isPainQuote = card.renderer_id === 'pain_quote_big';
+
+  const contentLines = isPainQuote
+    ? [
+        '【本篇唯一文案——整句金句，一字不改】',
+        cover.title,
+        '画面上只出现上面这一句话，按参考图的行结构拆行排版；除这句话外不得出现任何其他文字、副标题、编号、清单、图标或装饰。',
+      ]
+    : [
+        '【本篇必须写入画面的文案——一字不改地画出来】',
+        `主标题：${cover.title}`,
+        `副标题：${cover.subtitle || '（无）'}`,
+        `正文内容：\n${buildSectionText(card, cover)}`,
+        '【正文画法硬约束·防重复填充】',
+        '正文必须严格按上面清单的顺序逐条画一次：每条法语搭配只出现一次、每条中文释义只出现一次。',
+        '禁止为"填满画面"而重复、复制、粘贴同一条短语；禁止新增清单外的额外条目；禁止省略清单里的任何一条。',
+        '若某区域空间不足，宁可留白或略缩字号，也不要用重复内容填充空缺位置。',
+      ];
+
+  return [
+    '这是图生图任务：已附带参考图（风格与版式的唯一权威）。',
+    '【风格硬约束·参考图优先】',
+    '严格保持参考图的版式骨架、背景色、配色、字体风格、字号层级、信息密度和装饰元素的位置与质感。',
+    '只把参考图的内容主题替换成下面给的文案；不要发明参考图之外的新风格、新配色、新装饰、新构图。',
+    '参考图里的文字语言风格（如中文标题+法语正文混排）也照原样保留。',
+    ...contentLines,
+    '【硬性要求】',
+    '画面必须填满整张图，禁止大片留白或下半截空白。',
+    '中文和法语清楚可读、无乱码、无断词、无重叠；标题在手机缩略图仍能看清。',
+    '只使用上面的本篇文案，不要编造品牌、出版社、作者、账号、二维码、水印、咨询入口。',
+  ].join('\n\n');
+}
+
+function buildTextOnlyPrompt(card: CompetitorCreativeCard, cover: DenseDirectoryCoverPayload) {
   const core = TEMPLATE_CORE[card.renderer_id];
   if (!core) throw new Error(`模板 ${card.renderer_id} 尚未配置文生图提示词`);
 
@@ -153,19 +221,8 @@ export function buildReferenceImagePrompt(card: CompetitorCreativeCard, cover: D
     ].filter(Boolean).join('\n\n');
   }
 
-  // official_notice 走公文段落格式："一、通知对象..."而不是"1. 通知对象..."
   const isOfficialNotice = card.renderer_id === 'official_notice';
-  const sectionNumber = (index: number) => isOfficialNotice
-    ? `${CHINESE_NUMERALS[index] ?? `${index + 1}.`}、`
-    : `${index + 1}. `;
-
-  const content = cover.sections.map((section, index) => [
-    `${sectionNumber(index)}${section.heading}`,
-    ...section.items.map(item => {
-      const note = item.note ? stripInternalIds(item.note) : '';
-      return `- ${item.primary}${item.secondary ? `｜${item.secondary}` : ''}${note ? `（${note}）` : ''}`;
-    }),
-  ].join('\n')).join('\n');
+  const content = buildSectionText(card, cover);
 
   return [
     '直接文生图，输出一张完整的3:4竖版小红书封面成品。不要上传参考图，不要图生图编辑。',
@@ -198,7 +255,7 @@ export function buildReferenceImagePrompt(card: CompetitorCreativeCard, cover: D
 }
 
 export const referenceImageNegativePrompt = [
-  '不要图生图式半成品，不要大片空白。',
+  '不要未完成的半成品画面，不要大片空白。',
   '不要PPT风、网页卡片风、极简空海报。',
   '不要乱码、错别字、随机英文、文字重叠、断词、过小标题。',
   '不要真实出版社logo、作者签名、二维码、水印、咨询按钮。',

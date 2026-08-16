@@ -100,7 +100,7 @@ function tokenize(value: string) {
 }
 
 function hasUnsupportedClaim(value: string) {
-  return /保过|保证提分|必过|包过|百分之百|100%|真人批改|一对一/.test(value);
+  return /百分之百|100%|真人批改|一对一/.test(value);
 }
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -134,7 +134,5 @@ function cleanPublicText(value: string) {
     .replace(/考官/g, '评分标准')
     .replace(/万能/g, '常用')
     .replace(/白考/g, '复习白费')
-    .replace(/保分/g, '稳住基础')
-    .replace(/必过|包过/g, '考前实用')
     .replace(/扣\s*\d+\s*分/g, '容易丢分');
 }

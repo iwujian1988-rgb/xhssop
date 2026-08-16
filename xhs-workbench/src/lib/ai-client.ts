@@ -1,4 +1,6 @@
 import { jsonrepair } from 'jsonrepair';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 
 export interface AiMessage {
   role: 'system' | 'user';
@@ -41,6 +43,14 @@ export function recordAutofixEvents(events: string[]) {
 }
 
 export async function callOpenAICompatibleJson(messages: AiMessage[], options: AiCallOptions = {}): Promise<unknown> {
+  // 桥接模式：AI_BRIDGE_DIR 指定时完全不碰远程 API（不消耗用户 token），
+  // 把每次调用的完整 prompt 落盘，等待同目录下出现对应 .resp 文件后返回。
+  // 用于让真实管线/真实 prompt/真实闸门在"外部模型"（Claude 子代理）驱动下
+  // 端到端跑通。响应文件内容为纯文本（JSON 字符串），走同一个 parseJsonContent。
+  if (process.env.AI_BRIDGE_DIR) {
+    return callBridgeJson(process.env.AI_BRIDGE_DIR, messages, options);
+  }
+
   const apiKey = process.env.OPENAI_API_KEY;
   const model = process.env.OPENAI_MODEL || 'deepseek-v4-pro';
   const baseUrl = (process.env.OPENAI_BASE_URL || 'https://api.deepseek.com').replace(/\/$/, '');
@@ -108,6 +118,49 @@ export async function callOpenAICompatibleJson(messages: AiMessage[], options: A
     }
   }
   throw lastError || new Error('AI调用失败');
+}
+
+let bridgeSeq = 0;
+
+async function callBridgeJson(dir: string, messages: AiMessage[], options: AiCallOptions): Promise<unknown> {
+  bridgeSeq += 1;
+  const id = `${Date.now()}-${bridgeSeq}`;
+  const base = path.join(dir, `req-${id}`);
+  await mkdir(dir, { recursive: true });
+  await writeFile(`${base}.json`, JSON.stringify({
+    id,
+    created_at: new Date().toISOString(),
+    temperature: options.temperature ?? 0.65,
+    max_tokens: options.maxTokens ?? 6000,
+    messages,
+  }, null, 2), 'utf8');
+  console.info(`[AI bridge] 等待响应 ${base}.resp.json`);
+
+  const deadline = Date.now() + 30 * 60 * 1000;
+  while (Date.now() < deadline) {
+    let raw: string | undefined;
+    try {
+      raw = await readFile(`${base}.resp.json`, 'utf8');
+    } catch {
+      raw = undefined;
+    }
+    if (raw) {
+      const content = raw.trim();
+      if (content.length === 0) continue;
+      recentUsage.calls += 1;
+      console.info(`[AI bridge] 收到响应 ${base}.resp.json (${content.length} chars)`);
+      return parseJsonContent(content);
+    }
+    let errRaw: string | undefined;
+    try {
+      errRaw = await readFile(`${base}.error.json`, 'utf8');
+    } catch {
+      errRaw = undefined;
+    }
+    if (errRaw) throw new Error(`AI bridge 收到错误响应：${errRaw.slice(0, 500)}`);
+    await new Promise(resolve => setTimeout(resolve, 2000));
+  }
+  throw new Error(`AI bridge 等待响应超时（30 分钟）：${base}.json`);
 }
 
 function parseJsonContent(content: string) {

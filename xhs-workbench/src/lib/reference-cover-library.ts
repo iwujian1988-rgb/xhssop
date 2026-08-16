@@ -132,7 +132,7 @@ export const referenceCovers: ReferenceCover[] = [
     previewPath: '/reference-covers/ref_rescue_01.png',
     coverText: '一天速成',
     layoutSignals: ['考前急救型', '大数字', '紧迫感', '短期目标'],
-    mimicRules: ['必须有时间数字', '必须给今日优先项', '不能承诺必过'],
+    mimicRules: ['必须有时间数字', '必须给今日优先项'],
   },
   {
     id: 'ref_rescue_02',

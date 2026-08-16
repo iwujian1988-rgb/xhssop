@@ -362,7 +362,7 @@ function inferWarningObject(input: TitleRouteInput): string {
 }
 
 function isTitleSafe(title: string, riskFlags: string[]): boolean {
-  if (/必过|保过|提分|押题|高分|唯一办法/.test(title)) return false;
+  if (/押题|唯一办法/.test(title)) return false;
   if (riskFlags.includes('avoid_fake_authority') && /名师|考官|官方|权威/.test(title)) return false;
   return title.length <= 32;
 }

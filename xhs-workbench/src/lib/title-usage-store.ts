@@ -32,6 +32,16 @@ interface TitleUsageRecord {
   // 本篇最终发布的 tag。用于统计近 7 天 tag 使用频率——身份大词（#DELFB2 等）
   // 篇篇都出现就是撞款，生成时把频率喂给 LLM 让它主动避开。
   tags?: string[];
+  // 本篇全部内页标题。跨 job 内页标题去重用——"常见错误这样检查""写完之后
+  // 这样复盘"这类通用收尾页标题 LLM 会反复写（batch_1786754651839 里分别
+  // 出现 3 次），生成时喂回历史让它写贴本篇主题的具体标题。
+  page_titles?: string[];
+  // 本篇 caption 叙事骨架 id（failure_recovery 等 5 种）。喂回下一批：
+  // pickNarrativeSkeleton 把近期已用 ≥2 次的骨架沉底。
+  narrative_skeleton?: string;
+  // caption 结尾一句（最后 40 字）。承接句写法跨 job 撞款检测用——
+  // "我把它整理成了X资料的Y部分"句式曾在 11 篇模拟里出现 9 次。
+  caption_ending?: string;
   fingerprint: string;
   used_at: string;
 }
@@ -55,6 +65,14 @@ export interface RecentTitleFingerprints {
   recentTopics: string[];
   /** 近期已发布 tag → 使用次数（治"#DELFB2 篇篇都有"型 tag 撞款） */
   recentTagCounts: Map<string, number>;
+  /** 近期已用内页标题指纹集合（治通用收尾页标题跨 job 逐字复读） */
+  recentPageTitleFingerprints: Set<string>;
+  /** 近期已用内页标题原文（喂 prompt 用，保留最近一批） */
+  recentPageTitles: string[];
+  /** 近期 caption 叙事骨架 id 列表（骨架轮换沉底用） */
+  recentSkeletons: string[];
+  /** 近期 caption 结尾一句（承接句写法去重用） */
+  recentCaptionEndings: string[];
   /** 原始记录，调试/审计用 */
   records: TitleUsageRecord[];
 }
@@ -80,14 +98,23 @@ export async function getRecentTitleFingerprints(
   const selectedTitleTemplates = new Map<string, number>();
   const recentTopics: string[] = [];
   const recentTagCounts = new Map<string, number>();
+  const recentPageTitleFingerprints = new Set<string>();
+  const recentPageTitles: string[] = [];
+  const recentSkeletons: string[] = [];
+  const recentCaptionEndings: string[] = [];
   for (const record of filtered) {
     selectedTitles.add(record.fingerprint);
     if (record.cover_title) coverTitles.add(fingerprintTitle(record.cover_title));
     if (record.cover_subtitle) coverSubtitles.add(fingerprintTitle(record.cover_subtitle));
     if (record.topic) recentTopics.push(record.topic);
-    for (const tag of record.tags || []) {
-      recentTagCounts.set(tag, (recentTagCounts.get(tag) || 0) + 1);
+    if (record.narrative_skeleton) recentSkeletons.push(record.narrative_skeleton);
+    if (record.caption_ending) recentCaptionEndings.push(record.caption_ending);
+    for (const pageTitle of record.page_titles || []) {
+      if (!pageTitle) continue;
+      recentPageTitleFingerprints.add(fingerprintTitle(pageTitle));
+      recentPageTitles.push(pageTitle);
     }
+    // tag 计数移到主循环外（见下方）：只数最近 8 篇带 tag 的记录。
     // 模板指纹合并：selected_title / cover.title / cover.subtitle 都进同一个 map。
     // 这样"X 直接扣分"在 selected 出现 2 次后，cover.subtitle 再写"别把能拿的分丢掉"
     // 也会被同模板扣分（虽然指纹不同，但套路相同，整 batch 看着仍像复读机）。
@@ -101,7 +128,21 @@ export async function getRecentTitleFingerprints(
       allCandidates.add(fingerprintTitle(candidate));
     }
   }
-  return { selectedTitles, allCandidates, coverTitles, coverSubtitles, selectedTitleTemplates, recentTopics, recentTagCounts, records: filtered };
+  // tag 频率窗口（2026-08-16）：只数最近 8 篇带 tag 的记录。旧版按 14 天全量
+  // 计数，测试节奏（14 天 325 条）会把所有内容 tag 刷到 ≥3 封顶线，tag 被砍
+  // 到只剩身份词；复读只对"读者连刷能看到的最近几篇"有意义。键统一剥 # 前缀
+  // （旧版记录带 #、normalizeTags 查询不带 #，永远 miss，封顶从未生效过）。
+  const taggedRecent = filtered
+    .filter(record => (record.tags || []).length > 0)
+    .sort((a, b) => Date.parse(b.used_at) - Date.parse(a.used_at))
+    .slice(0, 8);
+  for (const record of taggedRecent) {
+    for (const tag of record.tags || []) {
+      const bare = tag.replace(/^#+/, '');
+      recentTagCounts.set(bare, (recentTagCounts.get(bare) || 0) + 1);
+    }
+  }
+  return { selectedTitles, allCandidates, coverTitles, coverSubtitles, selectedTitleTemplates, recentTopics, recentTagCounts, recentPageTitleFingerprints, recentPageTitles, recentSkeletons, recentCaptionEndings, records: filtered };
 }
 
 export async function recordTitleUsage(input: {
@@ -114,6 +155,9 @@ export async function recordTitleUsage(input: {
   coverSubtitle?: string;
   topic?: string;
   tags?: string[];
+  pageTitles?: string[];
+  narrativeSkeleton?: string;
+  caption?: string;
 }) {
   if (!input.title) return;
   const record: TitleUsageRecord = {
@@ -126,6 +170,9 @@ export async function recordTitleUsage(input: {
     cover_subtitle: input.coverSubtitle || '',
     topic: input.topic || undefined,
     tags: input.tags?.filter(Boolean).length ? input.tags.filter(Boolean) : undefined,
+    page_titles: input.pageTitles?.filter(Boolean).length ? input.pageTitles.filter(Boolean) : undefined,
+    narrative_skeleton: input.narrativeSkeleton || undefined,
+    caption_ending: input.caption ? input.caption.slice(-40) : undefined,
     fingerprint: fingerprintTitle(input.title),
     used_at: new Date().toISOString(),
   };
@@ -226,6 +273,8 @@ export function findSimilarTopic(
 const TEMPLATE_PRIORITY = [
   // 高优先级：动作 + 后果型（最容易被反复用的"加压式"套路）
   '直接扣分', '白练', '白丢', '白考', '白背', '白费',
+  // 情绪/设问开头型（用户实测点名：救命/为什么/疑问句整批刷屏）
+  '救命', '为什么', '停止', '先停',
   // 禁止命令型
   '别硬背', '别再', '别乱', '别硬', '别只', '别拿', '别把', '别瞎', '别平均',
   '词别乱用', '词别硬背', '句型别乱',
@@ -246,6 +295,9 @@ export function titleTemplateFingerprint(title: string): string {
   for (const feature of TEMPLATE_PRIORITY) {
     if (stripped.includes(feature)) return feature;
   }
+  // 疑问句式兜底：不含上述功能词但带问号的（"XXX？YYY"格式）也归成同一
+  // 模板，防止整批标题全是问句。
+  if (/[？?]/.test(title)) return '疑问句式';
   return '';
 }
 

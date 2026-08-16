@@ -2,12 +2,13 @@ import type { ContentShape, EditorialSeed, MigratedTopic } from '@/types/referen
 import type { ProductId } from '@/types/data';
 import type { ProductFacts } from '@/types/content-planning';
 import type { ProductCard } from '@/lib/reference-compose';
-import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
+import { getCoverTemplateSpec, parseContentPromiseCount } from '@/lib/cover-template-specs';
+import { jaccardSimilarity, tokenizeTopic } from '@/lib/title-usage-store';
 
 const delfSeeds: EditorialSeed[] = [
   {
     seed_id: 'delf_formal_opening_closing', product_id: 'delf_b2_writing',
-    topic: 'DELF B2正式信开头和结尾怎么写', keyword_candidates: ['模板', '格式', '开头', '结尾'],
+    topic: '正式信开头结尾全套备好，考场不现想', keyword_candidates: ['模板', '格式', '开头', '结尾'],
     audience: '距离DELF B2考试1个月以内、正式信开头和结尾经常卡住的考生',
     user_pain: '读懂题目却迟迟写不出第一句，结尾又只会用Cordialement',
     user_need: '按写信目的选择合适的开头和结尾，并知道各自适用场景',
@@ -25,7 +26,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_final_check', product_id: 'delf_b2_writing',
-    topic: 'DELF B2作文交卷前怎么检查', keyword_candidates: ['评分标准', '技巧', '格式'],
+    topic: '交卷前5分钟，到底该检查什么', keyword_candidates: ['评分标准', '技巧', '格式'],
     audience: '能写完DELF B2作文，但写完后不知道从哪里检查的考生',
     user_pain: '检查时只会重读全文，重复出现的结构、语体和语法问题仍然漏掉',
     user_need: '有顺序地检查任务完成、结构、词汇句法、语体和拼写',
@@ -115,7 +116,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_sample_transfer', product_id: 'delf_b2_writing',
-    topic: 'DELF B2范文怎么拆成自己的表达', keyword_candidates: ['范文', '表达', '句型'],
+    topic: '背了范文换题就忘？拆可替换表达再背', keyword_candidates: ['范文', '表达', '句型'],
     audience: '收藏和背过范文，但换题后仍然不会写的B1-B2考生',
     user_pain: '记住了整篇范文的内容，却没有提取能迁移到新题目的表达和结构',
     user_need: '从范文中拆出功能表达、句法结构、论证方法和可替换位置',
@@ -130,7 +131,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_task_formats', product_id: 'delf_b2_writing',
-    topic: 'DELF B2三种写作题型怎么区分', keyword_candidates: ['写作题型', '格式', '范文'],
+    topic: '一张表分清5种写作任务，别再写错文体', keyword_candidates: ['写作题型', '格式', '范文'],
     audience: '对正式信、论坛投稿和议论文边界不清楚的备考者',
     user_pain: '知道要表达观点，却经常用错称呼、结构和语体',
     user_need: '看懂三类任务的读题信号、结构、语体和常见误区',
@@ -160,7 +161,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_scoring_dimensions', product_id: 'delf_b2_writing',
-    topic: 'DELF B2写作评分维度怎么看', keyword_candidates: ['评分标准', '技巧', '结构'],
+    topic: '考官按5个维度打分，你丢在哪个维度', keyword_candidates: ['评分标准', '技巧', '结构'],
     audience: '写完作文只凭感觉判断好坏、不了解评价维度的考生',
     user_pain: '修改作文时只盯语法，任务完成、连贯和语体问题没有被发现',
     user_need: '从任务完成、结构连贯、词汇句法、语体等维度理解改进方向',
@@ -250,7 +251,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_time_allocation', product_id: 'delf_b2_writing',
-    topic: 'DELF B2写作时间怎么分配', keyword_candidates: ['写作时间', '时间分配', '考试技巧'],
+    topic: '60分钟考场时间表：每步给足时长不超时', keyword_candidates: ['写作时间', '时间分配', '考试技巧'],
     audience: 'DELF B2考场写作时间经常不够或分配不均的考生',
     user_pain: '审题和草稿花太长时间，正文写不完；或前段太赶，后段没时间检查',
     user_need: '一套能落地的考场时间分配方案，按题型和阶段拆分分钟数',
@@ -295,7 +296,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_self_evaluation', product_id: 'delf_b2_writing',
-    topic: 'DELF B2作文自己怎么评分', keyword_candidates: ['作文自评', '评分维度', '写作复盘'],
+    topic: '作文写完不知道几分？6题自评', keyword_candidates: ['作文自评', '评分维度', '写作复盘'],
     audience: '写完作文只凭感觉判断好坏、不知道哪里能改的B2考生',
     user_pain: '修改时只盯语法错误，对任务完成、连贯和语体没概念',
     user_need: '一套能自己上手的评分维度和检查问题，能稳定给作文打分',
@@ -339,21 +340,6 @@ const delfSeeds: EditorialSeed[] = [
     page_plan: ['说明热身目的', '拆解热身步骤', '示范一次热身', '连接到考场节奏', '给出热身训练方法'],
   },
   {
-    seed_id: 'delf_agreement_pitfalls', product_id: 'delf_b2_writing',
-    topic: 'DELF B2写作性数一致怎么避坑', keyword_candidates: ['性数一致', '写作语法', '易错点'],
-    audience: '作文里性数一致反复出错、自己改不出来的B2考生',
-    user_pain: '名词阴阳性、单复数记不准，配形容词和过去分词时反复出错',
-    user_need: '一套高频出错点和检查顺序，能在交卷前快速扫一遍',
-    pay_trigger: '作文被指出过多性数错误，影响语言表现分数',
-    use_scenario: '专项语法训练、改写旧文时检查性数、交卷前最后扫描',
-    content_shapes: ['directory', 'table', 'flashcard', 'document', 'pain'],
-    anchor_fact_ids: ['SP-010', 'KA-025', 'KA-026', 'DA-010'],
-    dynamic_fact_terms: ['性数一致', '阴阳性', '单复数', '形容词配合', '过去分词', '检查顺序'],
-    ai_original_scope: '可以原创错误对照例句和检查清单，不得冒充真题原文或用户真实作文',
-    title_trigger_types: ['恐惧损失', '认知冲突', '数字锚定', '互动测试'],
-    page_plan: ['展示高频错误', '解释错误原因', '给正确改法', '总结检查顺序', '安排自查练习'],
-  },
-  {
     seed_id: 'delf_tense_usage', product_id: 'delf_b2_writing',
     topic: 'DELF B2写作时态怎么选', keyword_candidates: ['写作时态', '语式', '法语时态'],
     audience: '作文时态用得太单一、或在该用复合过去时的地方用错时的B2考生',
@@ -385,7 +371,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_letter_complaint', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 投诉信（lettre de réclamation）怎么写才有理有据',
+    topic: '投诉信先摆事实再提要求，别写成情绪宣泄',
     keyword_candidates: ['投诉信', 'lettre de réclamation', '正式信', '写作模板'],
     audience: '写投诉信时容易情绪化、缺乏具体证据、对方看了不重视的B2考生',
     user_pain: '投诉理由写得像抱怨，没有事实链，结尾要求模糊，对方不当回事',
@@ -433,7 +419,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_forum_response', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 论坛投稿（réponse à un forum）怎么写不像写作文',
+    topic: '论坛投稿要有网友感，别写成小作文',
     keyword_candidates: ['论坛投稿', 'forum', '写作语气', 'B2表达'],
     audience: '论坛投稿用议论文口吻、显得格格不入的B2考生',
     user_pain: '论坛任务用 trop sérieux 的语气，读起来像论文不像网友互动',
@@ -446,102 +432,6 @@ const delfSeeds: EditorialSeed[] = [
     ai_original_scope: '可以原创论坛场景和互动例句，不得冒充真实论坛原文',
     title_trigger_types: ['认知冲突', '场景条件', '好奇缺口', '行动号召'],
     page_plan: ['先给论坛语气定位', '展示互动短句', '示范半正式表达', '给段落示范', '连接考场调用'],
-  },
-  {
-    seed_id: 'delf_subjunctive_scenes', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作里虚拟式（subjonctif）的 5 个使用场景',
-    keyword_candidates: ['虚拟式', 'subjonctif', 'B2语法', '写作句型'],
-    audience: '背了虚拟式变位但不知道什么时候该用的B2考生',
-    user_pain: '虚拟式只会套 il faut que，其他场景一律用直陈式',
-    user_need: '5 个明确场景（情绪/怀疑/必须/让步/目的）+ 每个场景触发词',
-    pay_trigger: '作文被批"句式单一"，但不懂虚拟式怎么扩展',
-    use_scenario: '专项虚拟式训练、改写旧文加虚拟式、考场判断场景',
-    content_shapes: ['directory', 'phrase', 'flashcard', 'table', 'book', 'document'],
-    anchor_fact_ids: ['KA-013', 'KA-014', 'KA-015', 'PP-010'],
-    dynamic_fact_terms: ['虚拟式', 'subjonctif', '情绪', '怀疑', '必须', '让步', '目的'],
-    ai_original_scope: '可以原创场景例句，不得规定每篇必须用虚拟式次数',
-    title_trigger_types: ['数字锚定', '认知冲突', '好奇缺口', '场景条件'],
-    page_plan: ['先列 5 个场景', '每场景给触发词', '展示例句', '放段落里看效果', '给判断练习'],
-  },
-  {
-    seed_id: 'delf_conditional_argument', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 议论文里条件式（conditionnel）怎么做假设论证',
-    keyword_candidates: ['条件式', 'conditionnel', '议论文', '假设论证'],
-    audience: '条件式只会 si + imparfait → conditionnel，hypothèse 类论证用不上的B2考生',
-    user_pain: '假设论证只会用 si on faisait X, alors Y，单一直白',
-    user_need: '条件式 3 种论证结构（hypothèse / condition / éventualité）+ 议论文应用',
-    pay_trigger: '议论文论证被批"角度单一"，但不懂条件式怎么扩展',
-    use_scenario: '专项条件式训练、改写旧文加假设论证、考场用条件式',
-    content_shapes: ['directory', 'phrase', 'flashcard', 'document', 'book'],
-    anchor_fact_ids: ['KA-016', 'KA-017', 'KA-018', 'PP-010'],
-    dynamic_fact_terms: ['条件式', 'conditionnel', '假设', 'hypothèse', '论证', 'si'],
-    ai_original_scope: '可以原创论证例句，不得承诺条件式必得高分',
-    title_trigger_types: ['认知冲突', '场景条件', '数字锚定', '行动号召'],
-    page_plan: ['先列 3 种结构', '每结构给触发词', '展示论证例句', '放进议论文段落', '给改写练习'],
-  },
-  {
-    seed_id: 'delf_emphasis_writing', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作里强调结构（c\'est...qui/que）怎么用得自然',
-    keyword_candidates: ['强调结构', 'c\'est qui', 'c\'est que', '句式升级'],
-    audience: '强调结构用得僵硬或用错关系代词的B2考生',
-    user_pain: '强调结构只会套 c\'est...qui，不懂 c\'est...que / c\'est à...que',
-    user_need: '4 种强调结构 + 各自适用场景 + 改写练习',
-    pay_trigger: '作文句式被批"单调"，但不懂强调结构怎么用',
-    use_scenario: '专项强调结构训练、改写旧文、考场判断该用哪种',
-    content_shapes: ['directory', 'phrase', 'flashcard', 'document'],
-    anchor_fact_ids: ['KA-013', 'PP-010', 'SP-007'],
-    dynamic_fact_terms: ['强调', 'c\'est qui', 'c\'est que', '关系代词', '句式升级'],
-    ai_original_scope: '可以原创强调例句，不得承诺句式升级必得高分',
-    title_trigger_types: ['认知冲突', '场景条件', '数字锚定', '好奇缺口'],
-    page_plan: ['先列 4 种结构', '每结构给场景', '展示强调例句', '放进段落看效果', '给改写练习'],
-  },
-  {
-    seed_id: 'delf_inversion_register', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作里倒装（inversion）什么时候该用',
-    keyword_candidates: ['倒装', 'inversion', '正式语体', 'B2句型'],
-    audience: '倒装乱用、显得做作或用错场合的B2考生',
-    user_pain: '倒装只在提问用过，不懂让步/条件/正式议论文里也能用',
-    user_need: '倒装的 3 种正式场景（提问/让步/条件）+ 不该用的场合',
-    pay_trigger: '作文被批"语气太口语"，但不懂倒装怎么提升正式度',
-    use_scenario: '专项倒装训练、改写旧文加倒装、考场判断该不该用',
-    content_shapes: ['directory', 'phrase', 'document', 'book'],
-    anchor_fact_ids: ['KA-014', 'KA-018', 'SP-010'],
-    dynamic_fact_terms: ['倒装', 'inversion', '正式', '提问', '让步', '条件'],
-    ai_original_scope: '可以原创倒装例句，不得承诺倒装必得高分',
-    title_trigger_types: ['认知冲突', '场景条件', '数字锚定', '好奇缺口'],
-    page_plan: ['先列 3 种场景', '每场景给触发词', '展示倒装例句', '放进段落', '给改写练习'],
-  },
-  {
-    seed_id: 'delf_pronoun_condense', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作里代词怎么让句子不再又松又长',
-    keyword_candidates: ['代词', 'COD', 'COI', 'en y', 'B2句型'],
-    audience: '重复写名词、句子像 A2 短句堆的B2考生',
-    user_pain: '同一段重复写 le problème, la solution，不会用代词替代',
-    user_need: '主要代词（COD/COI/en/y/双代词）+ 位置规则 + 紧凑改写',
-    pay_trigger: '作文被批"句子又长又松"，但不懂怎么用代词收紧',
-    use_scenario: '专项代词训练、改写旧文收紧、考场避免重复',
-    content_shapes: ['directory', 'phrase', 'flashcard', 'document', 'table'],
-    anchor_fact_ids: ['KA-002', 'KA-003', 'KA-004', 'KA-005'],
-    dynamic_fact_terms: ['代词', 'COD', 'COI', 'en', 'y', '双代词', '位置'],
-    ai_original_scope: '可以原创代词例句，不得承诺代词使用次数必得高分',
-    title_trigger_types: ['认知冲突', '场景条件', '数字锚定', '行动号召'],
-    page_plan: ['先列主要代词', '展示位置规则', '示范双代词', '放段落改写', '给收紧练习'],
-  },
-  {
-    seed_id: 'delf_negation_variants', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作里否定表达怎么用得不像初学者',
-    keyword_candidates: ['否定表达', 'ne plus', 'ne jamais', 'ne rien', 'B2句型'],
-    audience: '全篇都用 ne...pas、显得词汇贫乏的B2考生',
-    user_pain: '否定只会 ne...pas，不懂 ne...plus / ne...jamais / ne...rien / ne...personne',
-    user_need: '6 种否定表达 + 各自语义差别 + 适用场景',
-    pay_trigger: '作文被批"词汇贫乏"，但不懂否定也能多样化',
-    use_scenario: '专项否定训练、改写旧文、考场避免重复',
-    content_shapes: ['directory', 'phrase', 'flashcard', 'document', 'table'],
-    anchor_fact_ids: ['KA-007', 'KA-008', 'SP-007'],
-    dynamic_fact_terms: ['否定', 'ne plus', 'ne jamais', 'ne rien', 'ne personne', '限制'],
-    ai_original_scope: '可以原创否定例句，不得承诺否定多样化必得高分',
-    title_trigger_types: ['认知冲突', '场景条件', '数字锚定', '好奇缺口'],
-    page_plan: ['先列 6 种否定', '每否定给语义', '展示例句', '放段落对比', '给改写练习'],
   },
   {
     seed_id: 'delf_theme_environment', product_id: 'delf_b2_writing',
@@ -609,7 +499,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_pain_opening_blank', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作第一句憋不出怎么办',
+    topic: '第一句憋不出：拿到题10分钟开不了头',
     keyword_candidates: ['第一句憋不出', '写作开头', '破题', 'B2写作'],
     audience: '拿到题10分钟开不了头、时间被吃掉的B2考生',
     user_pain: '知道要写什么但第一句写不出，10分钟浪费',
@@ -657,7 +547,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_pain_score_stuck', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作卡在 11-12 分上不去怎么办',
+    topic: '卡在11分：B2写作提分先提哪个维度',
     keyword_candidates: ['分数卡住', '11分', '12分', 'B2写作提升'],
     audience: '分数瓶颈、不知道差在哪的B2考生',
     user_pain: '作文稳定在 11-12 分，不知差在哪、怎么提升',
@@ -689,7 +579,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_selling_one_week_plan', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作考前一周冲刺方案',
+    topic: '考前一周每天翻什么，日程排到天',
     keyword_candidates: ['一周冲刺', '考前计划', 'DELF B2', 'B2写作'],
     audience: '距考试还有 7 天、希望最大化效率的B2考生',
     user_pain: '考前一周不知该练什么，时间花不到刀刃上',
@@ -721,7 +611,7 @@ const delfSeeds: EditorialSeed[] = [
   },
   {
     seed_id: 'delf_selling_high_freq_phrases', product_id: 'delf_b2_writing',
-    topic: 'DELF B2 写作高频表达集（反复出现的 B2 句型）',
+    topic: 'B2高频句型：反复考的表达先背这批',
     keyword_candidates: ['高频表达', 'B2句型', '万能句', 'DELF B2'],
     audience: '想直接背高频表达而不是零散单词的B2考生',
     user_pain: '背零散单词套不上作文，需要可直接用的句型',
@@ -783,6 +673,567 @@ const delfSeeds: EditorialSeed[] = [
     title_trigger_types: ['场景条件', '行动号召', '好奇缺口', '恐惧损失'],
     page_plan: ['先说案例集结构', '按错误类型给自学顺序', '展示批改流程', '举例一周怎么用', '自然说明购买理由'],
   },
+
+  // ============================================================
+  // === 车道 1：爆款钩子 seed（delf_hook_*，24 条） ===
+  // 特征：过来人递东西视角 + 单一具体时刻 + 真实数字来自 facts。
+  // 与旧"知识点分类"seed 的区别：从考场瞬间/用户情绪切入，不从知识体系切入。
+  // ============================================================
+  {
+    seed_id: 'delf_hook_first_sentence', product_id: 'delf_b2_writing',
+    topic: 'B2写作第一句憋不出来，12个开头直接换着抄',
+    keyword_candidates: ['B2写作', '开头', '第一句', '法语写作'],
+    audience: '开考后十分钟还停在第一句、越想越慌的B2考生',
+    user_pain: '背了很多表达，考场上第一句就是落不了笔',
+    user_need: '拿到12个正式信开头，按写信目的挑一个直接用',
+    pay_trigger: '模考时开头耗掉十几分钟，后面全程赶时间',
+    use_scenario: '考前把开头卡背熟，考场草稿阶段直接调用',
+    content_shapes: ['phrase', 'directory', 'offer', 'pain', 'flashcard', 'table'],
+    anchor_fact_ids: ['KA-008', 'DA-008', 'KA-006'],
+    dynamic_fact_terms: ['第一句', '救急', '开头'],
+    ai_original_scope: '可以补充新的正确开头例句，但不得虚构商品不存在的开头模板',
+    title_trigger_types: ['场景条件', '数字锚定', '恐惧损失', '好奇缺口'],
+    page_plan: ['先还原卡住的第一句时刻', '按写信目的分组给开头', '示范一封完整信的开头套用', '给考场调用顺序'],
+  },
+  {
+    seed_id: 'delf_hook_5day_letter', product_id: 'delf_b2_writing',
+    topic: '正式信5天速成，7步骤拆到每天',
+    keyword_candidates: ['正式信', '法语写作', '速成', 'B2写作'],
+    audience: '临考一两周、正式信还从没完整写过的B2考生',
+    user_pain: '知道正式信要练，但每天练什么完全没安排',
+    user_need: '把7步骤写作流程拆成5天的每日任务清单',
+    pay_trigger: '剩余备考时间不多，需要一份照着做的短计划',
+    use_scenario: '考前最后一周，每天按拆好的步骤推进',
+    content_shapes: ['roadmap', 'directory', 'document', 'table', 'book'],
+    anchor_fact_ids: ['UC-003', 'DA-003', 'KA-020'],
+    dynamic_fact_terms: ['速成', '7步骤', '每天'],
+    ai_original_scope: '可以原创每日任务安排，但7步骤框架和时长必须来自知识库事实',
+    title_trigger_types: ['数字锚定', '结果承诺', '场景条件', '行动号召'],
+    page_plan: ['先说5天能到什么程度', '把7步骤分到每天', '给出每天的检查产出', '示范一天怎么走'],
+  },
+  {
+    seed_id: 'delf_hook_20_sentences', product_id: 'delf_b2_writing',
+    topic: '20条组合好的整句，改两个词就能上考场',
+    keyword_candidates: ['法语写作', '万能句', '整句', 'B2写作'],
+    audience: '单词都认识但拼不出完整好句子的B2考生',
+    user_pain: '背了词汇和句型，考场上还是组装不出一个能写的句子',
+    user_need: '直接拿20条组合好的完整法语句，替换关键词就能用',
+    pay_trigger: '模考时句子里各部分都对不上，浪费大量拼装时间',
+    use_scenario: '考前突击背诵，以及考场草稿阶段直接套用',
+    content_shapes: ['phrase', 'directory', 'flashcard', 'book', 'table'],
+    anchor_fact_ids: ['KA-027', 'SP-011', 'DA-012'],
+    dynamic_fact_terms: ['组合示例', '整句', '替换'],
+    ai_original_scope: '可以补充新的组合示例，但法语必须正确且不得冒充商品原句',
+    title_trigger_types: ['数字锚定', '结果承诺', '好奇缺口', '行动号召'],
+    page_plan: ['先说组合好的句子价值', '按4个场景给20句', '示范怎么替换关键词', '给背诵顺序'],
+  },
+  {
+    seed_id: 'delf_hook_forum_openers', product_id: 'delf_b2_writing',
+    topic: '论坛投稿写不出网友感，12条功能表达直接换上',
+    keyword_candidates: ['论坛投稿', '法语写作', 'B2写作', '表达'],
+    audience: '论坛投稿题写成正式信或议论文的B2考生',
+    user_pain: '知道论坛语气要自然，但一动笔还是满篇正式腔',
+    user_need: '用12条功能表达把论坛投稿调成半正式的网友语气',
+    pay_trigger: '练论坛题时语体反复跳回正式信，自己看不出来',
+    use_scenario: '论坛题专项练习，以及写完对照语体自查',
+    content_shapes: ['phrase', 'directory', 'document', 'table', 'pain'],
+    anchor_fact_ids: ['UC-005', 'DA-005', 'KA-006'],
+    dynamic_fact_terms: ['论坛', '功能表达', '网友'],
+    ai_original_scope: '可以补充新的半正式表达例句，但不得改变论坛投稿的语体定位',
+    title_trigger_types: ['好奇缺口', '场景条件', '数字锚定', '认知冲突'],
+    page_plan: ['先对比正式腔和网友感', '按功能给12条表达', '放进一段完整论坛回复', '给语体自查法'],
+  },
+  {
+    seed_id: 'delf_hook_3hour_sweep', product_id: 'delf_b2_writing',
+    topic: '考前3小时把100条句法过完的顺序',
+    keyword_candidates: ['法语语法', '句型', '考前冲刺', 'B2写作'],
+    audience: '考前最后一晚才发现句法还没系统过的B2考生',
+    user_pain: '资料里的句法太多，考前根本不知道先过哪部分',
+    user_need: '按考频和性价比排好100条句法的3小时过法',
+    pay_trigger: '考前时间不够，需要一份能快速执行的重点顺序',
+    use_scenario: '考前最后半天，按顺序快速扫句法',
+    content_shapes: ['directory', 'table', 'roadmap', 'document'],
+    anchor_fact_ids: ['SP-007', 'KA-013', 'KA-016'],
+    dynamic_fact_terms: ['3小时', '句法', '扫一遍'],
+    ai_original_scope: '可以原创过法顺序，但句法条目和分类必须来自知识库事实',
+    title_trigger_types: ['场景条件', '数字锚定', '恐惧损失', '行动号召'],
+    page_plan: ['先说100条怎么取舍', '按小时给三段任务', '标注必看和高频', '给扫完的自查标准'],
+  },
+  {
+    seed_id: 'delf_grammar_top4', product_id: 'delf_b2_writing',
+    topic: 'B2作文丢分最多的几类语法错，一张表对完',
+    keyword_candidates: ['法语语法', '纠错', 'B2写作', '错题'],
+    audience: '语法错误反复出现、改了又犯的B2考生',
+    user_pain: '每次批改都冒出新的语法错，抓不住自己到底哪类错最多',
+    user_need: '按错误类型对照9类30条典型错，定位自己的高频错类',
+    pay_trigger: '同类语法错在多篇作文里重复出现',
+    use_scenario: '写完作文后按错误类型对照，以及考前过错题',
+    content_shapes: ['table', 'directory', 'document', 'pain', 'flashcard'],
+    anchor_fact_ids: ['KA-025', 'SP-010', 'DA-010'],
+    dynamic_fact_terms: ['丢分', '语法错', '对照'],
+    ai_original_scope: '可以依据语法规则原创错误对照例句，但必须经法语审校且不得冒充用户真实作文',
+    title_trigger_types: ['恐惧损失', '数字锚定', '互动测试', '认知冲突'],
+    page_plan: ['先让用户对号入座错类', '按类型给错误句和正确句', '解释错因', '给下一篇的自查顺序'],
+  },
+  {
+    seed_id: 'delf_hook_30s_task', product_id: 'delf_b2_writing',
+    topic: '读题30秒判错文体直接归零，3步识别法先练熟',
+    keyword_candidates: ['DELF', '题型', 'B2写作', '法语考试'],
+    audience: '看到题目不确定写哪种文体、靠猜的B2考生',
+    user_pain: '文体判错，写得再好也直接扣到归零',
+    user_need: '用3步识别法在30秒内判定5种文体之一',
+    pay_trigger: '模考时把论坛投稿写成议论文，才知道判文体这么致命',
+    use_scenario: '开考读题阶段，以及平时练新题前的判断热身',
+    content_shapes: ['table', 'directory', 'document', 'pain'],
+    anchor_fact_ids: ['UC-012', 'SP-016', 'DA-006'],
+    dynamic_fact_terms: ['30秒', '文体', '归零'],
+    ai_original_scope: '可以补充新的判断例题，但3步识别法和5种文体分类必须来自知识库事实',
+    title_trigger_types: ['恐惧损失', '数字锚定', '场景条件', '好奇缺口'],
+    page_plan: ['先说文体误判的代价', '拆解3步识别法', '对照5种文体的信号词', '给几道题现场判断'],
+  },
+  {
+    seed_id: 'delf_hook_closing_swap', product_id: 'delf_b2_writing',
+    topic: '结尾别只会Cordialement，12个收尾换着用',
+    keyword_candidates: ['法语写作', '结尾', 'B2写作', '表达'],
+    audience: '每篇作文结尾都写Cordialement的B2考生',
+    user_pain: '结尾永远一个词，显得整篇背的都是模板',
+    user_need: '按语气和文体在12个收尾表达里切换',
+    pay_trigger: '模考作文被指出结尾单一拉低语体分',
+    use_scenario: '考前集中换装收尾表达，写完检查结尾是否重复',
+    content_shapes: ['phrase', 'directory', 'flashcard', 'table'],
+    anchor_fact_ids: ['KA-009', 'KA-021', 'KA-020'],
+    dynamic_fact_terms: ['结尾', '收尾', 'Cordialement'],
+    ai_original_scope: '可以补充新的正确收尾例句，但不得虚构商品不存在的收尾模板',
+    title_trigger_types: ['认知冲突', '数字锚定', '好奇缺口', '行动号召'],
+    page_plan: ['先戳只会Cordialement的尴尬', '按语气分组给12个收尾', '示范不同文体的收尾', '给替换练习'],
+  },
+  {
+    seed_id: 'delf_hook_second_paragraph', product_id: 'delf_b2_writing',
+    topic: '第一段写完就没话了？第二段照这个填',
+    keyword_candidates: ['B2写作', '论据', '法语作文', '段落'],
+    audience: '开头写完就卡住、第二段空转的B2考生',
+    user_pain: '第一段靠模板撑完，第二段想不出理由和例子',
+    user_need: '按主题调用观点论据，把第二段填成完整论证',
+    pay_trigger: '计时写作第二段耗掉一半时间，后面全乱',
+    use_scenario: '平时按主题备论据，考场草稿列第二段提纲',
+    content_shapes: ['directory', 'book', 'pain', 'table', 'document'],
+    anchor_fact_ids: ['KA-023', 'SP-008', 'DA-014'],
+    dynamic_fact_terms: ['第二段', '没话说', '论据'],
+    ai_original_scope: '可以补充常识性观点和合理教学例子，不得伪造统计数据或真实个人经历',
+    title_trigger_types: ['场景条件', '好奇缺口', '恐惧损失', '身份代入'],
+    page_plan: ['先还原第二段卡住的场景', '给按主题的论据调用法', '示范填满第二段', '给下一篇的提纲模板'],
+  },
+  {
+    seed_id: 'delf_hook_title_read', product_id: 'delf_b2_writing',
+    topic: '题目里的信号词漏看一个，整篇跑题',
+    keyword_candidates: ['审题', 'DELF', 'B2写作', '跑题'],
+    audience: '写完才发现没回应题目要求、经常跑题的B2考生',
+    user_pain: '自己觉得写得不错，对照题目才发现漏了关键要求',
+    user_need: '读题时圈出任务信号词，写前和写后各查一遍',
+    pay_trigger: '模考作文因漏回应任务要求被大幅扣分',
+    use_scenario: '每次练题的读题阶段，以及交卷前跑题自查',
+    content_shapes: ['directory', 'table', 'pain', 'document'],
+    anchor_fact_ids: ['UC-012', 'SP-016', 'DA-007'],
+    dynamic_fact_terms: ['信号词', '跑题', '读题'],
+    ai_original_scope: '可以补充新的信号词例题，但任务判断框架必须来自知识库事实',
+    title_trigger_types: ['恐惧损失', '场景条件', '好奇缺口', '互动测试'],
+    page_plan: ['先展示一个跑题实例', '教圈信号词的步骤', '对照任务要求清单', '给写前写后两次自查'],
+  },
+  {
+    seed_id: 'delf_hook_wordcount', product_id: 'delf_b2_writing',
+    topic: 'B2作文字数：写不够扣分，写太密也扣分',
+    keyword_candidates: ['B2写作', '字数', '法语考试', '评分'],
+    audience: '数字数凑字或写超时停不下来的B2考生',
+    user_pain: '不知道多少字算够，也不知道写太满为什么也不好',
+    user_need: '按评分维度理解篇幅要求，学会控制段落长度',
+    pay_trigger: '模考作文字数忽多忽少，分数不稳定',
+    use_scenario: '计时练习时控制篇幅，写完检查每段长度',
+    content_shapes: ['table', 'document', 'directory', 'pain'],
+    anchor_fact_ids: ['DA-007', 'UC-006', 'KA-024'],
+    dynamic_fact_terms: ['字数', '篇幅', '评分维度'],
+    ai_original_scope: '可以解释篇幅与评分的关系，但不得虚构DELF官方字数硬性规定',
+    title_trigger_types: ['认知冲突', '好奇缺口', '恐惧损失', '数字锚定'],
+    page_plan: ['先说字数的两个极端', '按评分维度解释篇幅影响', '给每段的长度参照', '给计时练习的字数检查'],
+  },
+  {
+    seed_id: 'delf_hook_essay_template', product_id: 'delf_b2_writing',
+    topic: '议论文不会搭骨架？流程图从头走到尾',
+    keyword_candidates: ['议论文', '法语写作', '结构', 'B2写作'],
+    audience: '观点有但文章结构散、段落顺序乱的B2考生',
+    user_pain: '议论文写成本能堆观点，没有让步和反驳的位置',
+    user_need: '照议论文写作流程图搭骨架，每步知道写什么',
+    pay_trigger: '议论文练了很多篇，结构分一直没有起色',
+    use_scenario: '专项议论文训练，以及考场列提纲阶段',
+    content_shapes: ['roadmap', 'directory', 'document', 'book', 'table'],
+    anchor_fact_ids: ['UC-004', 'DA-004', 'KA-021'],
+    dynamic_fact_terms: ['议论文', '骨架', '流程'],
+    ai_original_scope: '可以解释流程用法并给示范段落，但流程框架必须来自知识库事实',
+    title_trigger_types: ['好奇缺口', '场景条件', '数字锚定', '行动号召'],
+    page_plan: ['先说没骨架的议论文什么样', '展示流程图每步', '示范一段完整走流程', '给考场提纲模板'],
+  },
+  {
+    seed_id: 'delf_hook_letter7step', product_id: 'delf_b2_writing',
+    topic: '正式信60分钟7步走完，每步给你时长',
+    keyword_candidates: ['正式信', 'DELF', 'B2写作', '时间分配'],
+    audience: '正式信总是写超时、最后检查没时间的B2考生',
+    user_pain: '没有时间概念，每步花多久全靠感觉',
+    user_need: '按7步骤流程的时长分配走完60分钟',
+    pay_trigger: '模考正式信超时，挤掉检查时间',
+    use_scenario: '计时模考按步走，考场看表对步骤',
+    content_shapes: ['roadmap', 'table', 'directory', 'document'],
+    anchor_fact_ids: ['UC-003', 'DA-003', 'KA-020'],
+    dynamic_fact_terms: ['60分钟', '7步', '时长'],
+    ai_original_scope: '可以解释每步怎么执行，但7步骤和时长必须来自知识库事实，不得改动',
+    title_trigger_types: ['数字锚定', '场景条件', '恐惧损失', '行动号召'],
+    page_plan: ['先说超时的常见走法', '展示7步骤时长表', '示范关键步骤执行', '给考场对表方法'],
+  },
+  {
+    seed_id: 'delf_hook_report_article', product_id: 'delf_b2_writing',
+    topic: '抽到article或rapport别慌，标准结构照搬',
+    keyword_candidates: ['法语写作', 'DELF', 'B2写作', '文体'],
+    audience: '只练过正式信和议论文、怕抽到低频文体的B2考生',
+    user_pain: '低频文体没练过，考场上不知道从哪下手',
+    user_need: '拿到article和rapport的标准结构直接照搬',
+    pay_trigger: '听说低频文体也会考，临时找不到结构参考',
+    use_scenario: '考前一天补低频文体，以及考场抽到时的应对',
+    content_shapes: ['document', 'directory', 'table', 'book'],
+    anchor_fact_ids: ['UC-013', 'SP-017', 'DA-011'],
+    dynamic_fact_terms: ['article', 'rapport', '低频文体'],
+    ai_original_scope: '可以解释低频文体写法，但结构参照必须来自范文事实，不得虚构官方模板',
+    title_trigger_types: ['恐惧损失', '场景条件', '好奇缺口', '行动号召'],
+    page_plan: ['先说抽到低频文体的慌', '给两种文体的标准结构', '对照范文看结构落地', '给临时抱佛脚顺序'],
+  },
+  {
+    seed_id: 'delf_hook_rescue_pack', product_id: 'delf_b2_writing',
+    topic: '考场脑子空白时，5个救命题直接套',
+    keyword_candidates: ['考场急救', 'B2写作', '法语考试', '救命句'],
+    audience: '一紧张就大脑空白、写不出任何句子的B2考生',
+    user_pain: '平时会写，考场上紧张到完全启动不了',
+    user_need: '背熟5个救命题，空白时直接套上去启动',
+    pay_trigger: '模考或实考经历过脑子空白，怕下次再犯',
+    use_scenario: '考前把救命题背到脱口而出，考场应急调用',
+    content_shapes: ['flashcard', 'directory', 'phrase', 'pain', 'offer'],
+    anchor_fact_ids: ['DA-008', 'UC-009', 'SP-013'],
+    dynamic_fact_terms: ['救命', '空白', '救命题'],
+    ai_original_scope: '可以补充新的救命表达，但5个救命题的框架必须来自知识库事实',
+    title_trigger_types: ['恐惧损失', '数字锚定', '场景条件', '身份代入'],
+    page_plan: ['先还原考场空白的时刻', '给5个救命题和使用时机', '示范套用后怎么续写', '给背熟计划'],
+  },
+  {
+    seed_id: 'delf_hook_opinion_cards', product_id: 'delf_b2_writing',
+    topic: '50条观点卡：一个观点一个例子一个场景',
+    keyword_candidates: ['法语作文', '观点', '论据', 'B2写作'],
+    audience: '论述只有态度没有内容、例子干瘪的B2考生',
+    user_pain: '观点想得出，理由和例子撑不起一段',
+    user_need: '按主题调用观点卡，每条自带法语观点句、例子和适用场景',
+    pay_trigger: '多个主题都写不深，发现是论据储备问题',
+    use_scenario: '平时按主题刷观点卡，考场草稿挑卡列提纲',
+    content_shapes: ['flashcard', 'directory', 'book', 'table'],
+    anchor_fact_ids: ['KA-023', 'SP-008', 'DA-014'],
+    dynamic_fact_terms: ['观点卡', '例子', '调用'],
+    ai_original_scope: '可以补充常识性观点，不得伪造统计数据或冒充商品原卡',
+    title_trigger_types: ['数字锚定', '结果承诺', '好奇缺口', '行动号召'],
+    page_plan: ['先说观点卡的用法', '按主题展示卡结构', '示范一卡撑一段', '给刷卡顺序'],
+  },
+  {
+    seed_id: 'delf_hook_transition_bank', product_id: 'delf_b2_writing',
+    topic: '段落之间干巴巴？因果递进各8条先背上',
+    keyword_candidates: ['连接词', '法语写作', '过渡', 'B2写作'],
+    audience: "段落开头永远是D'abord和En conclusion的B2考生",
+    user_pain: '过渡表达翻来覆去两三个，段落之间生硬',
+    user_need: '按逻辑关系调用因果、递进等过渡表达各8条',
+    pay_trigger: '作文被批"句句对但整篇不连贯"',
+    use_scenario: '写前按逻辑关系选过渡，写完查重复',
+    content_shapes: ['phrase', 'directory', 'flashcard', 'table'],
+    anchor_fact_ids: ['KA-016', 'KA-019', 'SP-007'],
+    dynamic_fact_terms: ['因果', '递进', '过渡'],
+    ai_original_scope: '可以补充新的正确过渡例句，但分类和条数必须来自知识库事实',
+    title_trigger_types: ['好奇缺口', '数字锚定', '场景条件', '认知冲突'],
+    page_plan: ['先展示干巴巴的段落衔接', '按逻辑关系给表达', '放进段落示范差异', '给重复自查法'],
+  },
+  {
+    seed_id: 'delf_hook_one_per_day', product_id: 'delf_b2_writing',
+    topic: '4周8篇作文：每天60分钟照表练',
+    keyword_candidates: ['备考计划', 'B2写作', '法语学习', 'DELF'],
+    audience: '想系统备考但每天只有1小时左右的B2考生',
+    user_pain: '计划列了又废，不知道每天这1小时该产出什么',
+    user_need: '按4周冲刺表每天60-90分钟，产出8篇完整作文',
+    pay_trigger: '备考过半没写出几篇完整作文，心里发慌',
+    use_scenario: '开考前一个月，每天照表推进',
+    content_shapes: ['roadmap', 'table', 'directory', 'document'],
+    anchor_fact_ids: ['UC-001', 'UC-002', 'DA-002'],
+    dynamic_fact_terms: ['4周', '8篇', '照表'],
+    ai_original_scope: '可以解释每天任务怎么执行，但4周产出框架必须来自知识库事实',
+    title_trigger_types: ['数字锚定', '结果承诺', '场景条件', '行动号召'],
+    page_plan: ['先说每天1小时能到什么程度', '展示4周表', '拆一天的任务构成', '给断档补救法'],
+  },
+  {
+    seed_id: 'delf_hook_last_night', product_id: 'delf_b2_writing',
+    topic: '考前一晚翻什么：36项清单5分钟过一遍',
+    keyword_candidates: ['考前冲刺', 'B2写作', '清单', 'DELF'],
+    audience: '考前一晚不知该看什么、越翻越焦虑的B2考生',
+    user_pain: '资料太多，最后一晚看哪个都觉得亏',
+    user_need: '用36项检查清单做最后一轮快速排查',
+    pay_trigger: '考前一晚发现还有知识点没看，慌了',
+    use_scenario: '考试前一晚，以及当天考前等待时间',
+    content_shapes: ['table', 'directory', 'document', 'offer'],
+    anchor_fact_ids: ['UC-010', 'DA-009', 'SP-009'],
+    dynamic_fact_terms: ['前一晚', '36项', '排查'],
+    ai_original_scope: '可以解释清单怎么过，但36项内容必须来自知识库事实，不得增删条目',
+    title_trigger_types: ['场景条件', '数字锚定', '恐惧损失', '行动号召'],
+    page_plan: ['先说考前一晚的取舍原则', '展示36项的7大分类', '给5分钟过法', '说明哪些不必再看'],
+  },
+  {
+    seed_id: 'delf_hook_mock_to_real', product_id: 'delf_b2_writing',
+    topic: '模考能过实考翻车？6题自评找差距',
+    keyword_candidates: ['模考', 'B2写作', '自评', 'DELF'],
+    audience: '模考分数不错、实考却发挥失常的B2考生',
+    user_pain: '不知道模考和实考差在哪，翻车翻得不明不白',
+    user_need: '用6题完成度自评表量化差距，针对性补',
+    pay_trigger: '实考成绩低于模考预期，需要复盘',
+    use_scenario: '每次模考后自评，实考后复盘',
+    content_shapes: ['table', 'document', 'directory', 'pain'],
+    anchor_fact_ids: ['DA-015', 'SP-014', 'UC-010'],
+    dynamic_fact_terms: ['模考', '自评', '翻车'],
+    ai_original_scope: '可以解释自评方法，但6题自评表内容必须来自知识库事实',
+    title_trigger_types: ['认知冲突', '好奇缺口', '互动测试', '数字锚定'],
+    page_plan: ['先讲模考实考落差场景', '给6题自评表', '教按得分定位差距', '给下一轮补法'],
+  },
+  {
+    seed_id: 'delf_hook_stop_practicing', product_id: 'delf_b2_writing',
+    topic: '别再瞎写作文了：5道题先定位你在哪档',
+    keyword_candidates: ['DELF', 'B2写作', '自测', '备考'],
+    audience: '写了很多作文但分数不动、开始怀疑方法的B2考生',
+    user_pain: '练得很勤，却不知道自己缺什么，越练越虚',
+    user_need: '先做5道题诊断，按3档路径对号入座再练',
+    pay_trigger: '刷题量大但模考分数原地踏步',
+    use_scenario: '备考开始前，或练了一个月没进步时',
+    content_shapes: ['offer', 'roadmap', 'directory', 'table', 'pain'],
+    anchor_fact_ids: ['DA-001', 'SP-002', 'DA-002'],
+    dynamic_fact_terms: ['定位', '诊断', '档位'],
+    ai_original_scope: '可以解释诊断和3档路径用法，但问卷和分档必须来自知识库事实',
+    title_trigger_types: ['认知冲突', '互动测试', '好奇缺口', '行动号召'],
+    page_plan: ['先说瞎练的症状', '给5道诊断题', '按结果对应3档路径', '给每档的起步任务'],
+  },
+  {
+    seed_id: 'delf_hook_hard_topics', product_id: 'delf_b2_writing',
+    topic: '最怕的10个主题先备好，矩阵交叉调用',
+    keyword_candidates: ['法语作文', '主题', '素材', 'B2写作'],
+    audience: '抽到不熟主题就大脑空白的B2考生',
+    user_pain: '熟悉主题能写，生僻主题直接哑火',
+    user_need: '按10主题矩阵交叉调用观点、词汇和句法',
+    pay_trigger: '练真题连续碰到没准备的主题',
+    use_scenario: '按主题矩阵轮换准备，考前过高频主题',
+    content_shapes: ['table', 'directory', 'book', 'flashcard'],
+    anchor_fact_ids: ['KA-023', 'DA-006', 'SP-012'],
+    dynamic_fact_terms: ['矩阵', '交叉调用', '主题准备'],
+    ai_original_scope: '可以补充常识性主题素材，但10主题矩阵结构必须来自知识库事实',
+    title_trigger_types: ['恐惧损失', '数字锚定', '好奇缺口', '场景条件'],
+    page_plan: ['先说主题不熟的下场', '展示10主题矩阵', '教交叉调用一个主题', '给轮换准备顺序'],
+  },
+  {
+    seed_id: 'delf_hook_brain_blank', product_id: 'delf_b2_writing',
+    topic: '开考十分钟脑子一片空白，怎么救回来',
+    keyword_candidates: ['考场', 'B2写作', '紧张', '法语考试'],
+    audience: '容易考场紧张、启动慢的B2考生',
+    user_pain: '开考前十分钟什么都想不起来，越急越空',
+    user_need: '一套可复现的十分钟内启动动作',
+    pay_trigger: '模考开局卡死，怕实考重演',
+    use_scenario: '考前热身，以及考场开考后的应急启动',
+    content_shapes: ['pain', 'offer', 'directory', 'document'],
+    anchor_fact_ids: ['DA-008', 'SP-013', 'UC-009'],
+    dynamic_fact_terms: ['十分钟', '启动', '救回来'],
+    ai_original_scope: '可以补充启动动作，但救命包相关内容必须来自知识库事实',
+    title_trigger_types: ['场景条件', '恐惧损失', '身份代入', '好奇缺口'],
+    page_plan: ['先还原开考空白的十分钟', '给启动动作顺序', '示范第一个句子怎么落笔', '给考前预防动作'],
+  },
+  {
+    seed_id: 'delf_hook_common_top10', product_id: 'delf_b2_writing',
+    topic: '交上去才知道：B2作文最常见的几类错',
+    keyword_candidates: ['法语作文', '纠错', 'B2写作', '错误'],
+    audience: '自我感觉良好、发出去才发现一堆错的B2考生',
+    user_pain: '写的时候察觉不到，批改回来才发现是同类错',
+    user_need: '对照典型错误类型，写前先知道坑在哪',
+    pay_trigger: '批改结果反复出现同类低级错误',
+    use_scenario: '写前扫一遍错误类型，写后对照自查',
+    content_shapes: ['directory', 'table', 'document', 'pain'],
+    anchor_fact_ids: ['KA-025', 'DA-010', 'SP-010'],
+    dynamic_fact_terms: ['常见错', '类型', '自查'],
+    ai_original_scope: '可以依据语法规则原创错误例句，但错误分类必须来自知识库事实且经法语审校',
+    title_trigger_types: ['恐惧损失', '好奇缺口', '互动测试', '数字锚定'],
+    page_plan: ['先展示一个没察觉的错误', '按类型给典型错', '教自查顺序', '给下一篇的写前提醒'],
+  },
+
+  // ============================================================
+  // === 车道 2：粗粒度知识点 seed（delf_coarse_*，4 条） ===
+  // 特征：从细碎语法点上升一层，讲"全景/流程对比/文体对照/评分机制"。
+  // ============================================================
+  {
+    seed_id: 'delf_coarse_5_modules', product_id: 'delf_b2_writing',
+    topic: 'B2写作备考全景：7大模块都是什么、先学哪个',
+    keyword_candidates: ['DELF', 'B2写作', '备考资料', '法语学习'],
+    audience: '刚决定备考、面对一堆资料不知从哪开始的B2考生',
+    user_pain: '资料名目太多，看不出彼此关系和先后顺序',
+    user_need: '一张全景图说清7大模块各管什么、按什么顺序用',
+    pay_trigger: '下载了一堆资料但一个都没系统用过',
+    use_scenario: '备考初期建全局认知，中期回头校准方向',
+    content_shapes: ['directory', 'table', 'roadmap', 'document'],
+    anchor_fact_ids: ['SP-001', 'DA-006', 'DA-007'],
+    dynamic_fact_terms: ['全景', '模块', '先后'],
+    ai_original_scope: '可以解释模块关系和顺序建议，但7大模块结构必须来自知识库事实',
+    title_trigger_types: ['好奇缺口', '场景条件', '数字锚定', '行动号召'],
+    page_plan: ['先说没有全景图的乱', '展示7大模块地图', '给先后顺序建议', '举一个模块怎么用'],
+  },
+  {
+    seed_id: 'delf_coarse_full_walkthrough', product_id: 'delf_b2_writing',
+    topic: '三大文体流程对比：正式信、议论文、论坛稿',
+    keyword_candidates: ['法语写作', 'DELF', 'B2写作', '文体'],
+    audience: '三种文体混着练、每种的流程都没吃透的B2考生',
+    user_pain: '练了不少题，但说不出三种文体流程差在哪',
+    user_need: '三张写作流程图并排对比，看清每步差异',
+    pay_trigger: '换一种文体就要重新摸索，浪费练习时间',
+    use_scenario: '文体专项训练前先看对比，考前混练阶段对照',
+    content_shapes: ['table', 'directory', 'roadmap', 'document'],
+    anchor_fact_ids: ['UC-003', 'UC-004', 'UC-005', 'DA-003', 'DA-004', 'DA-005'],
+    dynamic_fact_terms: ['流程对比', '三大文体', '并排'],
+    ai_original_scope: '可以解释流程差异，但三种流程图内容必须来自知识库事实',
+    title_trigger_types: ['认知冲突', '好奇缺口', '数字锚定', '场景条件'],
+    page_plan: ['先说混练不出效果的原因', '并排展示三条流程', '标注关键差异步', '给每种的练习重点'],
+  },
+  {
+    seed_id: 'delf_coarse_task_compare', product_id: 'delf_b2_writing',
+    topic: '5种文体一张对照表，30秒选对写法',
+    keyword_candidates: ['DELF', '题型', '法语写作', 'B2写作'],
+    audience: '拿到题分不清该按哪种文体写的B2考生',
+    user_pain: '5种任务形式记不牢，边界情况靠猜',
+    user_need: '一张5任务类型识别对照表覆盖判断依据',
+    pay_trigger: '练习时反复查文体判断，考场上更没底',
+    use_scenario: '平时判断训练，考场读题后核对',
+    content_shapes: ['table', 'directory', 'document'],
+    anchor_fact_ids: ['UC-003', 'UC-005', 'SP-016'],
+    dynamic_fact_terms: ['对照表', '选文体', '判断依据'],
+    ai_original_scope: '可以补充新的判断例子，但5任务类型对照表必须来自知识库事实',
+    title_trigger_types: ['数字锚定', '场景条件', '恐惧损失', '行动号召'],
+    page_plan: ['先说文体边界的模糊案例', '展示5文体对照表', '教用信号词查表', '给判断练习'],
+  },
+  {
+    seed_id: 'delf_coarse_5steps', product_id: 'delf_b2_writing',
+    topic: '考官按5个维度打分，每个维度怎么单独提',
+    keyword_candidates: ['评分标准', 'DELF', 'B2写作', '法语考试'],
+    audience: '只知道总分、不知道分怎么被扣的B2考生',
+    user_pain: '看不到评分维度，努力没有方向',
+    user_need: '把5大评分维度拆开，每个维度对应一个提升动作',
+    pay_trigger: '分数不低但不知道差在哪个维度',
+    use_scenario: '制定提升计划前先懂评分，练后按维度复盘',
+    content_shapes: ['table', 'document', 'directory', 'roadmap'],
+    anchor_fact_ids: ['UC-006', 'DA-007', 'UC-012'],
+    dynamic_fact_terms: ['打分', '拆维度', '提升动作'],
+    ai_original_scope: '可以解释维度与训练的对应关系，但维度划分必须来自知识库事实，不得虚构官方权重',
+    title_trigger_types: ['好奇缺口', '数字锚定', '认知冲突', '行动号召'],
+    page_plan: ['先说只看总分的问题', '拆解5个维度', '给每个维度的提分动作', '示范一次按维度复盘'],
+  },
+
+  // ============================================================
+  // === 车道 3：知识库展示 seed（delf_showcase_*，6 条新增） ===
+  // 特征：直接展示知识库里某一件具体资料的结构和用法。
+  // 全部带 directory/table 形态（showcase 骰子只对这两种 family 生效）。
+  // ============================================================
+  {
+    seed_id: 'delf_showcase_diagnosis_path', product_id: 'delf_b2_writing',
+    topic: '5分钟诊断加3档路径：先测再学',
+    keyword_candidates: ['DELF', 'B2写作', '自测', '备考资料'],
+    audience: '不知道自己水平、也不知道该按什么节奏备考的B2考生',
+    user_pain: '直接开练，练的东西和自己的差距不匹配',
+    user_need: '先做5道题诊断，再对照3档学习路径选节奏',
+    pay_trigger: '跟着别人的计划练，发现完全不适合自己',
+    use_scenario: '备考开始前的第一次自测，调整节奏时复查',
+    content_shapes: ['directory', 'table', 'roadmap', 'offer'],
+    anchor_fact_ids: ['DA-001', 'DA-002', 'SP-002', 'SP-003'],
+    dynamic_fact_terms: ['诊断', '3档', '先测再学'],
+    ai_original_scope: '可以解释诊断和路径用法，但5道题和3档内容必须来自知识库事实',
+    title_trigger_types: ['行动号召', '场景条件', '数字锚定', '好奇缺口'],
+    page_plan: ['先说盲目开练的问题', '展示诊断问卷结构', '给3档路径对照', '举例一个结果怎么用'],
+  },
+  {
+    seed_id: 'delf_showcase_theme_matrix', product_id: 'delf_b2_writing',
+    topic: '10主题矩阵：一个主题配齐观点、词汇、句法',
+    keyword_candidates: ['法语作文', '主题', '备考资料', 'B2写作'],
+    audience: '按主题零散收集素材、每次都从头找的B2考生',
+    user_pain: '观点、词汇、句法分散在多处，凑一个主题要翻半天',
+    user_need: '用10主题矩阵在一个主题下交叉调用三类资料',
+    pay_trigger: '考前想按主题过一遍，发现资料不成体系',
+    use_scenario: '按主题备考日，考前主题扫尾',
+    content_shapes: ['directory', 'table', 'book'],
+    anchor_fact_ids: ['SP-012', 'DA-006', 'KA-023'],
+    dynamic_fact_terms: ['主题矩阵', '配齐', '交叉'],
+    ai_original_scope: '可以解释矩阵用法，但10主题矩阵结构必须来自知识库事实',
+    title_trigger_types: ['数字锚定', '好奇缺口', '行动号召', '结果承诺'],
+    page_plan: ['先说素材分散的痛', '展示矩阵结构', '示范一个主题的完整调用', '给主题轮换顺序'],
+  },
+  {
+    seed_id: 'delf_showcase_exam_rules', product_id: 'delf_b2_writing',
+    topic: '16条考场规矩：从装包到收卷别栽低级错',
+    keyword_candidates: ['DELF', '考场', 'B2写作', '考试注意'],
+    audience: '第一次考DELF、怕流程上出岔子的B2考生',
+    user_pain: '考试规矩不清楚，低级失误可能被扣分甚至取消资格',
+    user_need: '一条16条考场规矩清单，从装包到收卷逐条核对',
+    pay_trigger: '听说有人因低级失误被取消资格，开始紧张',
+    use_scenario: '考前一天逐条核对，考试当天当随身清单',
+    content_shapes: ['directory', 'table', 'document'],
+    anchor_fact_ids: ['SP-015', 'UC-011'],
+    dynamic_fact_terms: ['考场规矩', '装包', '低级失误'],
+    ai_original_scope: '可以解释规矩的执行细节，但16条规矩内容必须来自知识库事实，不得虚构官方规定',
+    title_trigger_types: ['恐惧损失', '数字锚定', '场景条件', '行动号召'],
+    page_plan: ['先说低级失误的代价', '展示16条规矩分类', '给考前核对顺序', '说明当天时间节点'],
+  },
+  {
+    seed_id: 'delf_showcase_self_eval_6', product_id: 'delf_b2_writing',
+    topic: '写完不知道自己几分？6题自评表',
+    keyword_candidates: ['B2写作', '自评', 'DELF', '复盘'],
+    audience: '没人批改、写完心里没数的自学B2考生',
+    user_pain: '写完只能对个答案，完全不知道自己什么水平',
+    user_need: '用6题完成度自评表给每篇作文打分',
+    pay_trigger: '自学一个月没有任何量化反馈',
+    use_scenario: '每篇写完自评，阶段末汇总看进度',
+    content_shapes: ['table', 'directory', 'document'],
+    anchor_fact_ids: ['DA-015', 'SP-014'],
+    dynamic_fact_terms: ['自评表', '打分', '6题'],
+    ai_original_scope: '可以解释自评方法，但6题自评表内容必须来自知识库事实',
+    title_trigger_types: ['互动测试', '好奇缺口', '数字锚定', '行动号召'],
+    page_plan: ['先说没反馈的自学困境', '展示6题自评表', '教打分标准', '给按得分的下一步'],
+  },
+  {
+    seed_id: 'delf_showcase_essay_lib', product_id: 'delf_b2_writing',
+    topic: '22篇范文库怎么用：每篇拆出可替换表达',
+    keyword_candidates: ['法语范文', 'B2写作', 'DELF', '备考资料'],
+    audience: '背范文背不进去、也不会用的B2考生',
+    user_pain: '范文看了一堆，自己写的时候一句都用不上',
+    user_need: '按可替换表达拆范文，每篇拆出9-14个能迁移的表达',
+    pay_trigger: '背了几篇范文，换题就全忘',
+    use_scenario: '范文精读阶段拆表达，写前回来挑表达',
+    content_shapes: ['directory', 'book', 'table', 'document'],
+    anchor_fact_ids: ['CM-001', 'SP-004', 'DA-011'],
+    dynamic_fact_terms: ['范文库', '可替换', '拆'],
+    ai_original_scope: '可以解释拆解方法，但22篇范文覆盖范围必须来自知识库事实，不得冒充原文',
+    title_trigger_types: ['好奇缺口', '数字锚定', '认知冲突', '行动号召'],
+    page_plan: ['先说背范文没用的问题', '展示范文库结构', '示范拆一篇的可替换表达', '给精读顺序'],
+  },
+  {
+    seed_id: 'delf_showcase_checklist36', product_id: 'delf_b2_writing',
+    topic: '36项检查清单分7类：交卷前逐条勾',
+    keyword_candidates: ['B2写作', '检查清单', 'DELF', '交卷'],
+    audience: '写完只剩两三分钟、不知道查什么的B2考生',
+    user_pain: '交卷前的检查全靠重读一遍，重点错漏看不出来',
+    user_need: '按E1-E7七类36项逐条勾选的检查流程',
+    pay_trigger: '交卷后立刻想起一个没查的错误',
+    use_scenario: '每次练习写完勾一遍，考场交卷前快速过',
+    content_shapes: ['directory', 'table', 'document'],
+    anchor_fact_ids: ['SP-009', 'DA-009'],
+    dynamic_fact_terms: ['36项', '逐条勾', '交卷前'],
+    ai_original_scope: '可以解释检查顺序，但36项和7类划分必须来自知识库事实，不得增删',
+    title_trigger_types: ['数字锚定', '恐惧损失', '场景条件', '行动号召'],
+    page_plan: ['先说交卷前的慌乱检查', '展示7类36项结构', '给逐条勾的顺序', '说明考场版和练习版的区别'],
+  },
 ];
 
 const tefTcfSeeds: EditorialSeed[] = [
@@ -833,7 +1284,7 @@ const tefTcfSeeds: EditorialSeed[] = [
     content_shapes: ['roadmap', 'offer', 'directory', 'pain', 'experience', 'table'],
     anchor_fact_ids: ['TS-007', 'TD-007', 'TU-003', 'TP-003', 'TK-006'],
     dynamic_fact_terms: ['30天', '每天2小时', '计划', '听力', '写作', '口语', '复盘'],
-    ai_original_scope: '可以生成通用30天任务拆分，但不得承诺30天必过、必达CLB7或保证提分',
+    ai_original_scope: '可以生成通用30天任务拆分',
     title_trigger_types: ['scenario', 'result_promise', 'fear_loss', 'number_anchor'],
     page_plan: ['先说时间限制', '拆出每天任务结构', '给一周样例', '说明怎么复盘调整', '承接完整30天计划'],
   },
@@ -986,7 +1437,7 @@ const tefTcfSeeds: EditorialSeed[] = [
     content_shapes: ['directory', 'offer', 'book', 'pain', 'experience', 'document', 'table', 'roadmap', 'phrase'],
     anchor_fact_ids: ['TS-001', 'TD-001', 'TM-001', 'TM-002', 'TM-003', 'TM-004', 'TM-006'],
     dynamic_fact_terms: ['12份资料', 'TEF', 'TCF', 'CLB7', '30天计划', '50句型', '600词'],
-    ai_original_scope: '可以解释资料包使用顺序和适合人群，但不得虚构服务、陪跑、批改、保过或提分承诺',
+    ai_original_scope: '可以解释资料包使用顺序和适合人群，但不得虚构服务、陪跑或批改',
     title_trigger_types: ['curiosity_gap', 'fear_loss', 'identity', 'action_call'],
     page_plan: ['先说适合谁', '展示12份资料结构', '按阶段给使用顺序', '举例一天怎么用', '自然说明购买理由'],
   },
@@ -1576,6 +2027,7 @@ const broadSeedIds = new Set([
   'delf_final_check',
   'delf_wrong_right',
   'delf_sentence_upgrade',
+  'delf_connectors',
   'delf_topic_vocabulary',
   'delf_argument_bank',
   'delf_sample_transfer',
@@ -1589,7 +2041,6 @@ const broadSeedIds = new Set([
   'delf_self_evaluation',
   'delf_topic_themes',
   'delf_warmup_routine',
-  'delf_agreement_pitfalls',
   'delf_tense_usage',
   'delf_register_switch',
   // === 扩展 25 → 50：broad (23 条非 showcase) ===
@@ -1597,12 +2048,6 @@ const broadSeedIds = new Set([
   'delf_letter_proposal',
   'delf_letter_application',
   'delf_forum_response',
-  'delf_subjunctive_scenes',
-  'delf_conditional_argument',
-  'delf_emphasis_writing',
-  'delf_inversion_register',
-  'delf_pronoun_condense',
-  'delf_negation_variants',
   'delf_theme_environment',
   'delf_theme_education',
   'delf_theme_work',
@@ -1616,28 +2061,17 @@ const broadSeedIds = new Set([
   'delf_selling_theme_prediction',
   'delf_selling_high_freq_phrases',
   'delf_selling_mistake_collection',
-]);
-
-const firstLevelPainSeedIds = new Set([
-  'delf_final_check',
-  'delf_wrong_right',
-  'delf_topic_vocabulary',
-  'delf_argument_bank',
-  'delf_sample_transfer',
-  'delf_task_formats',
-  'delf_learning_route',
-  'delf_formal_opening_closing',
-  'delf_time_allocation',
-  'delf_topic_analysis',
-  'delf_paragraph_structure',
-  'delf_agreement_pitfalls',
-  'delf_tense_usage',
-  // === 扩展：5 个具体痛点 seed ===
-  'delf_pain_opening_blank',
-  'delf_pain_off_topic',
-  'delf_pain_examples_dry',
-  'delf_pain_score_stuck',
-  'delf_pain_logic_jump',
+  // === 三车道重建：粗知识点 + 部分爆款钩子进 broad ===
+  'delf_grammar_top4',
+  'delf_coarse_5_modules',
+  'delf_coarse_full_walkthrough',
+  'delf_coarse_task_compare',
+  'delf_coarse_5steps',
+  'delf_hook_one_per_day',
+  'delf_hook_3hour_sweep',
+  'delf_hook_second_paragraph',
+  'delf_hook_hard_topics',
+  'delf_hook_wordcount',
 ]);
 
 const searchPainSeedIds = new Set([
@@ -1651,7 +2085,6 @@ const searchPainSeedIds = new Set([
   'delf_topic_analysis',
   'delf_paragraph_structure',
   'delf_self_evaluation',
-  'delf_agreement_pitfalls',
   // === 扩展：5 个具体痛点 seed + 4 个信件场景 seed ===
   'delf_pain_opening_blank',
   'delf_pain_off_topic',
@@ -1662,6 +2095,19 @@ const searchPainSeedIds = new Set([
   'delf_letter_proposal',
   'delf_letter_application',
   'delf_forum_response',
+  // === 三车道重建：爆款钩子（痛点优先型）+ 粗知识点 ===
+  'delf_hook_first_sentence',
+  'delf_hook_forum_openers',
+  'delf_hook_30s_task',
+  'delf_hook_title_read',
+  'delf_hook_rescue_pack',
+  'delf_hook_last_night',
+  'delf_hook_stop_practicing',
+  'delf_hook_brain_blank',
+  'delf_hook_common_top10',
+  'delf_hook_essay_template',
+  'delf_grammar_top4',
+  'delf_coarse_task_compare',
 ]);
 
 const sellingPointSeedIds = new Set([
@@ -1673,15 +2119,26 @@ const sellingPointSeedIds = new Set([
   'delf_topic_themes',
   'delf_warmup_routine',
   'delf_tense_usage',
-  // === 扩展：4 个卖点型 seed + 4 个语法主题 seed ===
+  // === 扩展：4 个卖点型 seed ===
   'delf_selling_one_week_plan',
   'delf_selling_theme_prediction',
   'delf_selling_high_freq_phrases',
   'delf_selling_mistake_collection',
-  'delf_subjunctive_scenes',
-  'delf_conditional_argument',
   'delf_theme_environment',
   'delf_theme_education',
+  // === 三车道重建：爆款钩子（资料价值型）+ 粗知识点 ===
+  'delf_hook_5day_letter',
+  'delf_hook_20_sentences',
+  'delf_hook_3hour_sweep',
+  'delf_hook_closing_swap',
+  'delf_hook_opinion_cards',
+  'delf_hook_transition_bank',
+  'delf_hook_one_per_day',
+  'delf_hook_mock_to_real',
+  'delf_hook_letter7step',
+  'delf_hook_report_article',
+  'delf_coarse_5_modules',
+  'delf_coarse_full_walkthrough',
 ]);
 
 const productShowcaseSeedIds = new Set([
@@ -1692,6 +2149,13 @@ const productShowcaseSeedIds = new Set([
   // === 扩展：2 个新 showcase ===
   'delf_showcase_topic_prediction',
   'delf_showcase_correction_set',
+  // === 三车道重建：6 个新 showcase ===
+  'delf_showcase_diagnosis_path',
+  'delf_showcase_theme_matrix',
+  'delf_showcase_exam_rules',
+  'delf_showcase_self_eval_6',
+  'delf_showcase_essay_lib',
+  'delf_showcase_checklist36',
 ]);
 
 const tefBroadSeedIds = new Set([
@@ -1846,6 +2310,32 @@ export function getEditorialSeeds(productId: ProductId): EditorialSeed[] {
   return seedLibrary[productId] || [];
 }
 
+// 选题发牌的批内上下文。batch_1786754651839 实测：17 张卡各自独立调
+// planSeededTopics，批内互不知情，delf_pain_logic_jump 被发了 5 次；
+// 且不同 seed（connectors/paragraph_structure/pain_logic_jump）收敛到同一个
+// 知识点"段落过渡"。调用方（batch route）必须把本批已发的 seed 和选题文本
+// 传回来，发牌器才能把重复 seed 和同知识点 seed 压下去。
+export function seedKnowledgeText(seed: EditorialSeed): string {
+  return `${seed.topic} ${seed.user_pain} ${seed.user_need} ${seed.dynamic_fact_terms.join(' ')}`;
+}
+
+// 知识点收敛判定。窗口 jaccard 只能抓近乎逐字的撞款（connectors vs "段落过渡"
+// 选题 0.41 能抓），抓不到换措辞的收敛（pain_logic_jump 同场景只有 0.10 ——
+// 而它正是 batch_1786754651839 里连发 5 次的惯犯）。改用领域词命中数：
+// 候选 seed 的知识词（剥身份词根、≥2 字）在已确认选题文本里命中 ≥2 个即收敛。
+// 校准：过渡三兄弟（connectors/paragraph_structure/pain_logic_jump）互撞命中 3-6 个，
+// 无关 seed（time_allocation/self_evaluation/theme_environment）命中 0。
+const SEED_CONVERGENCE_TERM_HITS = 2;
+// 近逐字撞款的兜底阈值（校准：connectors vs "段落过渡"选题 0.41，无关对 ≤0.19）
+const SEED_CONVERGENCE_JACCARD = 0.3;
+const IDENTITY_TERM_ROOTS = /DELF|DALF|TEF|TCF|CLB|B2|法语|写作|作文|备考|Canada/gi;
+
+function seedKnowledgeTerms(seed: EditorialSeed): string[] {
+  return [...seed.keyword_candidates, ...seed.dynamic_fact_terms]
+    .map(term => term.replace(IDENTITY_TERM_ROOTS, '').trim())
+    .filter(term => term.length >= 2);
+}
+
 export function planSeededTopics(input: {
   productId: ProductId;
   card: ProductCard;
@@ -1854,26 +2344,58 @@ export function planSeededTopics(input: {
   limit?: number;
   date?: Date;
   recentSeedIds?: string[];
+  /** 本批前面的卡已经发过的 seed_id（含 LLM 精修后的最终选题文本） */
+  batchUsedSeedIds?: string[];
+  /** 本批已确认选题的文本（topic+content_promise+dynamic_fact_terms），用于知识点收敛检测 */
+  batchUsedTopicTexts?: string[];
 }): MigratedTopic[] {
   const spec = getCoverTemplateSpec(input.card.renderer_id);
   if (!spec) return [];
   const factIds = new Set(Object.values(input.facts).flat().map(item => item.id));
   const direction = normalize(input.direction || '');
   const recentSeedIds = new Set(input.recentSeedIds || []);
+  const batchUsedSeedIds = new Set(input.batchUsedSeedIds || []);
+  const batchUsedTopicTokens = (input.batchUsedTopicTexts || [])
+    .map(text => tokenizeTopic(normalize(text)))
+    .filter(tokens => tokens.size > 0);
   const day = (input.date || new Date()).toISOString().slice(0, 10);
-  // recentSeedIds 提到最高优先级：之前 sort 把 direction 放在前面，
-  // 一个高分 recent seed 会覆盖 fresh seed，导致 7 天内重复。
-  // 现在 recent 主导，fresh 永远先于 recent；池子不够时 pick/循环会自然兜底。
   const ranked = getEditorialSeeds(input.productId)
     .filter(seed => seed.content_shapes.includes(spec.family))
     .filter(seed => seed.anchor_fact_ids.every(id => factIds.has(id)))
-    .map(seed => ({
-      seed,
-      directionScore: direction ? scoreDirection(seed, direction) : 0,
-      recentPenalty: recentSeedIds.has(seed.seed_id) ? 1 : 0,
-      rotation: stableHash(`${day}:${input.card.id}:${seed.seed_id}`),
-    }))
-    .sort((a, b) => a.recentPenalty - b.recentPenalty || b.directionScore - a.directionScore || a.rotation - b.rotation);
+    // Fix F（发牌侧）：选题自带数量承诺（如"12个开头"）时，卡片必须装得下这个数。
+    // 密度闸门的严重不足线是 ceil(minTotalItems*0.7)，低于它物理上没法按承诺条数
+    // 组织内容 → 任务单说 N、成品被迫写满模板容量，两者必然对不上（batch_
+    // 1786817030706 的"9个问题→25项"就是这个错位）。注意阈值取 0.7（严重线）
+    // 而不是更高：三车道 seed 的数字是知识库真实数字（7步骤/16条），0.8 会把
+    // 7步骤流程 seed 锁死在 roadmap 卡之外，违背设计。
+    .filter(seed => {
+      const promised = parseContentPromiseCount(seed.topic);
+      return promised === null || promised >= Math.ceil(spec.minTotalItems * 0.7);
+    })
+    .map(seed => {
+      const knowledgeTerms = seedKnowledgeTerms(seed);
+      const knowledgeTokens = tokenizeTopic(normalize(seedKnowledgeText(seed)));
+      const termConverged = (input.batchUsedTopicTexts || []).some(text => {
+        const haystack = normalize(text);
+        return knowledgeTerms.filter(term => haystack.includes(term)).length >= SEED_CONVERGENCE_TERM_HITS;
+      });
+      const nearDuplicate = batchUsedTopicTokens.some(used =>
+        jaccardSimilarity(knowledgeTokens, used) >= SEED_CONVERGENCE_JACCARD);
+      return {
+        seed,
+        directionScore: direction ? scoreDirection(seed, direction) : 0,
+        batchPenalty: batchUsedSeedIds.has(seed.seed_id) ? 1 : 0,
+        convergencePenalty: termConverged || nearDuplicate ? 1 : 0,
+        recentPenalty: recentSeedIds.has(seed.seed_id) ? 1 : 0,
+        rotation: stableHash(`${day}:${input.card.id}:${seed.seed_id}`),
+      };
+    })
+    .sort((a, b) =>
+      a.batchPenalty - b.batchPenalty
+      || a.convergencePenalty - b.convergencePenalty
+      || a.recentPenalty - b.recentPenalty
+      || b.directionScore - a.directionScore
+      || a.rotation - b.rotation);
 
   const limit = input.limit ?? 4;
   const pools = topicSeedPools[input.productId];
@@ -1885,8 +2407,18 @@ export function planSeededTopics(input: {
     selected.push({ seed: item.seed, topicType });
     selectedIds.add(item.seed.seed_id);
   };
-  pick(pools.searchPain, 'search_pain');
-  pick(pools.sellingPoint, 'selling_point');
+  // 首选池按 day+card 轮换：之前写死 searchPain 先 pick，17 张卡各选 1 题时
+  // 100% 全是 search_pain（batch_1786754651839 实测 17/17），selling/narrow
+  // 类型永远轮不到。轮换后三池都有机会打头，后续 pick 仍按原顺序补齐。
+  const poolRotation: Array<{ pool: Set<string>; type: 'search_pain' | 'selling_point' }> = [
+    { pool: pools.searchPain, type: 'search_pain' },
+    { pool: pools.sellingPoint, type: 'selling_point' },
+  ];
+  const firstPoolIndex = stableHash(`${day}:${input.card.id}:firstPool`) % poolRotation.length;
+  for (let offset = 0; offset < poolRotation.length; offset += 1) {
+    const { pool, type } = poolRotation[(firstPoolIndex + offset) % poolRotation.length];
+    pick(pool, type);
+  }
   for (const item of ranked.filter(item => pools.broad.has(item.seed.seed_id))) {
     if (selected.length >= Math.min(3, limit)) break;
     if (!selectedIds.has(item.seed.seed_id)) {
@@ -1901,7 +2433,8 @@ export function planSeededTopics(input: {
   const SHOWCASE_FAMILIES = new Set(['directory', 'table', 'collocation_dense']);
   const supportsShowcase = SHOWCASE_FAMILIES.has(spec.family);
   const showcaseRoll = stableHash(`${input.card.id}:${day}:showcase`) % 100;
-  const useShowcase = supportsShowcase && showcaseRoll < 30;
+  // 三车道重建：showcase seed 6 → 12 条，骰子 30% → 45%（车道 3 配额）
+  const useShowcase = supportsShowcase && showcaseRoll < 45;
   if (useShowcase) {
     pick(pools.productShowcase, 'product_showcase');
   }

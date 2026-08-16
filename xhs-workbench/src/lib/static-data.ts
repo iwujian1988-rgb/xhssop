@@ -179,7 +179,7 @@ const data: SkillData = {
       example_cover_titles: ['B2 写作\n这 12 句真能救急', '别再整篇背模板\n先拆这几类句子'],
       required_inputs: ['至少 5 条句型或 3 类句型功能'],
       forbidden_terms: ['CLB7', '加拿大移民', 'TEF Canada', 'TCF Canada'],
-      conflict_notes: '不能写成保证提分，只能说用于整理思路和表达。',
+      conflict_notes: '',
     },
     delf_b2_mistake_contrast: {
       id: 'delf_b2_mistake_contrast',
@@ -227,7 +227,7 @@ const data: SkillData = {
       example_cover_titles: ['TEF/TCF Canada\n30 天冲 CLB7 怎么排', '别再每天瞎刷题\nCLB7 要这样拆'],
       required_inputs: ['目标分数/CLB7 场景', '至少 3 个阶段任务或 1 张计划表'],
       forbidden_terms: ['DELF B2 production écrite', 'DELF B2 范文', 'B2 写作资料包'],
-      conflict_notes: '不要承诺 30 天必过，不要把 CLB7 和 DELF B2 混用。',
+      conflict_notes: '不要把 CLB7 和 DELF B2 混用。',
     },
   } as Record<ChainId, SkillData['chains'][ChainId]>,
 
@@ -285,7 +285,7 @@ const data: SkillData = {
       layout_rules: { background: '白底或浅蓝底', title_position: '顶部' },
       variable_fields: ['错误句', '优化句', '批注'],
       locked_fields: ['错误/正确对照', '批注感'],
-      forbidden: ['不要伪造官方评分', '不要承诺必过'],
+      forbidden: ['不要伪造官方评分'],
     },
     plan_table: {
       id: 'plan_table', name: '计划表模板', purpose: '收藏 + 执行',
@@ -294,7 +294,7 @@ const data: SkillData = {
       layout_rules: { background: '浅色底', title_position: '顶部', content_density: '中高' },
       variable_fields: ['阶段', '时间', '任务'],
       locked_fields: ['标题 + 计划表/时间轴', '数字时间感'],
-      forbidden: ['不要承诺 30 天必过'],
+      forbidden: [],
     },
   } as Record<CoverTemplateId, SkillData['cover_templates'][CoverTemplateId]>,
 
@@ -385,7 +385,7 @@ const data: SkillData = {
 
   compatibility_matrix: {
     principle: '先选商品，再选链路；封面母版、标题母版、内页结构只能从链路允许范围里选。',
-    global_forbidden: ['考试必过', '官方保证', '内部题库', '保分', '押中原题'],
+    global_forbidden: ['官方保证', '内部题库', '押中原题'],
     product_forbidden_terms: {
       delf_b2_writing: ['CLB7', '加拿大移民', 'TEF Canada', 'TCF Canada'],
       tef_tcf_canada: ['DELF B2 production écrite', 'DELF B2 范文', 'B2 写作资料包'],
