@@ -141,6 +141,9 @@ async function runOneJob(
         showcasePlan: batch.content_mode === 'product_showcase'
           ? pickProductShowcasePlan(job.product_id, facts, `${job.id}|${job.topic.id}`)
           : undefined,
+        endingShowcasePlan: batch.content_mode === 'standard'
+          ? pickProductShowcasePlan(job.product_id, facts, `ending|${job.id}|${job.topic.id}`)
+          : undefined,
         resumeArtifacts: job.current_stage === 'audited' && job.artifacts?.content
           ? job.artifacts
           : undefined,

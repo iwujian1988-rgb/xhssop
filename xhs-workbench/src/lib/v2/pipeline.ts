@@ -57,6 +57,8 @@ export interface ComposeV2Input {
   evidence: EvidenceSnippet[];
   contentMode?: 'standard' | 'product_showcase';
   showcasePlan?: ProductShowcasePlan;
+  /** Standard notes also end with one concrete product-proof page. */
+  endingShowcasePlan?: ProductShowcasePlan;
   resumeArtifacts?: PipelineArtifacts;
 }
 
@@ -129,6 +131,7 @@ export async function composeV2(input: ComposeV2Input): Promise<PipelineResult> 
     auditWarnings: publishReadyContent.warnings,
     prebuiltTags,
     showcasePlan: input.showcasePlan,
+    endingShowcasePlan: input.endingShowcasePlan,
   });
   const compiledDraft = localArtifact(
     draft,
@@ -278,6 +281,7 @@ interface CompileInput {
   auditWarnings: string[];
   prebuiltTags?: string[];
   showcasePlan?: ProductShowcasePlan;
+  endingShowcasePlan?: ProductShowcasePlan;
 }
 
 export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
@@ -303,6 +307,22 @@ export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
         showcase_asset_image: asset.image,
       } : page;
     });
+  }
+  if (!input.showcasePlan && input.endingShowcasePlan?.coverAsset) {
+    const asset = input.endingShowcasePlan.coverAsset;
+    const pageNo = innerPages.length + 1;
+    innerPages = [...innerPages, {
+      page_no: pageNo,
+      page_type: 'product_bridge',
+      style_variant: 'lined-notebook',
+      page_title: '这套资料，具体能帮你什么',
+      lead: input.endingShowcasePlan.angle.instruction,
+      bullets: [asset.realContent, asset.userValue, '适合在备考中反复查、练、改；需要完整资料可查看商品页。'],
+      source_ids: asset.sourceFactIds,
+      showcase_asset_id: asset.id,
+      showcase_asset_label: asset.label,
+      showcase_asset_image: asset.image,
+    }];
   }
   const brief = buildBrief(input);
   const titleCandidates = input.titles.candidates.map<TitleCandidate>((candidate, index) => ({

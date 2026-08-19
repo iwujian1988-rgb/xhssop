@@ -82,6 +82,9 @@ export async function POST(request: Request) {
         showcasePlan: body.content_mode === 'product_showcase'
           ? pickProductShowcasePlan(body.product_id, facts, `${card.id}|${body.topic.id}`)
           : undefined,
+        endingShowcasePlan: body.content_mode !== 'product_showcase'
+          ? pickProductShowcasePlan(body.product_id, facts, `ending|${card.id}|${body.topic.id}`)
+          : undefined,
       });
       const savedBatchId = `single_${Date.now()}`;
       const now = new Date().toISOString();
