@@ -130,6 +130,20 @@ const data: SkillData = {
       },
       default_tags: ['#TEFCanada', '#TCFCanada', '#加拿大移民', '#法语移民', '#CLB7', '#法语考试'],
     },
+    tcf_canada_writing_7day: {
+      id: 'tcf_canada_writing_7day',
+      name: 'TCF Canada 写作考前7天急救锦囊',
+      public_name_options: ['TCF Canada 写作考前7天急救锦囊', 'TCF写作7天查漏补缺资料', 'TCF Canada写作纠错训练包'],
+      core_audience: ['准备参加TCF Canada的考生', '距离考试7到21天、需要集中补写作的人', 'T2只会叙述经历的人', 'T3不会比较材料或展开观点的人', '写完后不知道具体改哪里的考生'],
+      preset_selling_points: [
+        { id: 'seven_day_rescue', name: '7天专项纠错路径', suitable_angles: ['考前7天怎么练', '每天只改一个问题', '查漏补缺'] },
+        { id: 't1_t2_t3_training', name: 'T1/T2/T3完整训练', suitable_angles: ['三项任务都覆盖', '写作题型训练', '限时作答'] },
+        { id: 'local_rewrite', name: '局部重写闭环', suitable_angles: ['不是整篇重写', '找到问题再改', '前后稿对照'] },
+        { id: 'format_check', name: '任务格式与字数速查', suitable_angles: ['T1/T2/T3区别', '字数核对', '考后90秒检查'] },
+      ],
+      seo_keywords: { core: ['TCF Canada写作', 'TCF写作', 'TCF Canada备考', '法语写作'], long_tail: ['TCF写作题型', 'TCF写作范文', 'TCF写作怎么练', 'TCF写作字数', 'TCF Canada考前备考'] },
+      default_tags: ['#TCFCanada', '#TCF写作', '#法语写作', '#TCF备考', '#法语考试'],
+    },
   } as Record<ProductId, SkillData['products'][ProductId]>,
 
   chains: {
@@ -381,6 +395,11 @@ const data: SkillData = {
       long_tail_keywords: ['TEF Canada 和 TCF Canada 区别', '加拿大移民法语考试', 'TEF/TCF 30 天备考', 'CLB7 备考', 'TEF 写作', 'TCF 写作'],
       tags: ['#TEFCanada', '#TCFCanada', '#加拿大移民', '#法语移民', '#CLB7', '#法语考试'],
     },
+    tcf_canada_writing_7day: {
+      core_keywords: ['TCF Canada写作', 'TCF写作', 'TCF Canada备考', '法语写作'],
+      long_tail_keywords: ['TCF写作题型', 'TCF写作范文', 'TCF写作怎么练', 'TCF写作字数', 'TCF Canada考前备考'],
+      tags: ['#TCFCanada', '#TCF写作', '#法语写作', '#TCF备考', '#法语考试'],
+    },
   } as Record<ProductId, SkillData['seo_tags'][ProductId]>,
 
   compatibility_matrix: {
@@ -389,6 +408,7 @@ const data: SkillData = {
     product_forbidden_terms: {
       delf_b2_writing: ['CLB7', '加拿大移民', 'TEF Canada', 'TCF Canada'],
       tef_tcf_canada: ['DELF B2 production écrite', 'DELF B2 范文', 'B2 写作资料包'],
+      tcf_canada_writing_7day: ['DELF B2', 'DALF', 'TEF Canada', 'CLB7'],
     },
     state_required_fields: {
       before_content: ['product_id', 'chain_id'],

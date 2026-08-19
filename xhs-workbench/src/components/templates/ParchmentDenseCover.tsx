@@ -10,18 +10,20 @@ interface ParchmentDenseCoverProps {
 
 export default function ParchmentDenseCover({ payload, className = '' }: ParchmentDenseCoverProps) {
   const sectionCount = Math.max(1, payload.sections.length);
+  const totalItems = payload.sections.reduce((sum, section) => sum + section.items.length, 0);
   const titleLength = visualLength(payload.title);
-  const titleScale = titleLength > 28 ? '4.05cqw'
-    : titleLength > 22 ? '4.48cqw'
-      : titleLength > 17 ? '4.92cqw'
-        : '5.55cqw';
+  const titleScale = titleLength > 34 ? '3.55cqw'
+    : titleLength > 28 ? '4cqw'
+      : titleLength > 22 ? '4.48cqw'
+        : titleLength > 17 ? '5.08cqw'
+        : '5.95cqw';
 
   const sectionsKey = payload.sections.map(s => `${s.heading}:${s.items.length}:${s.items.map(i => `${i.primary}${i.secondary || ''}`).join(',')}`).join('|');
-  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey, sectionCount], { min: 0.58, max: 1, step: 0.025 });
+  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey, sectionCount], { min: 0.64, max: 1, step: 0.025 });
 
   return (
     <article
-      className={`parchment-dense-cover ${className}`}
+      className={`parchment-dense-cover ${totalItems <= 14 ? 'parchment-dense-cover--compact' : ''} ${className}`}
       style={{ '--section-count': sectionCount, '--title-scale': titleScale } as React.CSSProperties}
       aria-label={payload.title}
     >
@@ -102,7 +104,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           margin: 0;
           color: #76241c;
           font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
-          font-size: clamp(30px, var(--title-scale), 58px);
+          font-size: var(--title-scale);
           font-weight: 900;
           line-height: 1.02;
           letter-spacing: 0;
@@ -113,7 +115,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           margin: 1.05cqw 0 0;
           color: #8e5d43;
           font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
-          font-size: clamp(12px, 1.95cqw, 18px);
+          font-size: clamp(13px, 2.08cqw, 20px);
           font-weight: 700;
           line-height: 1.12;
         }
@@ -125,6 +127,18 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           height: 85.8%;
           padding: 0 4.8cqw 2.7cqw;
           overflow: hidden;
+        }
+        .parchment-dense-cover--compact .parchment-dense-sections {
+          justify-content: flex-start;
+          gap: 4.8cqw;
+          padding-top: 1.2cqw;
+        }
+        .parchment-dense-cover--compact .parchment-dense-section {
+          min-height: 13.5cqw;
+        }
+        .parchment-dense-cover--compact .parchment-dense-item {
+          font-size: clamp(14px, calc(2.9cqw * var(--fit-scale, 1)), 26px);
+          line-height: 1.12;
         }
         .parchment-dense-section {
           display: grid;
@@ -140,7 +154,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           border-right: .18cqw solid rgba(105,36,28,.7);
           color: #3e3028;
           font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
-          font-size: clamp(15px, calc(2.5cqw * var(--fit-scale, 1)), 23px);
+          font-size: clamp(16px, calc(2.65cqw * var(--fit-scale, 1)), 25px);
           font-weight: 800;
           line-height: 1.08;
           text-align: center;
@@ -158,7 +172,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           overflow: hidden;
           color: #9b3328;
           font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
-          font-size: clamp(15px, calc(2.7cqw * var(--fit-scale, 1)), 26px);
+          font-size: clamp(16px, calc(2.88cqw * var(--fit-scale, 1)), 28px);
           font-weight: 800;
           line-height: 1.08;
           text-align: center;
@@ -180,7 +194,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           overflow: hidden;
           color: #2f2925;
           font-family: "Noto Serif SC", "STSong", serif;
-          font-size: clamp(12px, calc(2.42cqw * var(--fit-scale, 1)), 22px);
+          font-size: clamp(13px, calc(2.6cqw * var(--fit-scale, 1)), 24px);
           font-weight: 800;
           line-height: 1.06;
           white-space: normal;

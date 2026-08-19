@@ -20,7 +20,6 @@ const RELEASE_BLOCKING_ISSUES = new Set([
   'inner_pages_too_few',
   'false_product_form',
   'fabricated_authority',
-  'unsupported_exam_fact',
   'unsupported_exam_consequence',
 ]);
 

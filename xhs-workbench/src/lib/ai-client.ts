@@ -7,7 +7,7 @@ export interface AiMessage {
   content: string;
 }
 
-interface AiCallOptions {
+export interface AiCallOptions {
   maxTokens?: number;
   retries?: number;
   temperature?: number;
@@ -21,6 +21,27 @@ export interface AiUsageSummary {
   calls: number;
   autofix_count: number;
   autofix_events: string[];
+}
+
+export interface AiResult<T> {
+  data: T;
+  usage: AiUsageSummary;
+  requestId: string;
+}
+
+export function emptyAiUsage(): AiUsageSummary {
+  return { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0, autofix_count: 0, autofix_events: [] };
+}
+
+export function mergeAiUsage(...values: AiUsageSummary[]): AiUsageSummary {
+  return values.reduce<AiUsageSummary>((sum, value) => ({
+    prompt_tokens: sum.prompt_tokens + value.prompt_tokens,
+    completion_tokens: sum.completion_tokens + value.completion_tokens,
+    total_tokens: sum.total_tokens + value.total_tokens,
+    calls: sum.calls + value.calls,
+    autofix_count: sum.autofix_count + value.autofix_count,
+    autofix_events: [...sum.autofix_events, ...value.autofix_events],
+  }), emptyAiUsage());
 }
 
 let recentUsage: AiUsageSummary = { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0, autofix_count: 0, autofix_events: [] };
@@ -43,12 +64,18 @@ export function recordAutofixEvents(events: string[]) {
 }
 
 export async function callOpenAICompatibleJson(messages: AiMessage[], options: AiCallOptions = {}): Promise<unknown> {
+  const result = await callOpenAICompatibleJsonWithUsage<unknown>(messages, options);
+  recentUsage = mergeAiUsage(recentUsage, result.usage);
+  return result.data;
+}
+
+export async function callOpenAICompatibleJsonWithUsage<T>(messages: AiMessage[], options: AiCallOptions = {}): Promise<AiResult<T>> {
   // 桥接模式：AI_BRIDGE_DIR 指定时完全不碰远程 API（不消耗用户 token），
   // 把每次调用的完整 prompt 落盘，等待同目录下出现对应 .resp 文件后返回。
   // 用于让真实管线/真实 prompt/真实闸门在"外部模型"（Claude 子代理）驱动下
   // 端到端跑通。响应文件内容为纯文本（JSON 字符串），走同一个 parseJsonContent。
   if (process.env.AI_BRIDGE_DIR) {
-    return callBridgeJson(process.env.AI_BRIDGE_DIR, messages, options);
+    return callBridgeJson<T>(process.env.AI_BRIDGE_DIR, messages, options);
   }
 
   const apiKey = process.env.OPENAI_API_KEY;
@@ -96,14 +123,8 @@ export async function callOpenAICompatibleJson(messages: AiMessage[], options: A
       }
 
       const json = await res.json();
-      const usage = json?.usage;
-      if (usage) {
-        recentUsage.prompt_tokens += Number(usage.prompt_tokens) || 0;
-        recentUsage.completion_tokens += Number(usage.completion_tokens) || 0;
-        recentUsage.total_tokens += Number(usage.total_tokens) || 0;
-        recentUsage.calls += 1;
-        console.info('[AI usage]', JSON.stringify({ model, ...usage }));
-      }
+      const usage = usageFromResponse(json?.usage);
+      console.info('[AI usage]', JSON.stringify({ model, ...usage }));
       const content = json?.choices?.[0]?.message?.content;
       if (!content) {
         const finishReason = json?.choices?.[0]?.finish_reason || 'unknown';
@@ -111,7 +132,11 @@ export async function callOpenAICompatibleJson(messages: AiMessage[], options: A
         lastError = new Error(`AI API 没有返回内容（finish_reason=${finishReason}, reasoning_length=${reasoningLength}）`);
         continue;
       }
-      return parseJsonContent(content);
+      return {
+        data: parseJsonContent(content) as T,
+        usage,
+        requestId: String(res.headers.get('x-request-id') || json?.id || `local-${Date.now()}`),
+      };
     } catch (cause) {
       lastError = cause instanceof Error ? cause : new Error('AI调用失败');
       if (/请求失败：4\d\d/.test(lastError.message)) throw lastError;
@@ -122,7 +147,7 @@ export async function callOpenAICompatibleJson(messages: AiMessage[], options: A
 
 let bridgeSeq = 0;
 
-async function callBridgeJson(dir: string, messages: AiMessage[], options: AiCallOptions): Promise<unknown> {
+async function callBridgeJson<T>(dir: string, messages: AiMessage[], options: AiCallOptions): Promise<AiResult<T>> {
   bridgeSeq += 1;
   const id = `${Date.now()}-${bridgeSeq}`;
   const base = path.join(dir, `req-${id}`);
@@ -147,9 +172,8 @@ async function callBridgeJson(dir: string, messages: AiMessage[], options: AiCal
     if (raw) {
       const content = raw.trim();
       if (content.length === 0) continue;
-      recentUsage.calls += 1;
       console.info(`[AI bridge] 收到响应 ${base}.resp.json (${content.length} chars)`);
-      return parseJsonContent(content);
+      return { data: parseJsonContent(content) as T, usage: { ...emptyAiUsage(), calls: 1 }, requestId: id };
     }
     let errRaw: string | undefined;
     try {
@@ -163,16 +187,42 @@ async function callBridgeJson(dir: string, messages: AiMessage[], options: AiCal
   throw new Error(`AI bridge 等待响应超时（30 分钟）：${base}.json`);
 }
 
+function usageFromResponse(value: unknown): AiUsageSummary {
+  const usage = value && typeof value === 'object' ? value as Record<string, unknown> : {};
+  return {
+    prompt_tokens: Number(usage.prompt_tokens) || 0,
+    completion_tokens: Number(usage.completion_tokens) || 0,
+    total_tokens: Number(usage.total_tokens) || 0,
+    calls: 1,
+    autofix_count: 0,
+    autofix_events: [],
+  };
+}
+
 function parseJsonContent(content: string) {
   const unwrapped = content.replace(/^```json\s*/i, '').replace(/^```\s*/i, '').replace(/```$/i, '').trim();
   try {
-    return JSON.parse(unwrapped);
+    return unwrapJsonPayload(JSON.parse(unwrapped));
   } catch (originalError) {
     try {
-      return JSON.parse(jsonrepair(unwrapped));
+      return unwrapJsonPayload(JSON.parse(jsonrepair(unwrapped)));
     } catch {
       const detail = originalError instanceof Error ? originalError.message : '未知JSON错误';
       throw new Error(`AI返回的JSON无法修复：${detail}`);
     }
   }
+}
+
+function unwrapJsonPayload(value: unknown): unknown {
+  if (!value || typeof value !== 'object') return value;
+  const record = value as Record<string, unknown>;
+  const directContent = record.content;
+  if (typeof directContent === 'string' && !record.brief && !record.cover && !record.title_candidates) {
+    return parseJsonContent(directContent);
+  }
+  const choiceContent = (record.choices as any)?.[0]?.message?.content;
+  if (typeof choiceContent === 'string' && !record.brief && !record.cover && !record.title_candidates) {
+    return parseJsonContent(choiceContent);
+  }
+  return value;
 }

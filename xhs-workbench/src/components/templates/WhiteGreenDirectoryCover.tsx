@@ -9,9 +9,9 @@ interface WhiteGreenDirectoryCoverProps {
 }
 
 export default function WhiteGreenDirectoryCover({ payload, className = '' }: WhiteGreenDirectoryCoverProps) {
-  const titleScale = payload.title.length > 18 ? '6.6cqw' : payload.title.length > 14 ? '7.5cqw' : '8.3cqw';
+  const titleScale = payload.title.length > 18 ? '7.05cqw' : payload.title.length > 14 ? '8cqw' : '8.85cqw';
   const sectionsKey = payload.sections.map(s => `${s.heading}:${s.items.length}:${s.items.map(i => `${i.primary}${i.secondary || ''}`).join(',')}`).join('|');
-  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey], { min: 0.5, max: 1, step: 0.025 });
+  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey], { min: 0.58, max: 1, step: 0.025 });
   return (
     <article
       className={`white-green-directory ${className}`}
@@ -82,7 +82,7 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           margin: 0;
           color: #07852e;
           font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
-          font-size: clamp(30px, var(--title-scale), 68px);
+          font-size: clamp(34px, var(--title-scale), 74px);
           font-weight: 900;
           line-height: 1.02;
           letter-spacing: 0;
@@ -92,7 +92,7 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           margin: .9cqw 0 0;
           color: #47975d;
           font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
-          font-size: clamp(13px, 2.15cqw, 19px);
+          font-size: clamp(14px, 2.3cqw, 21px);
           font-weight: 800;
           line-height: 1.15;
         }
@@ -119,7 +119,7 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           justify-content: center;
           color: #315e3f;
           font-family: "Noto Sans SC", "Microsoft YaHei", sans-serif;
-          font-size: clamp(13px, 2.4cqw, 21px);
+          font-size: clamp(14px, 2.55cqw, 23px);
           font-weight: 800;
           line-height: 1.08;
           text-align: center;
@@ -148,7 +148,7 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           overflow: hidden;
           color: #0b7731;
           font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
-          font-size: clamp(14px, calc(3.1cqw * var(--fit-scale, 1)), 27px);
+          font-size: clamp(15px, calc(3.3cqw * var(--fit-scale, 1)), 29px);
           font-weight: 900;
           line-height: 1.05;
           text-align: center;
@@ -168,7 +168,7 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           align-items: start;
           min-width: 0;
           overflow: hidden;
-          font-size: clamp(10.5px, calc(2.15cqw * var(--fit-scale, 1)), 19px);
+          font-size: clamp(12px, calc(2.34cqw * var(--fit-scale, 1)), 21px);
           font-weight: 700;
           line-height: 1.08;
         }

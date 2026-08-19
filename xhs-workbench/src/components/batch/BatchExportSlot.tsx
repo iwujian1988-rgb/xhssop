@@ -15,6 +15,7 @@ export interface ExportNodes {
 interface Props {
   job: BatchJob;
   card?: CompetitorCreativeCard;
+  skinId?: string;
   onReady: (nodes: ExportNodes) => void;
 }
 
@@ -29,7 +30,7 @@ const SLOT_STYLE: React.CSSProperties = {
   background: '#fff',
 };
 
-export function BatchExportSlot({ job, card, onReady }: Props) {
+export function BatchExportSlot({ job, card, skinId, onReady }: Props) {
   const coverRef = useRef<HTMLDivElement | null>(null);
   const innerRefs = useRef(new Map<number, HTMLElement>());
 
@@ -77,6 +78,7 @@ export function BatchExportSlot({ job, card, onReady }: Props) {
               renderer={card?.renderer_id || 'parchment_dense_directory'}
               payload={job.draft.cover}
               referenceImage={card?.reference_image}
+              skinId={skinId}
             />
           )}
         </div>

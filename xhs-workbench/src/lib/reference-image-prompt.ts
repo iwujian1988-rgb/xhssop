@@ -1,4 +1,5 @@
 import type { CompetitorCreativeCard, DenseDirectoryCoverPayload, CreativeCardRenderer } from '@/types/reference-workflow';
+import type { ProductId } from '@/types/data';
 
 /** 锁定不变：构图骨架、配色、标题处理方式。 */
 const TEMPLATE_CORE: Partial<Record<CreativeCardRenderer, string>> = {
@@ -157,9 +158,54 @@ export function buildReferenceImagePrompt(
   card: CompetitorCreativeCard,
   cover: DenseDirectoryCoverPayload,
   hasReference: boolean,
+  productId?: ProductId,
 ) {
-  if (hasReference) return buildReferenceFirstPrompt(card, cover);
-  return buildTextOnlyPrompt(card, cover);
+  const prompt = hasReference
+    ? buildReferenceFirstPrompt(card, cover)
+    : buildTextOnlyPrompt(card, cover);
+  return `${scopeReferencePrompt(prompt, productId)}\n\n${productIdentityGuard(productId)}`;
+}
+
+function scopeReferencePrompt(prompt: string, productId?: ProductId) {
+  // official_notice 的通用视觉说明里有历史示例词。按商品替换后再发送，
+  // 避免模型把示例里的 DELF 当成本篇内容；参考图本身仍由身份校验明确要求擦除旧词。
+  if (productId === 'tef_tcf_canada') {
+    return prompt
+      .replace(/DELF\s*B2/gi, 'TEF/TCF Canada')
+      .replace(/DELF/gi, 'TEF/TCF');
+  }
+  if (productId === 'tcf_canada_writing_7day') {
+    return prompt
+      .replace(/DELF\s*B2/gi, 'TCF Canada')
+      .replace(/DELF/gi, 'TCF Canada')
+      .replace(/TEF\s*Canada/gi, 'TCF Canada');
+  }
+  return prompt;
+}
+
+function productIdentityGuard(productId?: ProductId) {
+  if (productId === 'tef_tcf_canada') {
+    return [
+      '【商品身份最终校验】本图只属于 TEF/TCF Canada 备考资料。',
+      '参考图中的 DELF、DALF、DELF B2、法国文凭考试等文字属于参考图旧内容，必须全部擦除并替换，绝对不能出现在成图任何位置。',
+      '画面只允许出现 TEF、TCF、Canada、CLB、NCLC 及本次提供的文案；不要擅自添加 B2 写作、DELF 范文或法国考试信息。',
+    ].join('\n');
+  }
+  if (productId === 'delf_b2_writing') {
+    return [
+      '【商品身份最终校验】本图只属于 DELF B2 写作资料。',
+      '参考图中的 TEF、TCF、Canada、CLB、NCLC 等文字属于参考图旧内容，必须全部擦除，绝对不能出现在成图任何位置。',
+      '画面只允许出现 DELF B2、法语写作及本次提供的文案。',
+    ].join('\n');
+  }
+  if (productId === 'tcf_canada_writing_7day') {
+    return [
+      '【商品身份最终校验】本图只属于 TCF Canada 写作考前资料。',
+      '参考图中的 DELF、DALF、TEF、CLB、NCLC 等文字属于参考图旧内容，必须全部擦除，绝对不能出现在成图任何位置。',
+      '画面只允许出现 TCF Canada、TCF 写作及本次提供的文案。',
+    ].join('\n');
+  }
+  return '【商品身份最终校验】只使用本次提供的商品和封面文案，不要复制参考图中的考试名称、标题或旧内容。';
 }
 
 function buildReferenceFirstPrompt(card: CompetitorCreativeCard, cover: DenseDirectoryCoverPayload) {

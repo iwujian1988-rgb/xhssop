@@ -1,31 +1,68 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import ReferenceCoverRenderer from '@/components/templates/ReferenceCoverRenderer';
 import { downloadImageUrl, exportAllAsZip, exportNodeAsPng, type ExportItem } from '@/lib/export-image';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { buildReferenceImagePrompt, referenceImageNegativePrompt } from '@/lib/reference-image-prompt';
 import type { CompetitorCreativeCard, GeneratedInnerPage, ReferenceDrivenDraft } from '@/types/reference-workflow';
 import { InnerPageRenderer } from '@/components/templates/inner-pages/InnerPageRenderer';
+import { applyDraftTitleSelection, findSelectedTitleIndex, getDraftTitleSelection, type DraftTitleSelection } from '@/lib/draft-title-selection';
+import { getCoverSkins, normalizeCoverSkin } from '@/lib/cover-skins';
 
-export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; presetCoverImageUrl?: string | null }) {
+export function DraftReview({ draft, card, presetCoverImageUrl, initialTitleSelection, onTitleSelectionChange, initialSkinId, onSkinChange }: {
+  draft: ReferenceDrivenDraft;
+  card?: CompetitorCreativeCard;
+  presetCoverImageUrl?: string | null;
+  initialTitleSelection?: DraftTitleSelection | null;
+  onTitleSelectionChange?: (selection: DraftTitleSelection) => void;
+  initialSkinId?: string | null;
+  onSkinChange?: (skinId: string) => void;
+}) {
   const coverNodeRef = useRef<HTMLDivElement | null>(null);
   const innerRefs = useRef(new Map<number, HTMLElement>());
   const [generatedCoverImageUrl, setGeneratedCoverImageUrl] = useState<string | null>(null);
-  const [selectedTitle, setSelectedTitle] = useState(draft.selected_title);
+  const [selectedCandidateIndex, setSelectedCandidateIndex] = useState(() => initialTitleSelection?.candidateIndex ?? findSelectedTitleIndex(draft));
+  const [selectedSkinId, setSelectedSkinId] = useState(() => normalizeCoverSkin(card?.renderer_id, initialSkinId));
   const [exportBusy, setExportBusy] = useState<'' | 'cover' | 'all'>('');
   const [exportMsg, setExportMsg] = useState('');
 
   const spec = card ? getCoverTemplateSpec(card.renderer_id) : undefined;
   const isImageCover = !!card && spec?.renderMode === 'image_to_image';
+  const coverSkins = getCoverSkins(card?.renderer_id);
+  const titleSelection = useMemo(
+    () => getDraftTitleSelection(draft, selectedCandidateIndex),
+    [draft, selectedCandidateIndex],
+  );
+  const effectiveDraft = useMemo(
+    () => applyDraftTitleSelection(draft, isImageCover ? null : titleSelection),
+    [draft, isImageCover, titleSelection],
+  );
   // When the cover image is pre-generated (batch runner server-side generation),
   // use it directly instead of showing the manual generate button.
   const coverImageUrl = presetCoverImageUrl ?? generatedCoverImageUrl;
   useEffect(() => {
-    setSelectedTitle(draft.selected_title);
-  }, [draft.selected_title]);
+    setSelectedCandidateIndex(initialTitleSelection?.candidateIndex ?? findSelectedTitleIndex(draft));
+  }, [draft, initialTitleSelection?.candidateIndex]);
+  useEffect(() => {
+    setSelectedSkinId(normalizeCoverSkin(card?.renderer_id, initialSkinId));
+  }, [card?.renderer_id, initialSkinId]);
 
-  const safeTitle = (selectedTitle || draft.selected_title || '小红书笔记').replace(/[\\/:*?"<>|]/g, '').slice(0, 40);
+  const safeTitle = (effectiveDraft.selected_title || '小红书笔记').replace(/[\\/:*?"<>|]/g, '').slice(0, 40);
+
+  function selectCandidate(index: number) {
+    if (isImageCover) return;
+    const selection = getDraftTitleSelection(draft, index);
+    setSelectedCandidateIndex(selection.candidateIndex);
+    onTitleSelectionChange?.(selection);
+    setExportMsg('已临时换用这组标题，导出时会使用当前选择');
+  }
+
+  function selectSkin(skinId: string) {
+    setSelectedSkinId(skinId);
+    onSkinChange?.(skinId);
+    setExportMsg('已临时换用这张底图，导出时会使用当前选择');
+  }
 
   async function handleExportCover() {
     setExportBusy('cover');
@@ -53,7 +90,7 @@ export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: Refer
       const items: ExportItem[] = [];
       if (isImageCover && coverImageUrl) items.push({ filename: '00-封面.png', url: coverImageUrl });
       else if (coverNodeRef.current) items.push({ filename: '00-封面.png', node: coverNodeRef.current });
-      draft.inner_pages.forEach(page => {
+      effectiveDraft.inner_pages.forEach(page => {
         const node = innerRefs.current.get(page.page_no);
         if (node) items.push({ filename: `${String(page.page_no).padStart(2, '0')}-内页.png`, node });
       });
@@ -71,7 +108,7 @@ export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: Refer
     <section className="grid gap-5 xl:grid-cols-[minmax(420px,680px)_minmax(0,1fr)]">
       <div className="border border-neutral-200 bg-white p-4">
         <div className="mb-3 flex items-center justify-between"><h2 className="font-black">3. 动态封面成品</h2><span className="text-xs text-neutral-500">复用参考视觉母版</span></div>
-        <div ref={coverNodeRef}><DynamicDirectoryCover draft={draft} card={card} presetImageUrl={presetCoverImageUrl} onImageReady={setGeneratedCoverImageUrl} /></div>
+        <div ref={coverNodeRef}><DynamicDirectoryCover draft={effectiveDraft} card={card} presetImageUrl={presetCoverImageUrl} onImageReady={setGeneratedCoverImageUrl} skinId={selectedSkinId} /></div>
         <div className="mt-3 flex items-center gap-2">
           <button className="flex-1 border border-neutral-900 bg-neutral-900 px-3 py-2 text-xs font-bold text-white disabled:bg-neutral-400 disabled:border-neutral-400" disabled={!!exportBusy} onClick={handleExportCover}>{exportBusy === 'cover' ? '导出中...' : '导出封面'}</button>
           <button className="flex-1 border border-neutral-300 bg-white px-3 py-2 text-xs font-bold text-neutral-900 disabled:opacity-50" disabled={!!exportBusy} onClick={handleExportAll}>{exportBusy === 'all' ? '打包中...' : '打包下载全部（封面+内页）'}</button>
@@ -80,8 +117,8 @@ export function DraftReview({ draft, card, presetCoverImageUrl }: { draft: Refer
       </div>
       <div className="space-y-4">
         <section className="border border-neutral-200 bg-white p-4"><div className="text-sm font-black">统一内容任务单</div><div className="mt-3 grid gap-3 sm:grid-cols-2"><BriefFact label="人群" value={draft.brief.audience} /><BriefFact label="场景" value={draft.brief.scene} /><BriefFact label="痛点" value={draft.brief.pain} /><BriefFact label="内容价值" value={draft.brief.content_value} /><BriefFact label="商品卖点" value={draft.brief.selling_point} /><BriefFact label="购买理由" value={draft.brief.buying_reason} /></div></section>
-        <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between gap-3"><div className="text-sm font-black">标题候选</div><div className="text-xs font-bold text-neutral-500">当前：{selectedTitle}</div></div><div className="mt-3 space-y-2">{draft.title_candidates.map((title, index) => <button type="button" className={`block w-full border px-3 py-2 text-left ${title.title === selectedTitle ? 'border-red-400 bg-red-50' : 'border-neutral-200 hover:border-neutral-400'}`} key={`${title.title}-${index}`} onClick={() => setSelectedTitle(title.title)}><div className="flex items-center gap-2"><span className="rounded bg-neutral-100 px-2 py-0.5 text-xs font-black text-neutral-600">{title.trigger_type || '标题'}</span><span className="font-bold">{title.title}</span></div><div className="mt-1 text-xs text-neutral-500">公式 #{title.formula_id} · {title.reason}</div></button>)}</div></section>
-        {draft.cover_title_candidates?.length ? <section className="border border-neutral-200 bg-white p-4"><div className="text-sm font-black">备用封面标题</div><div className="mt-3 space-y-2">{draft.cover_title_candidates.map((item, index) => <div className={`border px-3 py-2 text-xs ${item.template_id === card?.renderer_id ? 'border-red-300 bg-red-50' : 'border-neutral-200 bg-white'}`} key={`${item.template_id}-${item.title}-${index}`}><div className="font-black text-neutral-500">{item.template_id} · {item.title_type || '封面'}</div><div className="mt-1 text-base font-black text-neutral-900">{item.title}</div>{item.subtitle ? <div className="mt-1 font-semibold text-neutral-600">{item.subtitle}</div> : null}{item.reason ? <div className="mt-1 text-neutral-400">{item.reason}</div> : null}</div>)}</div></section> : null}
+        <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between gap-3"><div><div className="text-sm font-black">导出前临时换标题</div><div className="mt-1 text-xs text-neutral-500">文字标题、封面标题和副标题成组切换，避免错配</div></div><div className="text-xs font-bold text-neutral-500">当前第 {selectedCandidateIndex + 1} 组</div></div>{isImageCover ? <div className="mt-3 border border-amber-200 bg-amber-50 p-3 text-xs font-semibold text-amber-900">该封面已经由 AI 生成，临时换标题需要重新生图，因此这里保持锁定。</div> : <div className="mt-3 space-y-2">{draft.title_candidates.map((title, index) => { const coverTitle = draft.cover_title_candidates?.[index]; const active = index === selectedCandidateIndex; return <button type="button" className={`block w-full border px-3 py-3 text-left ${active ? 'border-red-400 bg-red-50' : 'border-neutral-200 hover:border-neutral-400'}`} key={`${title.title}-${index}`} onClick={() => selectCandidate(index)}><div className="flex items-center justify-between gap-2"><span className="bg-neutral-100 px-2 py-0.5 text-xs font-black text-neutral-600">{title.trigger_type || '标题'}</span><span className="text-xs font-bold text-neutral-400">第 {index + 1} 组</span></div><div className="mt-2 font-bold">文字标题：{title.title}</div><div className="mt-1 text-sm font-black text-red-800">封面标题：{coverTitle?.title || draft.cover.title}</div>{coverTitle?.subtitle ? <div className="mt-1 text-xs font-semibold text-neutral-600">副标题：{coverTitle.subtitle}</div> : null}</button>; })}</div>}</section>
+        {coverSkins.length > 1 && !isImageCover ? <section className="border border-neutral-200 bg-white p-4"><div className="text-sm font-black">导出前临时换底图</div><div className="mt-1 text-xs text-neutral-500">只改变纸张或黑板质感，不改变现有排版</div><div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-4">{coverSkins.map(skin => <button type="button" key={skin.id} onClick={() => selectSkin(skin.id)} className={`border p-2 text-left text-xs font-bold ${selectedSkinId === skin.id ? 'border-red-400 bg-red-50' : 'border-neutral-200 bg-white hover:border-neutral-400'}`}><span className="mb-2 block h-8 w-full border border-black/10" style={{ background: skin.swatch }} /><span>{skin.label}</span></button>)}</div></section> : null}
         <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between"><div className="text-sm font-black">自动检查</div><span className={`px-2 py-1 text-xs font-bold ${draft.checks.issues.length ? 'bg-red-100 text-red-700' : draft.checks.warnings?.length ? 'bg-amber-100 text-amber-800' : 'bg-green-100 text-green-700'}`}>{draft.checks.issues.length ? '需要调整' : draft.checks.warnings?.length ? '通过，有提醒' : '通过'}</span></div><div className="mt-3 grid gap-2 text-sm sm:grid-cols-2"><Check label="标题与封面一致" ok={draft.checks.title_cover_consistent} /><Check label="模板容量正常" ok={draft.checks.template_capacity_ok} /><Check label="商品事实有依据" ok={draft.checks.product_claims_grounded} /><Check label="内容密度达标" ok={draft.checks.content_density_ok} /></div>{draft.checks.warnings?.length ? <ul className="mt-3 space-y-1 text-xs leading-relaxed text-amber-800">{draft.checks.warnings.map(issue => <li key={issue}>提醒 · {formatWarning(issue)}</li>)}</ul> : null}</section>
         <section className="border border-neutral-200 bg-white p-4"><div className="flex items-center justify-between"><div className="text-sm font-black">法语与考试事实审校</div><span className={`px-2 py-1 text-xs font-bold ${draft.accuracy_audit.approved ? 'bg-green-100 text-green-700' : 'bg-amber-100 text-amber-800'}`}>{draft.accuracy_audit.approved ? '通过' : '已修正/需留意'}</span></div><p className="mt-2 text-xs text-neutral-500">自动修正 {draft.accuracy_audit.corrected_count} 处</p>{draft.accuracy_audit.issues.length ? <ul className="mt-3 space-y-1 text-xs leading-relaxed text-amber-900">{draft.accuracy_audit.issues.map(issue => <li key={issue}>· {issue}</li>)}</ul> : null}</section>
         {card ? <a className="block border border-neutral-300 bg-white px-4 py-3 text-center text-sm font-bold" href={card.reference_image}>查看参考原图</a> : null}
@@ -119,7 +156,7 @@ function formatWarning(issue: string) {
   return labels[issue] || issue;
 }
 
-function DynamicDirectoryCover({ draft, card, presetImageUrl, onImageReady }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; presetImageUrl?: string | null; onImageReady?: (url: string | null) => void }) {
+function DynamicDirectoryCover({ draft, card, presetImageUrl, onImageReady, skinId }: { draft: ReferenceDrivenDraft; card?: CompetitorCreativeCard; presetImageUrl?: string | null; onImageReady?: (url: string | null) => void; skinId?: string | null }) {
   const spec = card ? getCoverTemplateSpec(card.renderer_id) : undefined;
   if (card && spec?.renderMode === 'image_to_image') {
     if (presetImageUrl) {
@@ -127,7 +164,7 @@ function DynamicDirectoryCover({ draft, card, presetImageUrl, onImageReady }: { 
     }
     return <ReferenceImageGenerator draft={draft} card={card} onImageReady={onImageReady} />;
   }
-  return <ReferenceCoverRenderer renderer={card?.renderer_id || 'parchment_dense_directory'} payload={draft.cover} referenceImage={card?.reference_image} />;
+  return <ReferenceCoverRenderer renderer={card?.renderer_id || 'parchment_dense_directory'} payload={draft.cover} referenceImage={card?.reference_image} skinId={skinId} />;
 }
 
 type GeneratedImageState = { taskId?: string; status?: string; progress?: number; url?: string; error?: string };

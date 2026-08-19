@@ -1,5 +1,6 @@
 import { resourceCoverRefs } from './resource-cover-library';
 import type { CompetitorCreativeCard, CreativeCardRenderer } from '@/types/reference-workflow';
+import { PRODUCT_SHOWCASE_ANGLES } from './product-showcase-library';
 
 const rendererByReference: Record<string, CreativeCardRenderer> = {
   resource_01_grammar_parchment_red: 'parchment_dense_directory',
@@ -67,6 +68,36 @@ export const competitorCreativeCards: CompetitorCreativeCard[] = resourceCoverRe
     supported: rendererId !== 'ai_scene_overlay',
   };
 });
+
+// 知识库介绍模式使用真实资料截图做底图。它们和普通竞品母版分开命名，
+// 这样普通模式不会误选这些卡，showcase 模式也能在前台明确看到“截图+叠字”。
+const showcaseCards: CompetitorCreativeCard[] = [
+  ['directory', '知识库目录截图', '/showcase/delf_b2_writing/directory.png', '目录', '完整目录带来资料获得感和收藏理由'],
+  ['library_intro', '范文库说明截图', '/showcase/delf_b2_writing/library-intro.jpg', '范文库', '用真实模块说明资料怎么查、怎么练'],
+  ['sample_analysis', '范文解析截图', '/showcase/delf_b2_writing/sample-analysis.jpg', '范文解析', '用真实样张证明内容不是空目录'],
+  ['phrase_vocab', '句型词汇截图', '/showcase/delf_b2_writing/phrase-vocab.jpg', '句型词汇', '展示资料颗粒度和可直接使用的查阅价值'],
+].map(([type, name, image, contentLabel, click]) => ({
+  id: `showcase_delf_b2_${type}`,
+  name,
+  reference_image: image,
+  renderer_id: 'showcase_screenshot' as CreativeCardRenderer,
+  content_mechanism: `知识库介绍模式：${contentLabel}截图作为真实商品证据。`,
+  click_mechanism: click,
+  visual_mechanism: '保留原截图的真实纹理、光线和信息密度，只在安全区叠加本篇标题。',
+  suitable_audiences: ['准备DELF B2写作的学习者', '需要系统资料而不是零散技巧的人'],
+  suitable_pains: ['不知道资料包里具体有什么', '想先看内容质量再决定是否购买'],
+  required_payload: ['真实截图底图', '短封面标题', '一句副标题', '商品展示角度'],
+  forbidden_uses: ['普通知识点讲解', '与截图无关的考试科普', '课程或老师服务招募'],
+  density: 'high' as const,
+  supported: true,
+}));
+
+export const productShowcaseCreativeCards = showcaseCards;
+// 截图叠字是“介绍知识库”专用素材，普通知识分享模式必须排除。
+export const standardCreativeCards = competitorCreativeCards.filter(card => card.renderer_id !== 'showcase_screenshot');
+export const showcaseAngleLabels = PRODUCT_SHOWCASE_ANGLES.map(item => item.label);
+
+competitorCreativeCards.push(...showcaseCards);
 
 export function getCompetitorCreativeCard(id: string): CompetitorCreativeCard | undefined {
   return competitorCreativeCards.find(card => card.id === id);

@@ -143,6 +143,28 @@ export function InnerPageRenderer({ page, registerNode }: InnerPageRendererProps
   const fingerprint = `${page.page_title}|${page.lead}|${page.bullets.join('|')}|${variant}`;
   const fitRef = useAutoFitScale<HTMLElement>([fingerprint], { min: 0.4, max: 1, step: 0.025 });
 
+  if (page.showcase_asset_id) {
+    return (
+      <article
+        ref={(node) => { fitRef.current = node; registerNode?.(node); }}
+        className="aspect-[3/4] overflow-hidden border border-[#d9dce3] bg-[#f7f7f5] p-[7%] text-[#202124] shadow-sm"
+        style={{ containerType: 'inline-size' }}
+      >
+        <div className="flex items-center justify-between text-[11px] font-semibold text-[#7b8190]" style={{ fontSize: 'clamp(9px, 2.3cqw, 13px)' }}>
+          <span>☷ 知识库 · {page.showcase_asset_label || '资料卡'}</span><span>P{page.page_no}</span>
+        </div>
+        <div className="mt-[7%] flex items-center gap-2 border-b border-[#e2e4e8] pb-[4%]" style={{ fontSize: 'clamp(10px, 2.7cqw, 16px)' }}>
+          <span className="h-2 w-2 rounded-full bg-[#3b82f6]" /><span className="font-semibold text-[#686f7d]">商品资料页</span>
+        </div>
+        <h3 className="mt-[7%] font-black leading-tight" style={{ fontSize: 'clamp(18px, 6.2cqw, 38px)' }}>{page.page_title}</h3>
+        <p className="mt-[4%] rounded-md bg-[#eef4ff] p-[4%] font-semibold leading-relaxed text-[#315b9a]" style={{ fontSize: 'clamp(11px, 3.45cqw, 20px)' }}>{page.lead}</p>
+        <div className="mt-[6%] space-y-[4%]" style={{ fontSize: 'clamp(11px, 3.55cqw, 21px)' }}>
+          {page.bullets.slice(0, 6).map((bullet, index) => <div key={`${bullet}-${index}`} className="flex gap-3 border-b border-[#e6e7eb] pb-[3%] leading-relaxed"><span className="font-bold text-[#3b82f6]">{String(index + 1).padStart(2, '0')}</span><span>{bullet}</span></div>)}
+        </div>
+      </article>
+    );
+  }
+
   const articleStyle: CSSProperties = {
     containerType: 'inline-size',
     backgroundColor: cfg.backgroundColor,
@@ -170,6 +192,11 @@ export function InnerPageRenderer({ page, registerNode }: InnerPageRendererProps
         <span>P{page.page_no}</span>
         <span>{page.page_type}</span>
       </div>
+      {page.showcase_asset_image ? (
+        <div className="mt-3 flex-shrink-0 overflow-hidden border border-black/10 bg-white/70" style={{ height: '25%', minHeight: 70 }}>
+          <img src={page.showcase_asset_image} alt={page.showcase_asset_label || '商品资料截图'} className="h-full w-full object-cover" />
+        </div>
+      ) : null}
       <h3 className={`flex-shrink-0 font-black leading-tight ${cfg.titleColor}`} style={{ marginTop: 'calc(1.25rem * var(--fit-scale, 1))', fontSize: 'clamp(14px, calc(6.2cqw * var(--fit-scale, 1)), 38px)' }}>
         {page.page_title}
       </h3>

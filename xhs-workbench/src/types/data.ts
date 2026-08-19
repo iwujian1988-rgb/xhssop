@@ -1,5 +1,5 @@
 // ---- 商品 ----
-export type ProductId = 'delf_b2_writing' | 'tef_tcf_canada';
+export type ProductId = 'delf_b2_writing' | 'tef_tcf_canada' | 'tcf_canada_writing_7day';
 
 export interface PresetSellingPoint {
   id: string;

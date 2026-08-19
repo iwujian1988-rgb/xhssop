@@ -118,6 +118,31 @@ export function autoFixCoverCapacity(cover: NormalizedCover, spec: CoverTemplate
       events.push(`分组「${section.heading}」${beforeCount}条→截断为${maxItems}条`);
     }
   }
+  for (const section of sections) {
+    if (spec.family !== 'directory' || section.items.length >= spec.itemsPerSection) continue;
+    const beforeCount = section.items.length;
+    const padWords = [
+      ['\u683c\u5f0f\u68c0\u67e5', '\u5199\u524d\u5148\u770b'],
+      ['\u79f0\u547c\u4e00\u81f4', '\u5199\u5b8c\u518d\u52fe'],
+      ['\u7ed3\u6784\u5bf9\u7167', '\u907f\u514d\u6f0f\u9879'],
+      ['\u4f8b\u5b50\u843d\u5730', '\u653e\u5185\u9875\u5c55\u5f00'],
+      ['\u8003\u524d\u590d\u76d8', '\u6700\u540e\u901f\u67e5'],
+      ['\u8868\u8fbe\u66ff\u6362', '\u6309\u573a\u666f\u7528'],
+      ['\u903b\u8f91\u8854\u63a5', '\u8fde\u63a5\u66f4\u987a'],
+      ['\u5b57\u6570\u63a7\u5236', '\u522b\u5199\u8d85\u65f6'],
+    ];
+    const existing = new Set(section.items.map(item => `${item.primary}|${item.secondary || ''}`));
+    for (const [primary, secondary] of padWords) {
+      if (section.items.length >= spec.itemsPerSection) break;
+      const key = `${primary}|${secondary}`;
+      if (existing.has(key)) continue;
+      section.items.push({ primary, secondary });
+      existing.add(key);
+    }
+    if (section.items.length > beforeCount) {
+      events.push(`\u5206\u7ec4\u300a${section.heading}\u300b${beforeCount}\u6761\u2192\u8865\u9f50\u5230${section.items.length}\u6761`);
+    }
+  }
   while (sections.length > maxSections) {
     const last = sections.pop()!;
     const target = sections[sections.length - 1];
@@ -878,6 +903,14 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   titleCandidates = titlePolish.titleCandidates;
   selectedTitle = titlePolish.selectedTitle;
   cover = titlePolish.cover;
+  selectedTitle = insurePublishableTextTitle(selectedTitle, titleCandidates, input.topic, input.productId, input.card.renderer_id, {
+    seedId: input.topic.seed_id,
+    productId: input.productId,
+    recentSelectedTitles: recentTitleFingerprints?.selectedTitles,
+    recentAllCandidates: recentTitleFingerprints?.allCandidates,
+    recentTitleTemplates: recentTitleFingerprints?.selectedTitleTemplates,
+  });
+  cover = insurePublishableCoverTitle(cover, input.topic, input.productId, input.card.renderer_id, recentTitleFingerprints);
 
   // 最终兜底：polish 阶段可能再次注入跨商品身份词（TEF/TCF 等），final_gate
   // 会判 product_identity_mismatch 直接挂掉整个 job。再走一次 strip + autofix，
@@ -986,13 +1019,39 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     }
   }
 
+  selectedTitle = insurePublishableTextTitle(selectedTitle, titleCandidates, input.topic, input.productId, input.card.renderer_id, {
+    seedId: input.topic.seed_id,
+    productId: input.productId,
+    recentSelectedTitles: recentTitleFingerprints?.selectedTitles,
+    recentAllCandidates: recentTitleFingerprints?.allCandidates,
+    recentTitleTemplates: recentTitleFingerprints?.selectedTitleTemplates,
+  });
+  cover = insurePublishableCoverTitle(cover, input.topic, input.productId, input.card.renderer_id, recentTitleFingerprints);
   const finalCoreIssues = getCoreIssues(titleCandidates, cover, input.card.renderer_id, input.evidence, input.productId);
   coreWarnings = finalCoreIssues.filter(issue => !isBlockingCoreIssue(issue));
   const finalBlockingCoreIssues = finalCoreIssues.filter(isBlockingCoreIssue);
+  if (!selectedTitle || !isCompleteTitle(selectedTitle, 'text') || isWeakCommercialTitle(selectedTitle)) {
+    const anchoredFallback = chooseAnchoredTitleFallback(input.topic, input.productId, titleCandidates);
+    const candidateFallback = titleCandidates.find(c =>
+      c.title
+      && isCompleteTitle(c.title, 'text')
+      && !isWeakCommercialTitle(c.title)
+      && (!input.topic.seed_id || isTitleAnchoredToSeed(c.title, input.topic.seed_id)))?.title;
+    selectedTitle = anchoredFallback || candidateFallback || selectedTitle;
+    if (!selectedTitle || !isCompleteTitle(selectedTitle, 'text') || isWeakCommercialTitle(selectedTitle)) {
+      finalBlockingCoreIssues.push('selected_title_missing_or_weak');
+    }
+  }
   // 文字标题主题锚定终检：选出的 selected_title 必须命中本 seed 的关键词，
   // 否则宁可炸单返修也不发一篇标题与内容驴唇不对马嘴的笔记。
   if (input.topic.seed_id && selectedTitle && !isTitleAnchoredToSeed(selectedTitle, input.topic.seed_id)) {
-    finalBlockingCoreIssues.push('selected_title_off_topic');
+    const anchoredFallback = chooseAnchoredTitleFallback(input.topic, input.productId, titleCandidates);
+    if (anchoredFallback && isTitleAnchoredToSeed(anchoredFallback, input.topic.seed_id)) {
+      console.info(`[final-title-anchor] card=${input.card.id} "${selectedTitle}" -> "${anchoredFallback}"`);
+      selectedTitle = anchoredFallback;
+    } else {
+      finalBlockingCoreIssues.push('selected_title_off_topic');
+    }
   }
   const finalEditorialAllIssues = getEditorialIssues(innerPages, caption, seoKeywords, input.evidence, input.productId);
   editorialWarnings = finalEditorialAllIssues.filter(issue => !isBlockingEditorialIssue(issue));
@@ -1032,6 +1091,9 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
     }
     if (finalBlockingCoreIssues.includes('selected_title_off_topic')) {
       diagnostic += ` | off_topic_title: selected_title="${(selectedTitle || '').slice(0, 30)}" seed=${input.topic.seed_id} keywords=${getSeedTopicKeywords(input.topic.seed_id || '').slice(0, 4).join('/')}`;
+    }
+    if (finalBlockingCoreIssues.includes('selected_title_missing_or_weak')) {
+      diagnostic += ` | selected_title_missing_or_weak: selected_title="${(selectedTitle || '').slice(0, 30)}"`;
     }
     if (finalBlockingCoreIssues.includes('cover_item_truncated')) {
       const truncated: string[] = [];
@@ -1920,6 +1982,11 @@ function ensurePublishableCaption(
 ) {
   const captionWithoutInlineTags = caption.replace(/#[\s\S]*$/, '').trim();
   let result = ensureCoreKeywordOpening(captionWithoutInlineTags || caption, keyword, seed)
+    .replace(/\u4e0d\u662f\u57cb\u5934\u5237\u9898\uff0c?\u800c\u662f/g, '\u5148\u522b\u53ea\u57cb\u5934\u5237\u9898\uff0c')
+    .replace(/\u4e0d\u662f([\u4e00-\u9fff]{1,18})\uff0c?\u800c\u662f/g, (_match, left: string) => `\u5148\u522b\u53ea${left}\uff0c`)
+    .replace(/\u8ba9\u7ed3\u6784\u4e0d\u518d/g, '\u5148\u628a\u7ed3\u6784\u62c6\u6e05\u695a')
+    .replace(/\u8ba9\u5199\u4f5c\u4e0d\u518d/g, '\u5199\u4e4b\u524d\u5148\u62c6\u6b65\u9aa4')
+    .replace(/\u8ba9([\u4e00-\u9fff]{1,12})\u4e0d\u518d([\u4e00-\u9fff]{0,12})/g, (_match, target: string, tail: string) => `${target}\u5148\u62c6\u6210\u53ef\u6267\u884c\u7684\u6b65\u9aa4${tail ? `\u3002${tail}` : ''}`)
     .replace(/on换成nous/g, '泛指 on 要看语境')
     .replace(/全程用vous/g, '称呼保持一致')
     .replace(/帮助你在练习中精准自查，高效提分/g, '帮助你在练习中更有方向地复盘')
@@ -2137,17 +2204,52 @@ function chooseSafeTitle(value: unknown, candidates: TitleCandidate[], fallback:
   const anchoredSafe = seedId ? baseSafe.filter(item => isTitleAnchoredToSeed(item.title, seedId)) : baseSafe;
   const safeCandidates = anchoredSafe.length ? anchoredSafe : baseSafe;
   const proposedCandidate = safeCandidates.find(item => item.title === proposed);
+  const safeFallback = getLastResortHumanTitle(productId, context);
   return ensureTextTitleDisplayIdentity(
-    proposedCandidate?.title || safeCandidates[0]?.title || candidates.find(item => isCompleteTitle(item.title, 'text'))?.title || fallback,
+    proposedCandidate?.title || safeCandidates[0]?.title || candidates.find(item => isCompleteTitle(item.title, 'text') && !isWeakCommercialTitle(item.title))?.title || safeFallback || fallback,
     productId,
   );
+}
+
+function getLastResortHumanTitle(productId: ProductId | undefined, context = '') {
+  if (productId === 'tef_tcf_canada') {
+    if (/EE大改|EE改革|IRCC|政策|法语通道/.test(context)) return 'TEF/TCF遇上EE大改还学吗？';
+    if (/退费|退款|报名费|退费申请/.test(context)) return 'TCF Canada退费怎么申请？';
+    if (/科技|IA|numérique|numerique/.test(context)) return 'TEF/TCF科技题不会说？';
+    if (/阅读|定位|做不完/.test(context)) return 'TEF/TCF阅读定位先看3类';
+    if (/主题词|600词|背词|词汇/.test(context)) return 'TEF/TCF主题词背了说不出？';
+    if (/60字|短题|字数限制/.test(context)) return 'TEF/TCF60字短题别写超';
+    if (/口语|开口|说不长/.test(context)) return 'TEF口语说不长先练展开';
+    if (/听力|复听|听不懂/.test(context)) return 'TCF听力听不懂先改复盘';
+    if (/CLB|自测|四科/.test(context)) return 'CLB7上不去先查弱科';
+    if (/写作|句型|作文/.test(context)) return 'TEF写作提分先练句型';
+    return 'TEF法语备考先查这几项';
+  }
+  if (productId === 'delf_b2_writing') {
+    if (/信号词|读题|审题|漏看|跑题/.test(context)) return 'DELF B2读题漏看信号词？';
+    if (/空白|紧张|启动|开考|十分钟|救回来/.test(context)) return 'B2写作开考空白怎么救？';
+    if (/议论文|骨架|流程|结构/.test(context)) return 'B2写作议论文骨架怎么搭？';
+    if (/复习|顺序|路径|阶段|诊断|复盘/.test(context)) return 'B2写作复习顺序别乱排';
+    if (/交卷|检查|自查|评分/.test(context)) return 'B2写作交卷前先查扣分点';
+    if (/第一句|开头|落笔|憋不出|开头句式/.test(context)) return 'B2写作第一句写不出？';
+    if (/范文|模板/.test(context)) return 'DELF B2写作范文别硬背';
+    if (/词汇|主题词/.test(context)) return 'B2写作主题词按场景背';
+    if (/观点卡|观点|论据|例子/.test(context)) return 'B2写作没观点先看例子';
+    if (/格式|文体|正式信|论坛|投诉/.test(context)) return 'DELF B2写作格式分先查';
+    return 'B2写作考前先查这张表';
+  }
+  return '';
 }
 
 function ensureTextTitleDisplayIdentity(value: string, productId?: ProductId) {
   const title = sanitizeTitleLikeText(value);
   if (!productId || hasForbiddenProductIdentity(productId, title)) return title;
   if (productId === 'tef_tcf_canada' && !/TEF\s*\/\s*TCF|TEF.{0,4}TCF|TCF.{0,4}TEF/i.test(title)) {
-    const withIdentity = `TEF/TCF${title.replace(/^TEF\/TCF[：:]/i, '').replace(/^法语/, '')}`;
+    const cleaned = title
+      .replace(/^TEF\s*(?:Canada|加拿大)?[：:，,、\s]*/i, '')
+      .replace(/^TCF\s*(?:Canada|加拿大)?[：:，,、\s]*/i, '')
+      .replace(/^法语/, '');
+    const withIdentity = `TEF/TCF${cleaned}`;
     return isCompleteTitle(withIdentity, 'text') ? withIdentity : title;
   }
   if (productId === 'delf_b2_writing' && !hasRequiredProductIdentity(productId, title)) {
@@ -2219,9 +2321,9 @@ function callTitleEditor(input: {
   const spec = getCoverTemplateSpec(input.card.renderer_id);
   const titleKeywords = getTitleReferenceKeywords(input.productId);
   const avoidedKeywords = getAvoidedLowTrafficKeywords(input.productId);
-  // 之前会按 seed 的 title_trigger_types 预筛 6 个 75 公式喂给 LLM 套用。
-  // 这导致 LLM 写出来的标题都按固定模板拼，2/2 都套到 emotion_choice。
-  // 删除：让 LLM 看 viral_references 的真实爆款标题自由起，不再套公式。
+  // 标题不能完全自由发挥。上一版把 75 公式降级成“灵感库”，再放开
+  // free_original，实测会退化成“资料太散/拖后腿/卡住”这种不说人话的标题。
+  // 这里改成：先选心理触发器，再自然仿写标题；公式是方向，不是可照抄句子。
   const formulaSeed = `${input.card.id}|${input.topic.seed_id || input.topic.id}`;
   // polish 阶段也算返修（第二次 rewrite=true 时尤其需要新参考）。
   // 选不同爆款让 LLM 不被首次的标题锚定。
@@ -2295,8 +2397,9 @@ function callTitleEditor(input: {
         '参考 viral_references 里 2 篇爆款的真实 title 字段，学它们的钩子切入角度和句子节奏。每篇爆款的标题都不一样，你也不要套用任何固定标题模板，更不要照抄爆款原话。',
         '文字标题比封面标题更完整：必须像用户会点开的笔记标题，而不是图片上的大字。可以包含搜索词、完整钩子和具体承接。',
         '文字标题参考 viral_references 里 2 篇爆款的 title 字段，学钩子结构（反差/数字/痛点前置/具体场景），但必须用本选题的 DELF/法语内容，不要抄爆款的具体话题。',
-        '标题不是概括内容，而是制造点击理由。先选心理钩子，再写标题。',
-        '可用钩子：恐惧损失、好奇缺口、认知冲突、场景代入、结果承诺、资料稀缺、大全收藏、时效更新。',
+        '标题不是概括内容，而是制造点击理由。必须先选心理钩子，再写标题；每个候选的 trigger_type 必须写清楚，不允许空泛写“自由发挥”。',
+        '可用钩子：恐惧损失、好奇缺口、认知冲突、场景代入、结果承诺、资料稀缺、大全收藏、时效更新。至少 4 种类型要分别使用不同钩子。',
+        '必须避开的“不说人话/廉价标题”词：资料太散、拖后腿、白背、写作任务、卡住、卡在这一步、长啥样、先搞对、蒙答案、蒙对、邪修、高概率真题、按月整理、月度更新、真题预测。出现这些词的候选会被程序直接丢弃。',
         '每个文字标题至少命中 2 个张力点：具体人群/场景、真实痛点、悬念缺口、反常识、损失感、数字锚点、搜索关键词。',
         '不要为了不超20字写成10字左右的短标题；标题要尽量写到14-18字，把对象、场景、痛点、结果说清楚。禁止结尾悬空，如“别再只盯语”“问题出在”“格式不”“这5个常”“早该”“每”“哪科最”。',
         '尽量覆盖资料型/解释型/强钩子型/情绪型/结果型这 5 种类型；同一类型可以多写一个强候选，让程序从强候选里选最好的。',
@@ -2477,9 +2580,30 @@ function normalizeTitleEditorResult(
     seedContext.recentAllCandidates,
     seedContext.recentTitleTemplates,
   );
+  selectedTitle = chooseTemplateAwareTitle(
+    selectedTitle,
+    titleCandidates,
+    input.cover,
+    input.topic,
+    input.productId,
+    input.card.renderer_id,
+    seedContext,
+  );
+  if (input.topic.seed_id && !isTitleAnchoredToSeed(selectedTitle, input.topic.seed_id)) {
+    const anchoredFallback = chooseAnchoredTitleFallback(input.topic, input.productId, titleCandidates);
+    if (anchoredFallback) selectedTitle = anchoredFallback;
+  }
   let selectedCoverTitle = normalizeCoverTitleCandidate(record.selected_cover_title, input.card.renderer_id, input.productId);
   const fallbackCoverTitle = buildCoverTitleFallback(input.topic, input.productId, input.card.renderer_id, input.cover, input.recentTitleFingerprints?.coverTitles, input.recentTitleFingerprints?.coverSubtitles);
   if (!selectedCoverTitle || isWeakCoverTitle(selectedCoverTitle.title, input.productId)) {
+    selectedCoverTitle = fallbackCoverTitle;
+  }
+  if (
+    input.topic.seed_id
+    && selectedCoverTitle
+    && !hasSpecificSeedAnchor(`${selectedCoverTitle.title} ${selectedCoverTitle.subtitle || ''}`, input.topic.seed_id)
+    && hasSpecificSeedAnchor(`${fallbackCoverTitle.title} ${fallbackCoverTitle.subtitle || ''}`, input.topic.seed_id)
+  ) {
     selectedCoverTitle = fallbackCoverTitle;
   }
   // 封面去重：LLM 重写的 cover.title 若与近期 job 撞款（"B2作文先查这25项"被反复用），
@@ -2526,6 +2650,12 @@ function normalizeTitleEditorResult(
     };
   }
   ({ titleCandidates, selectedTitle } = syncTitlesWithCoverCounts(titleCandidates, selectedTitle, cover));
+  if (input.topic.seed_id && !isTitleAnchoredToSeed(selectedTitle, input.topic.seed_id)) {
+    const anchoredFallback = chooseAnchoredTitleFallback(input.topic, input.productId, titleCandidates);
+    if (anchoredFallback) selectedTitle = anchoredFallback;
+  }
+  selectedTitle = insurePublishableTextTitle(selectedTitle, titleCandidates, input.topic, input.productId, input.card.renderer_id, seedContext);
+  cover = insurePublishableCoverTitle(cover, input.topic, input.productId, input.card.renderer_id, input.recentTitleFingerprints);
   const alternateCoverTitles = Array.isArray(record.alternate_cover_titles)
     ? record.alternate_cover_titles
       .map(item => normalizeCoverTitleCandidate(item, undefined, input.productId))
@@ -2590,6 +2720,16 @@ const DELF_FALLBACK_IDENTITY = ['DELF B2写作', '法语B2写作', 'B2写作', '
 const TEF_FALLBACK_IDENTITY = ['TEF/TCF', 'TEF/TCF备考', '加拿大法语', 'CLB7'];
 
 const DELF_FALLBACK_BRANCHES: Record<string, CoverFallbackParts> = {
+  title_read: {
+    subjects: ['读题', '信号词', '审题'],
+    problems: ['漏看就跑题', '写前先圈出来', '别急着下笔'],
+    subtitles: ['先圈任务信号词再动笔', '写前写后都对一次题目', '跑题常出在第一步'],
+  },
+  brain_blank: {
+    subjects: ['开考十分钟', '大脑空白', '落笔前'],
+    problems: ['先救回来', '先做这三步', '别硬憋开头'],
+    subtitles: ['先让脑子启动再写', '开考空白也能拉回来', '按动作走比硬想快'],
+  },
   check: {
     subjects: ['交卷前', '写完', '评分点'],
     problems: ['别急着合笔', '先扫一遍再交', '对照着过完', '还来得及补'],
@@ -2599,6 +2739,11 @@ const DELF_FALLBACK_BRANCHES: Record<string, CoverFallbackParts> = {
     subjects: ['正式信', '论坛稿', '文体', '开头结尾'],
     problems: ['先判对再写', '别混着套', '写错就白练'],
     subtitles: ['判错文体整篇都偏', '格式分先稳稳拿到手', '两种文体分开过一遍'],
+  },
+  formal_opening: {
+    subjects: ['正式信开头', '第一句', '开头模板'],
+    problems: ['别现场硬编', '30秒先定下来', '别一上来就卡'],
+    subtitles: ['按写信目的选开头', '第一句定了后面才顺', '先把礼貌和目的说清楚'],
   },
   model: {
     subjects: ['范文', '好句子', '范文结构'],
@@ -2638,6 +2783,16 @@ const DELF_FALLBACK_BRANCHES: Record<string, CoverFallbackParts> = {
 };
 
 const TEF_FALLBACK_BRANCHES: Record<string, CoverFallbackParts> = {
+  policy: {
+    subjects: ['EE政策', '法语通道', 'IRCC消息'],
+    problems: ['先看清再决定', '别被截图带偏', '先分清草案和定稿'],
+    subtitles: ['先看政策进度再下注', '以IRCC公开信息为准', '别把传闻当定稿'],
+  },
+  refund: {
+    subjects: ['TCF Canada退费', '报名费', '退费流程'],
+    problems: ['先看条件', '别只听传言', '申请前先查'],
+    subtitles: ['先确认条件再申请', '考后阶段按流程查', '具体政策以官方为准'],
+  },
   exam_choice: {
     subjects: ['选考', '报名', '换考'],
     problems: ['先看清再定', '别急着交钱', '选错多绕半年路'],
@@ -2653,10 +2808,35 @@ const TEF_FALLBACK_BRANCHES: Record<string, CoverFallbackParts> = {
     problems: ['卡壳别背答案', '骨架比流利要紧', '论据凑齐再说'],
     subtitles: ['展开结构比流利要紧', '按提问类型备论据', '过渡词要按场景选'],
   },
+  tech: {
+    subjects: ['科技主题', 'IA题', '数字化论据'],
+    problems: ['先备词再展开', '别临场想论据', '按场景成组记'],
+    subtitles: ['科技题先备词和论据', 'IA和numérique放一组练', '先有材料才说得长'],
+  },
+  vocab: {
+    subjects: ['主题词', '600词', '场景词'],
+    problems: ['别散着背', '放到场景里记', '背完要能说出来'],
+    subtitles: ['按场景背才用得上', '先分主题再背表达', '能进回答的词才算背过'],
+  },
   listening: {
     subjects: ['听力', '精听', '语速'],
     problems: ['别只猛刷题', '复听顺序先搞对', '跟不上先慢速练'],
     subtitles: ['精听步骤对了再上量', '复听按这个顺序走', '先听懂了再提语速'],
+  },
+  reading: {
+    subjects: ['阅读定位', '阅读提速', '答案位置'],
+    problems: ['先找信号词', '别逐句硬读', '做不完先改顺序'],
+    subtitles: ['先定位再精读', '答案常跟着信号词出现', '提速先练找位置'],
+  },
+  writing: {
+    subjects: ['写作时态', '写作句型', '写作展开'],
+    problems: ['先判语境再写', '别套错位置', '错一点就影响表达'],
+    subtitles: ['先看语境再选时态', '句型放对位置才有用', '展开顺序比堆词更重要'],
+  },
+  short_writing: {
+    subjects: ['60字短题', 'Tâche 1', '短作文'],
+    problems: ['别写超也别空', '先定结构再写', '别一上来就铺太满'],
+    subtitles: ['短题先控字数和结构', '写满不等于写乱', '先把信息点排清楚'],
   },
   plan: {
     subjects: ['顺序', '每天安排', '冲刺期'],
@@ -2773,14 +2953,24 @@ function buildCoverTitleFallback(
   const identityPool = productId === 'tef_tcf_canada' ? TEF_FALLBACK_IDENTITY : DELF_FALLBACK_IDENTITY;
   const branches = productId === 'tef_tcf_canada' ? TEF_FALLBACK_BRANCHES : DELF_FALLBACK_BRANCHES;
   const branchKey = productId === 'tef_tcf_canada'
-    ? (/TEF还是TCF|选考|报名/.test(text) ? 'exam_choice'
+    ? (/EE大改|EE改革|IRCC|政策变化|法语通道政策|公开问询/.test(text) ? 'policy'
+      : /退费|退款|报名费退|退费申请|考试退费/.test(text) ? 'refund'
+      : /TEF还是TCF|选考|报名/.test(text) ? 'exam_choice'
       : /CLB|NCLC|自测|四科/.test(text) ? 'clb'
+      : /科技|IA|numérique|numerique|数字化/.test(text) ? 'tech'
+      : /阅读|提速|定位|做不完|答案位置/.test(text) ? 'reading'
+      : /主题词|600词|背词|词汇/.test(text) ? 'vocab'
       : /口语|开口|论据|过渡/.test(text) ? 'speaking'
       : /听力|精听|复听|语速/.test(text) ? 'listening'
+      : /60字|短题|字数限制/.test(text) ? 'short_writing'
+      : /写作|作文|时态|句型|展开|观点|论据/.test(text) ? 'writing'
       : /30天|计划|每天|2小时|路径|安排/.test(text) ? 'plan'
       : /资料包|资料|系统备考|product_showcase/.test(text) ? 'materials'
       : 'generic')
-    : (/评分|自评|检查|批改|交卷|写完|final/.test(text) ? 'check'
+    : (/信号词|读题|审题|漏看|跑题/.test(text) ? 'title_read'
+      : /空白|紧张|启动|开考|十分钟|救回来/.test(text) ? 'brain_blank'
+      : /评分|自评|检查|批改|交卷|写完|final/.test(text) ? 'check'
+      : /正式信开头|开头模板|第一句|开头卡/.test(text) ? 'formal_opening'
       : /题型|任务|格式|文体|正式信|论坛|建议|投诉/.test(text) ? 'format'
       : /范文|迁移|仿写/.test(text) ? 'model'
       : /词汇|主题词|单词/.test(text) ? 'vocab'
@@ -2831,6 +3021,8 @@ function isWeakCoverTitle(value: string, productId: ProductId) {
   const title = sanitizeTitleLikeText(value);
   if (!hasRequiredProductIdentity(productId, title)) return true;
   if (!isCompleteTitle(title, 'cover')) return true;
+  if (titleHookSignalCount(title) < 3) return true;
+  if (!hasUserRelationHook(title) && !/(?:\u5927\u5168|\u5408\u96c6|\u901f\u67e5|\u6e05\u5355|\u6a21\u677f|\u8303\u6587|\u771f\u9898|\u8bc4\u5206\u6807\u51c6|\u6279\u6539|\u8d44\u6599\u5305|\u77e5\u8bc6\u5e93|\u4e00\u9875|\u4e00\u5f20\u8868)/.test(title)) return true;
   if (/资料整理好了|知识点清单|怎么准备|这样准备|速查表$|资料包长啥样|整理好的知识库长啥样/.test(title)) return true;
   if (/^[A-Za-z0-9/ ]+[：:]/.test(title) && !/别|先|卡|丢|错|背|查|冲|救|总|白|差/.test(title)) return true;
   return false;
@@ -2847,6 +3039,31 @@ function isCompleteTitle(value: string, role: 'cover' | 'text') {
   if (/(?:先|把|给|的|和|与|在|还|最|这|这个|这里|怎么|问题出在|别再|早该|每|直|高频主|这\d+个常|先看这张)$/u.test(title)) return false;
   if (/[，,、：:；;。\s]$/u.test(title)) return false;
   return true;
+}
+
+export function titleLanguageIssue(value: string) {
+  const title = sanitizeTitleLikeText(value);
+  if (!title) return 'empty_title';
+  if (/T3/i.test(title) && /\u9ad8\u9891|\u9ad8\u6982\u7387|\u771f\u9898/.test(title) && !/\u5b98\u65b9|\u5185\u90e8|\u62bc\u9898/.test(title)) return '';
+  if (/\u641e\u5b9a|\u4e00\u5f20\u8868\u641e\u5b9a|\u5148\u641e\u5bf9/.test(title)) return 'stiff_easy_fix_phrase';
+  if (/\u8d44\u6599\u6574\u7406\u597d\u4e86|\u77e5\u8bc6\u5e93\u6574\u7406\u597d\u4e86/.test(title)) return 'product_manual_title';
+  if (/\u51b2\u4e0a\u53bb|\u60f3\u51b2\u4e0a\u53bb/.test(title)) return 'ad_style_result_phrase';
+  if (/资料太散|资料很散|资料太乱|资料乱/.test(title)) return 'ai_phrase_scattered_materials';
+  if (/正在拖后腿|拖后腿|拖分/.test(title)) return 'ai_phrase_dragging_score';
+  if (/正在白背|白背|白学/.test(title)) return 'ai_phrase_wasted_memory';
+  if (/资料包，一次看懂|资料包一次看懂|先看哪份资料|资料包怎么用|备考先查这张表|备考这次具体练什么/.test(title)) return 'product_manual_title';
+  if (/合笔|论坛稿别混着套|正式信.*论坛稿/.test(title)) return 'stiff_or_mismatched_exam_phrase';
+  if (/写作任务|任务识别|任务格式/.test(title)) return 'internal_exam_jargon';
+  if (/你的DELF\s*B2|你的法语B2|你的TEF|你的TCF/.test(title)) return 'awkward_second_person_exam';
+  if (/卡住|卡在这一步/.test(title)) return 'unnatural_stuck_phrase';
+  if (/长啥样|整理好的知识库长啥样|资料包长啥样/.test(title)) return 'low_value_curiosity';
+  if (/展开速查表|先搞对|资料怎么用才不乱|别再乱收了/.test(title)) return 'stiff_instruction_phrase';
+  if (/蒙答案|蒙对|蒙题|邪修/.test(title)) return 'cheap_test_tactic';
+  if (/高概率真题|真题预测|按月整理|月度更新|押题不是玄学/.test(title)) return 'unsupported_exam_source';
+  if (/^.{0,8}备考别平均用力$/.test(title)) return 'generic_advice_title';
+  if (/知识库长啥样|资料包，一次看懂|资料包一次看懂/.test(title)) return 'product_manual_title';
+  if (/^[^？?!！]{0,8}(?:怎么准备|这样准备|这样看|这样用|这样分|先选对|先看哪份资料)[？?]?$/.test(title)) return 'manual_style_title';
+  return '';
 }
 
 function needsTitleRewrite(
@@ -2868,6 +3085,8 @@ function needsTitleRewrite(
     || selectedScore < 9
     || coverScore < 7
     || repeatedQuestionPattern
+    || Boolean(titleLanguageIssue(selectedTitle))
+    || Boolean(titleLanguageIssue(coverTitle))
     || !isCompleteTitle(selectedTitle, 'text')
     || !isCompleteTitle(coverTitle, 'cover');
 }
@@ -2889,16 +3108,43 @@ function polishHumanTitleText(value: string, productId?: ProductId) {
 }
 
 function isUnnaturalTitle(value: string) {
-  return /资料太散|正在拖后腿|拖后腿|正在白背|白背|写作任务|你的DELF\s*B2|你的法语B2|卡住/.test(value);
+  return Boolean(titleLanguageIssue(value));
 }
 
 function isNaturalTitle(value: string) {
   return !/测一测.{0,12}(?:评分维度|检查清单|句法库|词汇库)|按目的套用语|组合法语句|越改越口语/.test(value);
 }
 
+function titleHookSignalCount(value: string) {
+  const signals = [
+    /(?:\u8003\u524d|\u4ea4\u5377\u524d|\u5199\u5b8c|\u5f00\u53e3|\u9996\u8003|\u4e8c\u5237|\u81ea\u5b66|\u96f6\u57fa\u7840|\u51b2\u5206|\u51b2CLB7|\u5361CLB7|\u4e0a\u8003\u573a|\u6700\u540e\d*\u5929|\u6700\u540e\d*\u5206\u949f)/,
+    /(?:\u5199\u4e0d\u597d|\u5199\u4e0d\u987a|\u8bf4\u4e0d\u957f|\u8bf4\u4e0d\u51fa|\u4e0d\u4f1a\u8bf4|\u6ca1\u5f97\u8bf4|\u4e0d\u4f1a\u8bf4|\u542c\u4e0d\u61c2|\u80cc\u4e86\u7528\u4e0d\u4e0a|\u8001\u4e22\u5206|\u603b\u4e22\u5206|\u8dd1\u9898|\u51d1\u5b57\u6570|\u6ca1\u601d\u8def|\u4e0d\u4f1a\u5c55\u5f00|\u7528\u4e0d\u4e0a|\u6765\u4e0d\u53ca|\u6015\u6263\u5206|\u5bb9\u6613\u9519|\u4e0d\u4e8f|\u503c\u5f97\u5b66|\u600e\u4e48\u7533\u8bf7)/,
+    /(?:\u7b2c\u4e00\u53e5|\u5f00\u5934|\u843d\u7b14|\u6551\u6025|\u76f4\u63a5\u5957|\u522b\u786c\u7f16|\u522b\u4e71\u6392|\u522b\u4e71\u7ec3|\u522b\u4e71\u5237|\u522b\u518d|\u5148\u522b|\u5148\u770b|\u5148\u67e5|\u5343\u4e07\u522b|\u8b66\u544a|\u592a\u665a|\u540e\u6094|\u767d\u7ec3|\u767d\u80cc|\u8e29\u5751|\u4e22\u5206|\u6551\u547d)/,
+    /(?:EE\u5927\u6539|EE\u6539\u9769|IRCC|\u653f\u7b56|\u9000\u8d39|\u62a5\u540d\u8d39|\u7533\u8bf7|\u79d1\u6280\u9898|IA|\u8bae\u8bba\u6587|\u9aa8\u67b6|\u6d41\u7a0b|\u8def\u5f84|\u9636\u6bb5|\u590d\u4e60\u987a\u5e8f|\u5927\u5168|\u5408\u96c6|\u901f\u67e5|\u6e05\u5355|\u6a21\u677f|\u8303\u6587|\u771f\u9898|\u8bc4\u5206\u6807\u51c6|\u6279\u6539|\u8d44\u6599\u5305|\u77e5\u8bc6\u5e93|\u4e00\u9875|\u4e00\u5f20\u8868|\u6574\u7406\u597d)/,
+    /(?:\d+|\u4e00|\u4e8c|\u4e09|\u56db|\u4e94|\u516d|\u4e03|\u516b|\u4e5d|\u5341).{0,4}(?:\u4e2a|\u6761|\u7c7b|\u7ec4|\u5929|\u5206\u949f|\u9875|\u6b65|\u9879)/,
+    /(?:\u4e3a\u4ec0\u4e48|\u4e0d\u662f|\u53cd\u800c|\u5176\u5b9e|\u4ee5\u4e3a|\u539f\u6765|\u533a\u522b|\u771f\u76f8|\u539f\u56e0)/,
+    /(?:DELF|B2|TEF|TCF|CLB7|\u6cd5\u8bed|\u5199\u4f5c|\u53e3\u8bed|\u542c\u529b|\u4f5c\u6587)/i,
+  ];
+  return signals.reduce((sum, pattern) => sum + (pattern.test(value) ? 1 : 0), 0);
+}
+
+function hasUserRelationHook(value: string) {
+  return /(?:EE\u5927\u6539|EE\u6539\u9769|IRCC|\u653f\u7b56|\u9000\u8d39|\u62a5\u540d\u8d39|\u7533\u8bf7|\u79d1\u6280\u9898|IA|\u8bae\u8bba\u6587|\u9aa8\u67b6|\u6d41\u7a0b|\u590d\u4e60\u987a\u5e8f|\u8def\u5f84|\u9636\u6bb5|\u8003\u524d|\u4ea4\u5377\u524d|\u5199\u5b8c|\u7b2c\u4e00\u53e5|\u5f00\u5934|\u843d\u7b14|\u6551\u6025|\u5f00\u53e3|\u9996\u8003|\u4e8c\u5237|\u81ea\u5b66|\u96f6\u57fa\u7840|\u51b2CLB7|\u5361CLB7|\u5199\u4e0d\u597d|\u5199\u4e0d\u987a|\u8bf4\u4e0d\u957f|\u8bf4\u4e0d\u51fa|\u4e0d\u4f1a\u8bf4|\u6ca1\u5f97\u8bf4|\u542c\u4e0d\u61c2|\u80cc\u4e86\u7528\u4e0d\u4e0a|\u8001\u4e22\u5206|\u8dd1\u9898|\u51d1\u5b57\u6570|\u6ca1\u601d\u8def|\u4e0d\u4f1a\u5c55\u5f00|\u6765\u4e0d\u53ca|\u6015\u6263\u5206|\u683c\u5f0f\u5206|\u8303\u6587|\u6a21\u677f|\u771f\u9898|\u8bc4\u5206\u6807\u51c6)/.test(value);
+}
+
+function isBlandTitle(value: string) {
+  if (/[？?!！]/.test(value) && /法语|DELF|B2|TEF|TCF|CLB|Canada|加拿大/i.test(value) && hasUserRelationHook(value)) {
+    return false;
+  }
+  return /(?:\u8d44\u6599\u6574\u7406\u597d\u4e86|\u77e5\u8bc6\u70b9\u6e05\u5355|\u600e\u4e48\u51c6\u5907|\u8fd9\u6837\u51c6\u5907|\u5b66\u4e60\u65b9\u6cd5|\u5185\u5bb9\u6574\u7406|\u600e\u4e48\u7528\u624d\u4e0d\u4e71|\u901f\u67e5\u8868|\u5c55\u5f00\u901f\u67e5\u8868|\u77e5\u8bc6\u5e93\u957f\u5565\u6837|\u5148\u6536\u85cf|\u6362\u7740\u7528)$/.test(value)
+    || /^.{0,10}(?:\u8d44\u6599|\u6e05\u5355|\u6307\u5357|\u624b\u518c|\u77e5\u8bc6\u5e93)$/.test(value)
+    || titleHookSignalCount(value) < 3;
+}
+
 function isWeakCommercialTitle(value: string) {
   if (isUnnaturalTitle(value)) return true;
-  if (!/[？?!！]/.test(value) && !/\d/.test(value) && !/别再|先别|警告|常犯|总|越|反而|像A2|不高级|卡住|卡在|跑题|白费|白练|翻车|瞎练|丢分|错过|后悔|漏|错|太晚|不懂|不会|乱|别扭|差在哪|问题在这|一页|交卷前|考前/i.test(value)) {
+  if (isBlandTitle(value)) return true;
+  if (!/[？?!！]/.test(value) && !/\d/.test(value) && !/别再|先别|警告|常犯|总|越|反而|像A2|不高级|卡壳|卡顿|上不去|写不好|说不长|说不出|不会说|没得说|背了用不上|跑题|白费|白练|翻车|瞎练|丢分|错过|后悔|漏|错|太晚|不懂|不会|乱|别扭|差在哪|问题在这|一页|交卷前|考前|第一句|开头|落笔|救急|直接套|收藏|速查|大全/i.test(value)) {
     return true;
   }
   return /^(?:法语|DELF|B2|TEF|TCF).{0,8}(?:知识点|学习方案|资料|清单|指南|手册|怎么准备|这样准备|这样看|这样用|这样分|先看|先选对)/.test(value)
@@ -2908,19 +3154,25 @@ function isWeakCommercialTitle(value: string) {
 
 function titleImpactScore(value: string, context?: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> }): number {
   let score = 0;
-  if (isUnnaturalTitle(value)) score -= 12;
+  if (titleLanguageIssue(value)) score -= 60;
   if (/法语|DELF|B2|TEF|TCF/i.test(value)) score += 3;
   if (/\d/.test(value)) score += 2;
+  score += Math.min(8, titleHookSignalCount(value) * 2);
+  if (hasUserRelationHook(value)) score += 4;
+  if (isBlandTitle(value)) score -= 10;
   if (/一页|这张表|这几类|这\d+[处类项步句个]|清单|体系|地图/.test(value)) score += 2;
   // 钩子信号（2026-08-16 前台验收：11 job 标题 7/7 全是资料目录型，"没让人
   // 好奇点进去"）。疑问钩子/损失反差/考试时刻各一次性加分，AI 目录腔扣分。
   // 三类合计封顶 +8，仍低于句式复读 -12——钩子救不活本批已用句式，多样性不破。
-  if (/[？?]/.test(value)) score += 3;
-  if (/(翻车|白练|白费|丢分|卡在|错过|后悔|别再|瞎练)/.test(value)) score += 3;
-  if (/(模考|考场|交卷|开考|考完|出分|首考)/.test(value)) score += 2;
+  if (/[？?]/.test(value)) score += /^(?:法语|DELF|B2|TEF|TCF).{0,12}怎么/.test(value) ? 1 : 3;
+  if (/(翻车|白练|白费|丢分|错过|后悔|别再|瞎练|写不好|说不长|上不去|背了用不上|总丢|老丢|一开口就短)/.test(value)) score += 4;
+  if (/(模考|考场|交卷|开考|考完|出分|首考|考前|上考场)/.test(value)) score += 2;
+  if (/(的人|考生|零基础|上班族|自学|考前\d+天|首考|二刷)/.test(value)) score += 2;
+  if (/(先看|先查|先收藏|收藏|别急着|别先|先停)/.test(value)) score += 2;
   if (/(量化|一站式|全覆盖|全方位)/.test(value)) score -= 4;
-  if (/怎么准备|这样准备|学习方案|知识点|指南|手册|内容整理/.test(value)) score -= 5;
+  if (/怎么准备|这样准备|学习方案|知识点|指南|手册|内容整理|怎么用才|长啥样/.test(value)) score -= 5;
   if (/^法语B2写作[:：].{2,}$/.test(value)) score -= 2;
+  if (/^.{2,12}[？?].{2,12}$/.test(value) && !/(别|先|错|丢|上不去|写不好|说不长|差在哪|为什么)/.test(value)) score -= 2;
   if (value.length > 20) score -= 2;
   if (value.length < 9) score -= 1;
   // 主题锚定 + SEO 软校验：未传 context 时退回老逻辑（保持调用兼容）。
@@ -2965,6 +3217,237 @@ function titleSelectionScore(value: string, context: string, seedContext?: { see
   return titleImpactScore(value, seedContext) + titleContextFitScore(value, context);
 }
 
+function chooseTemplateAwareTitle(
+  selectedTitle: string,
+  candidates: TitleCandidate[],
+  cover: NormalizedCover,
+  topic: MigratedTopic,
+  productId: ProductId,
+  rendererId: CreativeCardRenderer,
+  seedContext: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> },
+) {
+  const context = `${cover.title} ${cover.subtitle} ${topic.topic} ${topic.pain} ${topic.content_promise}`;
+  const safe = candidates
+    .filter(item => isNaturalTitle(item.title) && !isWeakCommercialTitle(item.title) && isCompleteTitle(item.title, 'text'))
+    .filter(item => !topic.seed_id || isTitleAnchoredToSeed(item.title, topic.seed_id));
+  if (!safe.length) return ensureTextTitleDisplayIdentity(selectedTitle, productId);
+  const preferredTypes = getPreferredTitleTypesForTemplate(rendererId, topic.topic_type);
+  const score = (item: TitleCandidate) => {
+    let s = titleSelectionScore(item.title, context, seedContext);
+    const typeIndex = item.title_type ? preferredTypes.indexOf(item.title_type) : -1;
+    if (typeIndex >= 0) s += 8 - typeIndex * 2;
+    if (item.title_type === '痛点型' && /资料|大全|合集|速查|体系|清单/.test(cover.title)) s -= 3;
+    if (item.title_type === '资料型' && /(经验|故事|感受|焦虑|救命)/.test(context)) s -= 3;
+    return s;
+  };
+  const best = safe.sort((a, b) => score(b) - score(a))[0];
+  const currentScore = titleImpactScore(selectedTitle, seedContext) + titleContextFitScore(selectedTitle, context);
+  const bestScore = score(best);
+  if (isWeakCommercialTitle(selectedTitle) || isUnnaturalTitle(selectedTitle) || bestScore >= currentScore + 4) {
+    return ensureTextTitleDisplayIdentity(best.title, productId);
+  }
+  return ensureTextTitleDisplayIdentity(selectedTitle, productId);
+}
+
+function insurePublishableTextTitle(
+  selectedTitle: string,
+  candidates: TitleCandidate[],
+  topic: MigratedTopic,
+  productId: ProductId,
+  rendererId: CreativeCardRenderer,
+  seedContext: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> },
+) {
+  const seedId = topic.seed_id || '';
+  const shouldReplace = !selectedTitle
+    || !isCompleteTitle(selectedTitle, 'text')
+    || isWeakCommercialTitle(selectedTitle)
+    || titleLanguageIssue(selectedTitle)
+    || (seedId && !isTitleAnchoredToSeed(selectedTitle, seedId))
+    || Boolean(seedContext.recentSelectedTitles?.has(fingerprintTitle(selectedTitle)));
+  if (!shouldReplace) return ensureTextTitleDisplayIdentity(selectedTitle, productId);
+  const pool = [
+    ...buildLocalHumanTitlePool(topic, productId, rendererId, 'text'),
+    ...candidates.map(item => item.title),
+    ...buildTopicLiteralFallbacks(topic, productId),
+  ];
+  const replacement = pickPublishableLocalTitle(pool, topic, productId, 'text', seedContext);
+  return replacement || ensureTextTitleDisplayIdentity(selectedTitle, productId);
+}
+
+function insurePublishableCoverTitle(
+  cover: NormalizedCover,
+  topic: MigratedTopic,
+  productId: ProductId,
+  rendererId: CreativeCardRenderer,
+  recent?: RecentTitleFingerprints,
+) {
+  const spec = getCoverTemplateSpec(rendererId);
+  const seedContext = {
+    seedId: topic.seed_id,
+    productId,
+    recentSelectedTitles: recent?.coverTitles,
+    recentAllCandidates: recent?.coverTitles,
+    recentTitleTemplates: recent?.selectedTitleTemplates,
+  };
+  const shouldReplace = isWeakCoverTitle(cover.title, productId)
+    || titleLanguageIssue(cover.title)
+    || Boolean(recent?.coverTitles.has(fingerprintTitle(cover.title)))
+    || (topic.seed_id && !hasSpecificSeedAnchor(`${cover.title} ${cover.subtitle}`, topic.seed_id));
+  if (!shouldReplace) return cover;
+  const pool = [
+    ...buildLocalHumanTitlePool(topic, productId, rendererId, 'cover'),
+    buildCoverTitleFallback(topic, productId, rendererId, cover, recent?.coverTitles, recent?.coverSubtitles).title,
+    getRendererCoverFallbackTitle(productId, rendererId, spec?.family),
+  ];
+  const replacement = pickPublishableLocalTitle(pool, topic, productId, 'cover', seedContext, spec);
+  return replacement ? { ...cover, title: replacement } : cover;
+}
+
+function pickPublishableLocalTitle(
+  pool: string[],
+  topic: MigratedTopic,
+  productId: ProductId,
+  role: 'cover' | 'text',
+  seedContext: { seedId?: string; productId?: ProductId; recentSelectedTitles?: Set<string>; recentAllCandidates?: Set<string>; recentTitleTemplates?: Map<string, number> },
+  spec?: CoverTemplateSpec,
+) {
+  const seedId = topic.seed_id || '';
+  const prepared = uniqueTitles(pool
+    .map(title => polishHumanTitleText(normalizeTitleIdentity(sanitizeTitleLikeText(title), productId), productId))
+    .filter(Boolean)
+    .filter(title => isCompleteTitle(title, role))
+    .filter(title => hasRequiredProductIdentity(productId, title) && !hasForbiddenProductIdentity(productId, title))
+    .filter(title => !titleLanguageIssue(title) && !isUnnaturalTitle(title))
+    .filter(title => role === 'text' ? !isWeakCommercialTitle(title) : !isWeakCoverTitle(title, productId))
+    .filter(title => role === 'text' || isCoverTitleLengthOk(spec, title.length))
+    .filter(title => !seedId || isTitleAnchoredToSeed(title, seedId) || hasSpecificSeedAnchor(title, seedId))
+    .filter(title => !seedContext.recentSelectedTitles?.has(fingerprintTitle(title))));
+  if (!prepared.length) return '';
+  const key = `${productId}|${topic.seed_id || topic.id}|${role}`;
+  return prepared
+    .map(title => ({
+      title,
+      score: titleImpactScore(title, seedContext)
+        + (hasSpecificSeedAnchor(title, seedId) ? 4 : 0)
+        + (/[？?]/.test(title) ? 1 : 0)
+        - ((seedContext.recentAllCandidates?.has(fingerprintTitle(title)) ? 4 : 0)),
+    }))
+    .sort((a, b) => b.score - a.score || stableHash(`${key}|${a.title}`) - stableHash(`${key}|${b.title}`))[0]?.title || '';
+}
+
+function uniqueTitles(values: string[]) {
+  const seen = new Set<string>();
+  return values.filter(value => {
+    const key = fingerprintTitle(value);
+    if (!value || seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
+export function buildLocalHumanTitlePool(
+  topic: MigratedTopic,
+  productId: ProductId,
+  rendererId: CreativeCardRenderer,
+  role: 'cover' | 'text',
+) {
+  const spec = getCoverTemplateSpec(rendererId);
+  const family = spec?.family || 'directory';
+  const text = `${topic.seed_id || ''} ${topic.topic} ${topic.pain} ${topic.content_promise} ${topic.content_shape}`;
+  const titles = productId === 'tef_tcf_canada'
+    ? buildTefLocalHumanTitles(text, topic.seed_id || '', family, role)
+    : buildDelfLocalHumanTitles(text, topic.seed_id || '', family, role);
+  return titles.map(title => clip(title, role === 'cover' ? 24 : 20));
+}
+
+function buildDelfLocalHumanTitles(text: string, seedId: string, family: ContentShape, role: 'cover' | 'text') {
+  const materialLike = ['directory', 'table', 'document', 'book', 'roadmap'].includes(family);
+  const pack = (items: string[]) => materialLike && role === 'cover'
+    ? [...items, 'DELF B2写作考前速查', 'B2写作资料这页先收藏']
+    : items;
+  if (seedId === 'delf_final_check' || /评分|自评|检查|批改|交卷|写完/.test(text)) {
+    return pack(['B2写作交卷前别漏这几项', 'DELF B2最后5分钟先查', 'B2写作老丢格式分先看', 'DELF B2扣分点整理好了']);
+  }
+  if (/正式信开头|开头模板|第一句|开头卡|开头句式|落笔|憋不出/.test(text)) {
+    return pack(['B2写作第一句写不出先看', 'DELF B2开头别硬编', 'B2正式信开头这样套', 'DELF B2落笔前先看这页']);
+  }
+  if (/题型|格式|文体|正式信|论坛|建议|投诉|任务/.test(text)) {
+    return pack(['DELF B2三类文体别混', 'B2写作格式分老丢先看', 'DELF B2读题先判文体', 'B2写作跑题多半是审题错']);
+  }
+  if (/范文|迁移|仿写/.test(text)) {
+    return pack(['DELF B2范文别整篇背', 'B2范文这样拆才会用', '法语B2范文别只收藏', 'DELF B2仿写先拆结构']);
+  }
+  if (/词汇|主题词|单词/.test(text)) {
+    return pack(['DELF B2主题词别散着背', 'B2写作词汇按主题整理', '法语B2词汇考前速查', 'B2写作词背了要会用']);
+  }
+  if (/句式|句型|句法/.test(text)) {
+    return pack(['DELF B2句型别乱套', 'B2写作句型按功能背', '法语B2句型考前速查', 'B2作文像A2先改句型']);
+  }
+  if (/连接词|衔接/.test(text)) {
+    return pack(['B2写作连接词别乱换', 'DELF B2衔接词这样分', 'B2作文不顺先查连接词', '法语B2连接词考前速查']);
+  }
+  if (/观点卡|观点|论据|论证|没思路/.test(text)) {
+    return pack(['B2写作没观点先拆场景', 'DELF B2观点别临场硬想', 'B2议论文没话写先看', 'DELF B2论据先按场景备']);
+  }
+  if (/议论文|骨架|流程|结构|段落展开/.test(text)) {
+    return pack(['B2议论文写散先搭骨架', 'DELF B2议论文先走流程', 'B2写作结构乱先看这页', 'DELF B2段落展开这样写']);
+  }
+  if (/资料库|知识库|资料包|备考资料|product_showcase/.test(text)) {
+    return ['DELF B2写作资料别乱收', 'B2写作考前资料这份够查', 'DELF B2写作资料合集', 'B2写作知识库先看目录'];
+  }
+  return ['DELF B2写作考前先查这页', 'B2写作写不好先查这一类', 'DELF B2写作别再瞎练', '法语B2写作扣分点先看'];
+}
+
+function buildTefLocalHumanTitles(text: string, seedId: string, family: ContentShape, role: 'cover' | 'text') {
+  const materialLike = ['directory', 'table', 'document', 'book', 'roadmap'].includes(family);
+  const pack = (items: string[]) => materialLike && role === 'cover'
+    ? [...items, 'TEF/TCF考前资料这页先看', 'CLB7备考资料先看目录']
+    : items;
+  if (seedId === 'tef_exam_choice' || /TEF还是TCF|选考|报名/.test(text)) {
+    return pack(['TEF还是TCF先别急着报', 'TEF/TCF选错后面全乱', '加拿大法语选考先看这表', 'TEF和TCF区别先看清']);
+  }
+  if (seedId === 'tef_clb7_self_test' || /CLB|NCLC|自测|四科/.test(text)) {
+    return pack(['CLB7一直上不去先自测', 'TEF/TCF四科差距先查清', '冲CLB7别四科平均用力', 'CLB7差在哪先看这页']);
+  }
+  if (seedId === 'tef_30_day_plan' || /30天|计划|每天|2小时|路径|安排/.test(text)) {
+    return pack(['TEF/TCF备考别平均用力', '上班族TEF每天1小时这样练', 'TEF/TCF考前30天这样排', 'CLB7备考先排弱科']);
+  }
+  if (seedId === 'tef_topic_vocab' || /词汇|主题词|600词|背词/.test(text)) {
+    return pack(['TEF主题词背了说不出', 'TEF/TCF主题词按场景背', 'TEF口语想说长先背场景词', 'TEF/TCF词汇别只会囤']);
+  }
+  if (/口语|开口|说不长|展开|T3/.test(text)) {
+    return pack(['TEF口语说不长先练展开', 'TCF口语T3考前先抓高频题', 'TEF/TCF口语别只背单词', 'TEF口语一开口就短先看']);
+  }
+  if (/听力|精听|复听|语速/.test(text)) {
+    return pack(['TEF/TCF听力别只猛刷题', 'TCF听力刷很多还听不懂', 'TCF听力先抓题型信号词', 'TEF听力考前先复盘']);
+  }
+  if (/阅读|提速|定位|做不完|答案位置/.test(text)) {
+    return pack(['TCF阅读做不完先练定位', 'TEF/TCF阅读别逐句硬读', 'TCF阅读提速先找答案位置', 'TCF阅读考前先练这步']);
+  }
+  if (/60字|短题|字数限制/.test(text)) {
+    return pack(['TEF写作60字短题别写超', '60字短题写不满先看结构', 'TEF写作短题先稳字数', 'TEF/TCF短题别乱展开']);
+  }
+  if (/资料|资料包|知识库|product_showcase/.test(text)) {
+    return ['TEF/TCF资料别只会囤', 'CLB7备考资料这样查', 'TEF/TCF备考资料合集', '加拿大法语资料先看目录'];
+  }
+  return ['TEF/TCF备考先查弱科', 'CLB7上不去先停一下', 'TEF/TCF别再瞎刷题', '加拿大法语备考先看这页'];
+}
+
+function getPreferredTitleTypesForTemplate(rendererId: CreativeCardRenderer, topicType?: MigratedTopic['topic_type']): TitleCandidateType[] {
+  const spec = getCoverTemplateSpec(rendererId);
+  if (topicType === 'product_showcase') return ['资料型', '结果型', '强钩子型', '情绪型', '解释型'];
+  if (spec?.family === 'table' || spec?.family === 'directory' || spec?.family === 'document') {
+    return ['资料型', '结果型', '强钩子型', '情绪型', '解释型'];
+  }
+  if (spec?.family === 'experience') {
+    return ['情绪型', '强钩子型', '结果型', '解释型', '资料型'];
+  }
+  if (spec?.family === 'pain') {
+    return ['情绪型', '痛点型', '强钩子型', '结果型', '解释型'];
+  }
+  return ['强钩子型', '情绪型', '结果型', '资料型', '解释型'];
+}
+
 function titleContextFitScore(value: string, context: string) {
   const titleTokens = titleSignalTokens(value);
   const contextTokens = new Set(titleSignalTokens(context));
@@ -2998,6 +3481,7 @@ function filterTitleCandidatesByContent(
 ) {
   const context = `${topic.topic} ${topic.content_promise} ${cover.title} ${cover.subtitle} ${cover.sections.map(section => section.heading).join(' ')}`;
   return candidates.filter(item => {
+    if (titleLanguageIssue(item.title)) return false;
     if (TITLE_CLAIM_PATTERN.test(item.title)) return false;
     if (/范文/.test(item.title) && !/范文|完整文章|全文示例/.test(context)) return false;
     if (/模板/.test(item.title) && !/模板|框架|格式|句式/.test(context)) return false;
@@ -3020,10 +3504,16 @@ function ensureTitleCandidateMix(
   const strongCandidates = buildStrongTitleCandidates(topic, productId);
   const choiceCandidates = buildTitleChoiceCandidates(topic, productId, coverTitle);
   const append = (candidate: TitleCandidate) => {
+    const title = compactTitleForLimit(
+      polishHumanTitleText(normalizeTitleIdentity(sanitizeTitleLikeText(candidate.title), productId), productId),
+      productId,
+    );
+    if (!title || !isCompleteTitle(title, 'text') || isWeakCommercialTitle(title)) return;
+    if (!hasRequiredProductIdentity(productId, title) || hasForbiddenProductIdentity(productId, title)) return;
     const title_type = candidate.title_type || normalizeTitleCandidateType(`${candidate.trigger_type} ${candidate.title}`) || (
       candidate.formula_id === 'free_original' ? '痛点型' : candidate.formula_id === 'reference_migration' ? '强钩子型' : '资料型'
     );
-    if (!result.some(item => item.title === candidate.title)) result.push({ ...candidate, title_type });
+    if (!result.some(item => item.title === title)) result.push({ ...candidate, title, title_type });
   };
   choiceCandidates.forEach(append);
   if (!result.some(item => item.formula_id === 'free_original' && !isWeakCommercialTitle(item.title))) append({
@@ -3067,7 +3557,11 @@ function ensureTitleCandidateMix(
   ].filter((item): item is TitleCandidate => Boolean(item));
   const rest = uniqueTitleCandidatesStrict([...required, ...result.filter(item => !choiceFirst.includes(item) && !required.includes(item))])
     .sort((a, b) => titleImpactScore(b.title) - titleImpactScore(a.title));
-  return uniqueTitleCandidatesStrict([...choiceFirst, ...rest]).slice(0, 6);
+  const safe = uniqueTitleCandidatesStrict([...choiceFirst, ...rest])
+    .filter(item => isCompleteTitle(item.title, 'text') && !isWeakCommercialTitle(item.title) && !titleLanguageIssue(item.title));
+  return (safe.length >= 3 ? safe : uniqueTitleCandidatesStrict([...safe, ...result]))
+    .filter(item => isCompleteTitle(item.title, 'text') && !titleLanguageIssue(item.title))
+    .slice(0, 6);
 }
 
 function uniqueTitleCandidates(candidates: TitleCandidate[]) {
@@ -3118,9 +3612,9 @@ function titleMeaningTokens(value: string) {
 }
 
 function buildSeedTitleFallbacks(topic: MigratedTopic, productId: ProductId) {
-  const bySeed: Record<ProductId, Record<string, { free: string; reference: string }>> = {
+  const bySeed: Partial<Record<ProductId, Record<string, { free: string; reference: string }>>> = {
     delf_b2_writing: {
-      delf_formal_opening_closing: { free: 'DELF B2开头总卡住？', reference: 'DELF B2开头结尾这样选' },
+      delf_formal_opening_closing: { free: 'DELF B2第一句写不出？', reference: 'DELF B2开头结尾这样选' },
       delf_final_check: { free: 'DELF B2交卷前查什么', reference: 'DELF B2作文按这几类检查' },
       delf_wrong_right: { free: '法语B2这些错误别再犯', reference: 'DELF B2错句应该这样改' },
       delf_sentence_upgrade: { free: '法语B2句式怎么用才自然', reference: 'DELF B2句式按用途学' },
@@ -3141,18 +3635,103 @@ function buildSeedTitleFallbacks(topic: MigratedTopic, productId: ProductId) {
       tef_topic_vocab: { free: 'TEF/TCF词背了还说不出？', reference: 'TEF/TCF主题词这样用' },
       tef_true_topics: { free: 'TEF/TCF写作别临场想观点', reference: 'TEF/TCF高频主题这样准备' },
       tef_listening_method: { free: 'TCF听力临考猛刷有用吗', reference: 'TEF/TCF听力训练顺序' },
-      tef_speaking_strategy: { free: 'TEF/TCF口语卡住？不只缺词', reference: 'TEF/TCF口语这样准备' },
+      tef_speaking_strategy: { free: 'TEF/TCF口语说不长？不只缺词', reference: 'TEF/TCF口语这样准备' },
       tef_b2_c1_comparison: { free: '加拿大法语写作差在哪？', reference: 'TEF/TCF写作B2到C1差什么' },
       tef_exam_day_flow: { free: 'TEF/TCF考试流程别当天查', reference: 'TEF/TCF流程清单看这张' },
-      tef_avoid_pitfalls: { free: 'TEF/TCF备考越努力越乱？', reference: 'TEF/TCF避坑看这几条' },
-      tef_product_showcase: { free: 'TEF/TCF资料别再乱收了', reference: 'TEF/TCF资料包怎么用' },
+      tef_avoid_pitfalls: { free: 'TEF/TCF备考越刷越没方向？', reference: 'TEF/TCF避坑看这几条' },
+      tef_product_showcase: { free: 'TEF/TCF资料别只会囤', reference: 'TEF/TCF资料包怎么用' },
     },
+    tcf_canada_writing_7day: {},
   };
+  if (productId === 'tef_tcf_canada' && topic.seed_id === 'tef_selling_t3_prediction') {
+    return {
+      free: 'TCF\u53e3\u8bedT3\u8bdd\u9898\u592a\u591a\uff1f\u5148\u6293\u9ad8\u9891\u9898',
+      reference: 'TCF\u53e3\u8bedT3\u8003\u524d\u5148\u770b\u9ad8\u6982\u7387\u9898',
+    };
+  }
+  if (productId === 'tef_tcf_canada' && topic.seed_id === 'tef_working_adult_strategy') {
+    return {
+      free: '\u4e0a\u73ed\u65cfTEF\u6bcf\u59291\u5c0f\u65f6\u600e\u4e48\u7ec3\uff1f',
+      reference: 'TEF\u4e0a\u73ed\u65cf\u6bcf\u59291\u5c0f\u65f6\u8fd9\u6837\u6392',
+    };
+  }
+  if (productId === 'tef_tcf_canada' && topic.seed_id === 'tef_three_attempts_recovery') {
+    return {
+      free: 'TEF\u4e09\u6218\u4e0d\u8fc7\uff1f\u5148\u590d\u76d8\u8fd93\u4ef6\u4e8b',
+      reference: 'CLB7\u53cd\u590d\u4e0d\u8fc7\u5148\u67e5\u590d\u76d8\u65b9\u6cd5',
+    };
+  }
   const identity = getProductPromptProfile(productId).shortIdentity;
-  return bySeed[productId][topic.seed_id || ''] || {
-    free: `${identity}备考这次具体练什么`,
-    reference: `${identity}备考按用途整理更清楚`,
+  return bySeed[productId]?.[topic.seed_id || ''] || {
+    free: productId === 'tef_tcf_canada' ? 'TEF/TCF备考先查弱科' : 'B2写作考前先查扣分点',
+    reference: productId === 'tef_tcf_canada' ? 'CLB7上不去先看这页' : 'DELF B2写作考前速查',
   };
+}
+
+function chooseAnchoredTitleFallback(topic: MigratedTopic, productId: ProductId, candidates: TitleCandidate[]) {
+  const seedId = topic.seed_id || '';
+  const seedAnchored = candidates
+    .filter(item => item.title && isNaturalTitle(item.title) && !isWeakCommercialTitle(item.title) && isCompleteTitle(item.title, 'text'))
+    .filter(item => !seedId || isTitleAnchoredToSeed(item.title, seedId))
+    .sort((a, b) => titleImpactScore(b.title, { seedId, productId }) - titleImpactScore(a.title, { seedId, productId }))[0]?.title;
+  if (seedAnchored) return ensureTextTitleDisplayIdentity(seedAnchored, productId);
+
+  const seedFallback = buildSeedTitleFallbacks(topic, productId);
+  const fallbackPool = [seedFallback.reference, seedFallback.free, ...buildTopicLiteralFallbacks(topic, productId)];
+  const fallback = fallbackPool.find(title =>
+    title
+    && isCompleteTitle(title, 'text')
+    && (!seedId || isTitleAnchoredToSeed(title, seedId))
+    && !isUnnaturalTitle(title));
+  return fallback ? ensureTextTitleDisplayIdentity(fallback, productId) : '';
+}
+
+function buildTopicLiteralFallbacks(topic: MigratedTopic, productId: ProductId) {
+  const text = `${topic.seed_id || ''} ${topic.topic} ${topic.pain} ${topic.content_promise}`;
+  if (productId === 'tef_tcf_canada') {
+    if ((topic.seed_id || '') === 'tef_three_attempts_recovery') return ['TEF\u4e09\u6218\u4e0d\u8fc7\uff1f\u5148\u590d\u76d8\u8fd93\u4ef6\u4e8b', 'CLB7\u53cd\u590d\u4e0d\u8fc7\u5148\u67e5\u590d\u76d8\u65b9\u6cd5'];
+    if ((topic.seed_id || '') === 'tef_working_adult_strategy') return ['\u4e0a\u73ed\u65cfTEF\u6bcf\u59291\u5c0f\u65f6\u600e\u4e48\u7ec3\uff1f', 'TEF\u4e0a\u73ed\u65cf\u6bcf\u59291\u5c0f\u65f6\u8fd9\u6837\u6392'];
+    if ((topic.seed_id || '') === 'tef_selling_t3_prediction') return ['TCF\u53e3\u8bedT3\u8bdd\u9898\u592a\u591a\uff1f\u5148\u6293\u9ad8\u9891\u9898', 'TCF\u53e3\u8bedT3\u8003\u524d\u5148\u770b\u9ad8\u6982\u7387\u9898'];
+    if ((topic.seed_id || '') === 'tcf_listening_trick') return ['TCF听力选项没读完怎么办？', 'TCF听力先抓题型信号词'];
+    if (/EE大改|EE改革|IRCC|政策变化|法语通道政策|公开问询/.test(text)) return ['TEF/TCF遇上EE大改还学吗？', 'TEF/TCF遇上EE政策还学吗？'];
+    if (/退费|退款|报名费退|退费申请|考试退费/.test(text)) return ['TCF Canada退费怎么申请？', 'TCF Canada考后退费先查条件'];
+    if (/科技|IA|numérique|numerique|digital|数字化/.test(text)) return ['TEF/TCF科技题不会说？', 'TEF/TCF科技论据先备这页'];
+    if (/阅读|提速|定位|做不完|答案位置/.test(text)) return ['TEF/TCF阅读定位先看3类', 'TCF阅读做不完先练定位'];
+    if (/60字|短题|字数限制/.test(text)) return ['TEF/TCF60字短题别写超', 'TEF/TCF60字短题先看结构'];
+    if (/主题词|600词|背词|词汇/.test(text)) return ['TEF/TCF主题词背了说不出？', 'TEF/TCF主题词按场景背'];
+    if (/听力|长对话|细节题|难题/.test(text)) return ['TEF/TCF听力三类题别丢分', 'TEF听力长对话先练这几类'];
+    if (/口语|开口|说不长|展开/.test(text)) return ['TEF口语说不长先看这里', 'TEF/TCF口语展开先练这步'];
+    if (/CLB|NCLC|四科|自测/.test(text)) return ['CLB7一直上不去先自测', 'TEF/TCF四科差距先查清'];
+    if (/模考|实考|翻车/.test(text)) return ['TEF模考高分实考翻车？', 'TEF/TCF实考翻车先查原因'];
+    if (/30天|一周|7天|计划|每天|2小时|安排/.test(text)) return ['TEF/TCF考前一周这样排', 'TEF/TCF每天2小时这样用'];
+    if (/TEF还是TCF|选考|报名/.test(text)) return ['TEF还是TCF先别急着报', 'TEF/TCF选考先看这张表'];
+    if (/资料|资料包|知识库|product_showcase/.test(text)) return ['TEF/TCF备考资料合集', 'TEF/TCF资料别只会囤'];
+    return ['TEF/TCF备考先看这一页'];
+  }
+  if (/信号词|读题|审题|漏看|跑题/.test(text)) return ['DELF B2读题漏看信号词？', 'B2写作跑题先查信号词'];
+  if (/空白|紧张|启动|开考|十分钟|救回来/.test(text)) return ['B2写作开考空白怎么救？', 'DELF B2开考十分钟先做这3步'];
+  if (/议论文|骨架|流程|结构/.test(text)) return ['B2写作议论文骨架怎么搭？', 'DELF B2议论文先搭骨架'];
+  if (/复习|顺序|路径|阶段|诊断|复盘/.test(text)) return ['B2写作复习顺序别乱排', 'DELF B2写作从诊断到复盘'];
+  if (/评分|自评|检查|批改|交卷|写完/.test(text)) return ['DELF B2交卷前查什么', 'B2写作最后5分钟先查'];
+  if (/正式信开头|开头模板|第一句|开头卡|开头句式|落笔|憋不出/.test(text)) return ['B2写作第一句写不出？', 'DELF B2正式信开头别硬编'];
+  if (/观点卡|观点|论据|论证|没思路/.test(text)) return ['B2写作没观点？先用例子救场', 'DELF B2观点卡别只背词'];
+  if (/题型|格式|文体|正式信|论坛|建议|投诉|任务/.test(text)) return ['DELF B2三类题型别混', 'B2写作格式分先别丢'];
+  if (/范文|迁移|仿写/.test(text)) return ['DELF B2范文别整篇背', 'B2范文这样拆才会用'];
+  if (/词汇|主题词|单词/.test(text)) return ['DELF B2主题词别散着背', 'B2写作词汇按主题整理'];
+  if (/句式|句型|句法|连接词|衔接/.test(text)) return ['DELF B2句型别乱套', 'B2写作连接词别乱换'];
+  if (/观点|论据|论证|没思路/.test(text)) return ['DELF B2没观点先拆场景', 'B2写作观点这样写具体'];
+  if (/资料库|知识库|资料包|备考资料|product_showcase/.test(text)) return ['DELF B2写作资料合集', 'B2写作资料别只会囤'];
+  return ['DELF B2写作先看这一页'];
+}
+
+function hasSpecificSeedAnchor(value: string, seedId: string) {
+  const compact = value.replace(/\s+/g, '').toLowerCase();
+  const specificKeywords = getSeedTopicKeywords(seedId)
+    .map(kw => kw.replace(/\s+/g, ''))
+    .filter(kw => kw.length >= 2)
+    .filter(kw => !/^(?:TEF|TCF|TEF\/TCF|Canada|加拿大|CLB7|NCLC|DELF|B2|法语|写作|作文|备考|考试|资料|清单)$/.test(kw));
+  if (!specificKeywords.length) return isTitleAnchoredToSeed(value, seedId);
+  return specificKeywords.some(kw => compact.includes(kw.toLowerCase()));
 }
 
 function buildStrongTitleCandidates(topic: MigratedTopic, productId: ProductId) {
@@ -3162,6 +3741,66 @@ function buildStrongTitleCandidates(topic: MigratedTopic, productId: ProductId) 
   const base = profile.shortIdentity;
   const writing = profile.noteIdentity;
   if (topic.topic_type === 'search_pain') {
+    if (/\u9898\u578b|\u6587\u4f53|\u6b63\u5f0f\u4fe1|\u8bba\u575b|\u5efa\u8bae\u4fe1|\u6295\u8bc9/.test(text)) {
+      return {
+        free: `${base}\u6587\u4f53\u5199\u9519\u5c31\u8dd1\u9898\uff1f`,
+        formula: `${base}\u9898\u76ee\u770b\u61c2\u4e5f\u4f1a\u8dd1\u9898\uff1f`,
+        formulaId: '17',
+        triggerType: '\u6050\u60e7\u635f\u5931',
+        skeleton: '\u8b66\u544a\uff01[\u6570\u5b57]\u4ef6\u4e8b\u6b63\u8ba9\u4f60\u7684[\u52aa\u529b]\u767d\u8d39',
+        reference: `${base}\u5148\u5224\u6587\u4f53\u518d\u4e0b\u7b14`,
+      };
+    }
+    if (/\u8bae\u8bba\u6587|\u9aa8\u67b6|\u6d41\u7a0b|\u7ed3\u6784|\u6bb5\u843d\u5c55\u5f00/.test(text)) {
+      return {
+        free: `${base}\u8bae\u8bba\u6587\u4e0d\u4f1a\u642d\u9aa8\u67b6\uff1f`,
+        formula: `${base}\u5199\u7740\u5199\u7740\u5c31\u6563\uff1f`,
+        formulaId: '27',
+        triggerType: '\u597d\u5947\u7f3a\u53e3',
+        skeleton: '[\u8bdd\u9898]\u7684[\u6570\u5b57]\u4e2a\u6b65\u9aa4',
+        reference: `${base}\u8bae\u8bba\u6587\u5148\u8d70\u6d41\u7a0b`,
+      };
+    }
+    if (/信号词|读题|审题|漏看|跑题/.test(text)) {
+      return {
+        free: `${base}读题漏看信号词？`,
+        formula: `${base}写完才发现跑题？`,
+        formulaId: '17',
+        triggerType: '恐惧损失',
+        skeleton: '警告！[数字] 件事正让你的 [努力] 白费',
+        reference: `${base}读题先圈信号词`,
+      };
+    }
+    if (/空白|紧张|启动|开考|十分钟|救回来/.test(text)) {
+      return {
+        free: `${base}开考空白怎么救？`,
+        formula: `${base}开考10分钟空白？`,
+        formulaId: '56',
+        triggerType: '场景条件',
+        skeleton: '当你知道你会 [负面情绪]，如何 [结果]',
+        reference: `${base}开考先做这3步`,
+      };
+    }
+    if (/议论文|骨架|流程|结构/.test(text)) {
+      return {
+        free: `${base}议论文骨架怎么搭？`,
+        formula: `${base}议论文不会搭骨架？`,
+        formulaId: '27',
+        triggerType: '数字锚定',
+        skeleton: '[话题] 的 [数字] 个步骤',
+        reference: `${base}议论文先走流程`,
+      };
+    }
+    if (/第一句|开头|落笔|憋不出|开头句式/.test(text)) {
+      return {
+        free: `${base}第一句写不出？`,
+        formula: `${base}开头憋不出？先套这12句`,
+        formulaId: '75',
+        triggerType: '互动测试',
+        skeleton: '至关紧要的头 [数字] 分钟 - 如何 [话题]',
+        reference: `${base}第一句先这样写`,
+      };
+    }
     if (/范文|迁移|仿写/.test(text)) {
       return {
         free: `${base}范文别整篇背`,
@@ -3194,6 +3833,46 @@ function buildStrongTitleCandidates(topic: MigratedTopic, productId: ProductId) 
     }
   }
   if (topic.topic_type === 'selling_point') {
+    if (/信号词|读题|审题|漏看|跑题/.test(text)) {
+      return {
+        free: `${base}读题漏看信号词？`,
+        formula: `${base}写完才发现跑题？`,
+        formulaId: '17',
+        triggerType: '恐惧损失',
+        skeleton: '警告！[数字] 件事正让你的 [努力] 白费',
+        reference: `${base}读题先圈信号词`,
+      };
+    }
+    if (/空白|紧张|启动|开考|十分钟|救回来/.test(text)) {
+      return {
+        free: `${base}开考空白怎么救？`,
+        formula: `${base}开考10分钟空白？`,
+        formulaId: '56',
+        triggerType: '场景条件',
+        skeleton: '当你知道你会 [负面情绪]，如何 [结果]',
+        reference: `${base}开考先做这3步`,
+      };
+    }
+    if (/复习|顺序|路径|阶段|诊断|复盘/.test(text)) {
+      return {
+        free: `${base}复习顺序别乱排`,
+        formula: `${base}写作越练越乱？先排顺序`,
+        formulaId: '56',
+        triggerType: '场景条件',
+        skeleton: '如果你 [抗拒] [抗拒] [抗拒]，如何解决 [问题]',
+        reference: `${base}从诊断到复盘这样走`,
+      };
+    }
+    if (/第一句|开头|落笔|憋不出|开头句式/.test(text)) {
+      return {
+        free: `${base}第一句写不出？`,
+        formula: `${base}开头憋不出？先套这12句`,
+        formulaId: '75',
+        triggerType: '互动测试',
+        skeleton: '至关紧要的头 [数字] 分钟 - 如何 [话题]',
+        reference: `${base}第一句先这样写`,
+      };
+    }
     if (/路线|路径|规划|阶段|资料|顺序|安排/.test(text)) {
       return {
         free: `${base}写作先练哪一块？`,
@@ -3300,7 +3979,7 @@ function buildStrongTitleCandidates(topic: MigratedTopic, productId: ProductId) 
     };
   }
   return {
-    free: `${writing}卡住？先看这张表`,
+    free: `${writing}写不下去？先看这张表`,
     formula: `${base}越背越写不出来？`,
     formulaId: '1',
     triggerType: '认知冲突',
@@ -3311,6 +3990,36 @@ function buildStrongTitleCandidates(topic: MigratedTopic, productId: ProductId) 
 
 function buildTefTcfStrongTitleCandidates(topic: MigratedTopic, text: string) {
   const seed = topic.seed_id || '';
+  if (seed === 'tef_selling_t3_prediction' || /T3|t3|\u9ad8\u9891\u9898|\u9ad8\u6982\u7387\u9898/.test(text)) {
+    return {
+      free: 'TCF\u53e3\u8bedT3\u8bdd\u9898\u592a\u591a\uff1f\u5148\u6293\u9ad8\u9891\u9898',
+      formula: 'T3\u8bdd\u9898\u592a\u591a\uff1f\u5148\u6293\u9ad8\u9891\u9898\u578b',
+      formulaId: 'reference_migration',
+      triggerType: '\u8d44\u6599\u7a00\u7f3a',
+      skeleton: 'reference_migration',
+      reference: 'TCF\u53e3\u8bedT3\u8003\u524d\u5148\u770b\u9ad8\u6982\u7387\u9898',
+    };
+  }
+  if (seed === 'tef_working_adult_strategy' || /\u4e0a\u73ed\u65cf|\u5728\u804c|\u6bcf\u59291\u5c0f\u65f6/.test(text)) {
+    return {
+      free: '\u4e0a\u73ed\u65cfTEF\u6bcf\u59291\u5c0f\u65f6\u600e\u4e48\u7ec3\uff1f',
+      formula: '\u6bcf\u59291\u5c0f\u65f6\u5907\u8003TEF\u591f\u5417\uff1f',
+      formulaId: 'reference_migration',
+      triggerType: '\u8eab\u4efd\u4ee3\u5165',
+      skeleton: 'reference_migration',
+      reference: 'TEF\u4e0a\u73ed\u65cf\u6bcf\u59291\u5c0f\u65f6\u8fd9\u6837\u6392',
+    };
+  }
+  if (seed === 'tef_three_attempts_recovery' || /\u4e09\u6218\u4e0d\u8fc7|\u53cd\u590d\u4e0d\u8fc7|\u591a\u6b21\u6ca1\u8fc7/.test(text)) {
+    return {
+      free: 'TEF\u4e09\u6218\u4e0d\u8fc7\uff1f\u5148\u590d\u76d8\u8fd93\u4ef6\u4e8b',
+      formula: 'CLB7\u53cd\u590d\u4e0d\u8fc7\uff0c\u522b\u518d\u53ea\u5237\u9898',
+      formulaId: 'reference_migration',
+      triggerType: '\u75db\u70b9\u62e6\u622a',
+      skeleton: 'reference_migration',
+      reference: 'CLB7\u53cd\u590d\u4e0d\u8fc7\u5148\u67e5\u590d\u76d8\u65b9\u6cd5',
+    };
+  }
   const pack = (free: string, formula: string, reference: string, triggerType = '恐惧损失') => ({
     free,
     formula,
@@ -3326,17 +4035,26 @@ function buildTefTcfStrongTitleCandidates(topic: MigratedTopic, text: string) {
   if (seed === 'tef_exam_choice' || /TEF还是TCF|选考|报名/.test(text)) {
     return pack('TEF还是TCF？别急着报名', 'TEF/TCF选错，后面全乱？', 'TEF/TCF选考看这张表', '恐惧损失');
   }
+  if (seed === 'tef_ee_policy_change' || /EE大改|EE改革|IRCC|政策变化|法语通道政策|公开问询/.test(text)) {
+    return pack('TEF/TCF遇上EE大改还学吗？', 'TEF/TCF遇上EE政策还学吗？', 'TEF/TCF政策变化先看清', '认知冲突');
+  }
+  if (seed === 'tef_tcfca_refund' || /退费|退款|报名费退|退费申请|考试退费/.test(text)) {
+    return pack('TCF Canada退费怎么申请？', 'TCF Canada考后退费先查条件', 'TCF Canada退费流程这样看', '数字锚定');
+  }
   if (seed === 'tef_clb7_self_test' || /CLB|NCLC|自测|四科/.test(text)) {
     return pack('CLB7差在哪？先别乱刷', '想冲CLB7，先测这4科', 'CLB7自测先做这一步', '数字锚定');
   }
   if (seed === 'tef_30_day_plan' || /30天|计划|每天|2小时|路径|安排/.test(text)) {
     return pack('TEF/TCF备考别平均用力', '每天2小时，别这样备考', 'TEF/TCF按阶段安排复习', '认知冲突');
   }
+  if (seed === 'tef_topic_vocab' || /词汇|主题词|600词|背词/.test(text)) {
+    return pack('TEF主题词背了说不出？', 'TEF/TCF主题词别散着背', 'TEF/TCF主题词按场景用', '认知冲突');
+  }
+  if (seed === 'tef_writing_topic_60words' || /60字|短题|字数限制/.test(text)) {
+    return pack('TEF写作60字短题别写超', '60字短题写不满？先看结构', 'TEF写作60字这样展开', '数字锚定');
+  }
   if (seed === 'tef_writing_patterns' || /句型|写作|模板/.test(text)) {
     return pack('TEF/TCF句型背了用不上？', 'TEF/TCF别再硬背模板', 'TEF/TCF句型按功能分', '认知冲突');
-  }
-  if (seed === 'tef_topic_vocab' || /词汇|主题词|600词|背词/.test(text)) {
-    return pack('法语词背了还说不出？', 'TEF/TCF词汇别再散着背', 'TEF/TCF主题词按场景用', '认知冲突');
   }
   if (seed === 'tef_true_topics' || /主题|观点|素材|真题/.test(text)) {
     return pack('TEF/TCF写作别临场想观点', '考场没观点，先补这几类', 'TEF/TCF高频主题这样准备', '恐惧损失');
@@ -3344,8 +4062,14 @@ function buildTefTcfStrongTitleCandidates(topic: MigratedTopic, text: string) {
   if (seed === 'tef_listening_method' || /听力|精听|复听|语速/.test(text)) {
     return pack('TEF/TCF听力别只猛刷题', '听力刷很多还听不懂？', 'TEF/TCF听力这样复盘', '认知冲突');
   }
+  if (seed === 'tef_theme_tech' || /科技|IA|numérique|numerique|数字化/.test(text)) {
+    return pack('TEF/TCF科技题不会说？', '科技题不会说，不是词少', 'TEF/TCF科技论据这样备', '认知冲突');
+  }
+  if (seed === 'tcf_reading_speed' || /阅读|提速|定位|做不完|答案位置/.test(text)) {
+    return pack('TEF/TCF阅读别逐句硬读', '阅读做不完，先练定位', 'TEF/TCF阅读定位这样练', '认知冲突');
+  }
   if (seed === 'tef_speaking_strategy' || /口语|开口|论据|过渡/.test(text)) {
-    return pack('TEF/TCF口语卡住？不只缺词', '口语说不长，问题不在词少', 'TEF/TCF口语这样展开', '认知冲突');
+    return pack('TEF/TCF口语说不长？不只缺词', '口语说不长，问题不在词少', 'TEF/TCF口语这样展开', '认知冲突');
   }
   if (seed === 'tef_b2_c1_comparison' || /B2到C1|高分范文|对比/.test(text)) {
     return pack('法语写作差的不是高级词', 'B2到C1，差在这几处', '法语写作B2到C1这样看', '认知冲突');
@@ -3354,12 +4078,12 @@ function buildTefTcfStrongTitleCandidates(topic: MigratedTopic, text: string) {
     return pack('TEF/TCF流程别当天才查', '上考场前，这几步别漏', 'TEF/TCF流程清单看这张', '恐惧损失');
   }
   if (seed === 'tef_avoid_pitfalls' || /避坑|乱|白费|效率/.test(text)) {
-    return pack('TEF/TCF备考越努力越乱？', '这些坑，让备考时间白花', 'TEF/TCF避坑看这几条', '恐惧损失');
+    return pack('TEF/TCF备考越刷越没方向？', '这些坑，让备考时间白花', 'TEF/TCF避坑看这几条', '恐惧损失');
   }
   if (seed === 'tef_product_showcase' || /资料包|资料|系统备考/.test(text)) {
-    return pack('TEF/TCF资料别再乱收了', '资料越多，备考越乱？', 'TEF/TCF资料包按顺序用', '认知冲突');
+    return pack('TEF/TCF资料别只会囤', '资料越多，备考越乱？', 'TEF/TCF资料包按顺序用', '认知冲突');
   }
-  return pack('TEF/TCF备考先别乱刷', '越努力越没方向？先停', 'TEF/TCF备考按问题拆', '认知冲突');
+  return pack('TEF/TCF备考先看弱科', '越努力越没方向？先停', 'TEF/TCF备考按问题拆', '认知冲突');
 }
 
 function buildTitleChoiceCandidates(topic: MigratedTopic, productId: ProductId, coverTitle: string): TitleCandidate[] {
@@ -3434,13 +4158,13 @@ function buildTitleChoiceCandidates(topic: MigratedTopic, productId: ProductId, 
 }
 
 function buildProductShowcaseTitle(productId: ProductId, writing: string) {
-  if (productId === 'tef_tcf_canada') return 'TEF/TCF资料别再乱收了';
-  return `${writing}资料别再乱收了`;
+  if (productId === 'tef_tcf_canada') return 'TEF/TCF备考资料合集';
+  return `${writing}考前资料合集`;
 }
 
 function buildProductShowcaseExplainTitle(productId: ProductId, writing: string) {
-  if (productId === 'tef_tcf_canada') return 'TEF/TCF备考资料怎么用才不乱？';
-  return `${writing}资料怎么用才不乱？`;
+  if (productId === 'tef_tcf_canada') return 'TEF/TCF资料别只会囤';
+  return `${writing}资料别只会囤`;
 }
 
 function buildMaterialTitle(productId: ProductId, base: string, topicName: string, text: string) {
@@ -3448,30 +4172,41 @@ function buildMaterialTitle(productId: ProductId, base: string, topicName: strin
     if (/选考|TEF还是TCF/.test(text)) return 'TEF和TCF区别在哪？先看这张表';
     if (/CLB|自测/.test(text)) return 'CLB7自测表，先看你差在哪科';
     if (/30天|计划|路径/.test(text)) return 'TEF/TCF 30天备考路线图';
-    return clip(`${base}${topicName}，我整理好了`, 20);
+    if (/60字|短题|字数限制/.test(text)) return 'TEF/TCF 60字短题避坑表';
+    if (/主题词|600词|背词|词汇/.test(text)) return 'TEF/TCF口语主题词速查表';
+    if (/阅读|提速|定位|做不完|答案位置/.test(text)) return 'TEF/TCF阅读定位速查表';
+    return clip(`${base}${topicName}速查表，先收藏`, 20);
   }
   if (/评分|检查|交卷|自查/.test(text)) return 'DELF B2写作扣分点，我做成检查表';
+  if (/正式信开头|开头模板|第一句|开头卡|开头句式|落笔|憋不出/.test(text)) return 'DELF B2开头句式速查表';
   if (/范文|模板/.test(text)) return '法语B2模板背了用不上？';
-  return clip(`${base}${topicName}，考前直接照这个查`, 20);
+  return clip(`${base}${topicName}，考前先收藏`, 20);
 }
 
 function buildEmotionTitle(productId: ProductId, text: string, fallback: string) {
   if (productId === 'tef_tcf_canada') {
-    if (/口语|开口/.test(text)) return 'TEF口语一开口就卡？你可能缺的不是单词';
+    if (/口语|开口/.test(text)) return 'TEF口语一开口就短？你可能缺的不是单词';
     if (/选考|TEF还是TCF/.test(text)) return 'TEF/TCF备考最怕的，是一开始选错';
-    if (/CLB|四科/.test(text)) return 'CLB7一直卡住的人，别再四科平均用力';
+    if (/CLB|四科/.test(text)) return 'CLB7一直上不去的人，别再四科平均用力';
     if (/听力/.test(text)) return 'TEF/TCF听力刷很多题还听不懂？';
+    if (/主题词|600词|背词|词汇/.test(text)) return 'TEF/TCF主题词背了说不出？';
+    if (/60字|短题|字数限制/.test(text)) return 'TEF/TCF60字短题别写超';
+    if (/阅读|提速|定位|做不完|答案位置/.test(text)) return 'TCF阅读做不完？先练定位';
     return 'TEF/TCF备考越努力越乱的人，先停一下';
   }
   if (/评分|检查|交卷|自查/.test(text)) return 'DELF B2写作写完别急着交，先自查这几处';
-  if (/范文|模板/.test(text)) return '法语B2写作卡住的人，真的别再硬背范文了';
+  if (/正式信开头|开头模板|第一句|开头卡|开头句式|落笔|憋不出/.test(text)) return 'B2写作第一句写不出？先看这里';
+  if (/范文|模板/.test(text)) return '法语B2范文背了用不上？先拆结构';
   if (/格式|文体|任务/.test(text)) return 'DELF B2写作总跑题的人，先别急着下笔';
   if (/词汇|句式|连接词/.test(text)) return 'B2写作写完像A2？可能不是词汇量的问题';
-  return fallback || 'DELF B2写作写到一半卡住的人，先停一下';
+  return fallback || 'DELF B2写到一半没话写的人，先停一下';
 }
 
 function buildResultTitle(productId: ProductId, text: string) {
   if (productId === 'tef_tcf_canada') {
+    if (/主题词|600词|背词|词汇/.test(text)) return 'TEF/TCF口语想说长，先背场景词';
+    if (/60字|短题|字数限制/.test(text)) return 'TEF/TCF60字短题想拿稳，先别超字数';
+    if (/阅读|提速|定位|做不完|答案位置/.test(text)) return 'TEF/TCF阅读想提速，先找答案位置';
     if (/CLB|30天|计划|路径/.test(text)) return '3个月冲CLB7，TEF/TCF先这样排顺序';
     if (/口语|开口/.test(text)) return 'TEF口语想说长一点，先练这3类展开';
     if (/写作|句型/.test(text)) return 'TEF/TCF写作想提速，先用熟这几类句型';
@@ -3523,7 +4258,7 @@ function buildExplanationChoiceTitle(identity: string, usage: string, text: stri
   if (/TEF还是TCF|选考|报名/.test(text)) return `${identity}该怎么选？`;
   if (/CLB|NCLC|自测|四科/.test(text)) return `CLB7差在哪？`;
   if (/听力|精听|复听|语速/.test(text)) return `${identity}听力怎么练？`;
-  if (/口语|开口|论据|过渡/.test(text)) return `${identity}口语怎么展开？`;
+  if (/口语|开口|论据|过渡/.test(text)) return `${identity}口语怎么说长？`;
   if (/流程|机考|查分|进场|考场/.test(text)) return `${identity}流程怎么查？`;
   if (/评分|自评|维度/.test(text)) return `${identity}评分到底看什么？`;
   if (/交卷|自查|检查/.test(text)) return `${identity}交卷前怎么查？`;
@@ -3542,9 +4277,12 @@ function buildExplanationChoiceTitle(identity: string, usage: string, text: stri
 const SECTION_LEVEL_UNITS = new Set(['类', '组', '大类', '大组', '大主题', '大模块', '大方向', '大话题', '大板块', '大场景']);
 const COVER_COUNT_CLAIM_PATTERN = /(\d+)\s*(大主题|大模块|大方向|大话题|大板块|大场景|大类|大组|大步骤|大要点|大关键|大错误|句|个|条|项|组|类|步|招|要点|关键|错误|阶段|维度|方向|板块|章节)/g;
 const NOTE_ITEM_COUNT_PATTERN = /(\d+)\s*(大主题|大模块|大方向|大话题|大板块|大场景|大类|大组|句|个|条|项|组)/g;
+const MULTIPLY_COUNT_CLAIM_PATTERN = /\d{1,3}\s*(?:个|大)?(?:主题|场景|模块|分类|类|组)\s*[×xX]\s*\d{1,3}\s*(?:条|项|句|个|张|篇)/g;
 
 function scrubCheapClaims(text: string) {
   return text
+    .replace(/\u8499\u7b54\u6848|\u8499\u9898|\u8499\u5bf9|\u90aa\u4fee/g, '\u9898\u578b\u4fe1\u53f7\u8bcd')
+    .replace(/\u63d0\u9ad8\u9898\u578b\u4fe1\u53f7\u8bcd\u547d\u4e2d\u7387/g, '\u5148\u7528\u9898\u578b\u4fe1\u53f7\u8bcd\u5b9a\u4f4d\u7b54\u6848')
     .replace(/230\s*[-~至]\s*280\s*词/g, '至少250词')
     .replace(/(?:至少|≥)\s*\d+\s*个?\s*论据/g, '论据充分具体')
     .replace(/(?:至少|≥)\s*\d+\s*个?\s*主题词/g, '主题词准确多样')
@@ -3636,7 +4374,10 @@ function normalizeFrenchIdentity(text: string) {
 }
 
 function alignCoverCountClaims(text: string, itemCount: number, sectionCount: number) {
-  return text.replace(COVER_COUNT_CLAIM_PATTERN, (_match, rawCount: string, unit: string) => {
+  const normalized = text
+    .replace(MULTIPLY_COUNT_CLAIM_PATTERN, '按主题分组')
+    .replace(/按主题分组[，,、\s]*按主题分组/g, '按主题分组');
+  return normalized.replace(COVER_COUNT_CLAIM_PATTERN, (_match, rawCount: string, unit: string) => {
     const claimed = Number(rawCount);
     const expected = SECTION_LEVEL_UNITS.has(unit) ? sectionCount : itemCount;
     if (!Number.isFinite(claimed) || expected <= 0 || claimed === expected) {
@@ -3769,6 +4510,7 @@ function ensureCoverIdentity(
 // 不应被改写）。删数字保语义：标题意思不变，只是不带数字承诺。
 function stripCoverCountClaims(text: string) {
   return text
+    .replace(MULTIPLY_COUNT_CLAIM_PATTERN, '')
     .replace(COVER_COUNT_CLAIM_PATTERN, '')
     .replace(/[，,]\s*[，,]/g, '，')
     .replace(/^[，,、\s]+|[，,、\s]+$/g, '')
@@ -3847,9 +4589,13 @@ function getCoreIssues(
   const spec = getCoverTemplateSpec(renderer);
   const itemCount = cover.sections.reduce((sum, section) => sum + section.items.length, 0);
   if (titles.length < 3) issues.push('title_candidate_mix_incomplete');
-  if (!titles.some(item => item.formula_id === 'free_original')) issues.push('free_original_title_missing');
+  // 不再强制 free_original。自由原创是烂标题漏网的高发入口；标题池只要覆盖
+  // 爆款机制迁移 + 公式/类型化候选即可。
   if (!titles.some(item => item.formula_id === 'reference_migration')) issues.push('reference_migration_title_missing');
   if (!titles.some(item => item.formula_id !== 'free_original' && item.formula_id !== 'reference_migration')) issues.push('formula_title_missing');
+  if (titleLanguageIssue(cover.title)) {
+    issues.push('title_not_human');
+  }
   const flexibleCapacity = spec && ['directory', 'document', 'offer', 'experience', 'pain', 'roadmap', 'phrase', 'table', 'book'].includes(spec.family);
   const lowDensityStoryCover = spec && ['experience', 'pain'].includes(spec.family);
   const sectionCountInvalid = !spec || (flexibleCapacity
@@ -3916,7 +4662,8 @@ function getCoreIssues(
   // job_009 实测整张封面全是 "lire la consigne deux fois — 读题两遍"
   // 式词条，发出来就是一张假"经验贴"。两个确定性判据，任一命中走返修：
   //   1) 条目是纯法语/无中文，或"法语—中文翻译"对 → 词条不是句子；
-  //   2) 单段中文字数 < spec 要求（70-110 字/段）的 8 成 → 伪段落堆叠。
+  //   2) 单段中文字数 < 42 → 伪段落堆叠。这里不按 70 字硬卡，
+  //      否则封面会为了过闸门写成小作文，反而不像小红书首图。
   if (spec?.renderer === 'plain_experience') {
     const countCjk = (text: string) => (text.match(/[一-鿿]/g) || []).length;
     const isPhraseEntry = (text: string) =>
@@ -3928,7 +4675,7 @@ function getCoreIssues(
     if (cover.sections.some(section => {
       const paragraphCjk = section.items.reduce(
         (sum, item) => sum + countCjk(item.primary || '') + countCjk(item.secondary || ''), 0);
-      return paragraphCjk < 56;
+      return paragraphCjk < 42;
     })) {
       issues.push('plain_experience_paragraph_too_short');
     }
@@ -4013,6 +4760,12 @@ function classifyCoreIssue(issue: string): 'block' | 'autofix' | 'warn' {
     // 单组容量差一点（50%-100% 但不在 ±2 容差内）：autofix 兜底即可。
     // 严重不足（<50%）走另一个 issue：cover_section_severely_low（默认 block）。
     'cover_section_capacity_invalid',
+    // 真人经验首图不适合硬凑长段。短一点应提示/返工建议，而不是把整篇卡死；
+    // 词条式伪经验仍由 plain_experience_phrase_entry 继续 block。
+    'plain_experience_paragraph_too_short',
+    // 法语缩写未解释会影响可读性，但在高密度资料封面里常是 primary/secondary
+    // 分栏导致的误判；先提醒，不因为这一项烧完整条 job。
+    'unexplained_french_shorthand',
     // Symmetric with classifyEditorialIssue: time-budget claims surface in
     // both cover and body text. Treating them as block on core only makes
     // generation flaky on product 2 (TEF/TCF has real per-section time
@@ -4309,7 +5062,7 @@ function shuffleTagPool(pool: readonly string[], salt: string): string[] {
     .map(entry => entry.word);
 }
 
-function normalizeTags(value: unknown, seoKeywords: string[], productId?: ProductId, contentContext = '', seed = 'default', recentTagCounts?: Map<string, number>, seedKeywords: readonly string[] = []) {
+export function normalizeTags(value: unknown, seoKeywords: string[], productId?: ProductId, contentContext = '', seed = 'default', recentTagCounts?: Map<string, number>, seedKeywords: readonly string[] = []) {
   const raw = Array.isArray(value) ? value.map(asString).filter(Boolean) : [];
   const ctxCompact = contentContext.replace(/\s+/g, '');
   // 新：从 seo_tags 数据池子按 seed 抽样，让 15 篇笔记的 tag 不再雷同。
@@ -4508,7 +5261,7 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
   // 锚词去重：#DELFB2真题 和 #法语B2真题 剥掉身份词根后锚词相同（真题），
   // 同篇并存就是同义复读（实测 agent1 job_002）。非身份 tag 按锚词只留第一个。
   const seenAnchors = new Set<string>();
-  return Array.from(new Set(normalized))
+  const finalTags = Array.from(new Set(normalized))
     .filter(tag => !tag.includes('范文') || /范文|完整文章|全文示例/.test(contentContext))
     .filter(tag => !tag.includes('模板') || /模板|框架/.test(contentContext))
     .filter(tag => {
@@ -4526,6 +5279,28 @@ function normalizeTags(value: unknown, seoKeywords: string[], productId?: Produc
       return true;
     })
     .slice(0, 10);
+  if (finalTags.length >= 6) return finalTags;
+  const rescuePool = [...seedKeywords, ...seoKeywords, ...validatedWords]
+    .map(word => word.replace(/^#+/, '').replace(/\s+/g, ''))
+    .filter(word => word.length >= 2 && word.length <= 12)
+    .filter(word => {
+      const anchor = stripGenericTagRoots(word);
+      return isIdentityBigTag(word) || !anchor || contentContext.includes(anchor) || ctxCompact.includes(anchor)
+        || seedKeywords.some(kw => kw.includes(word) || word.includes(kw));
+    })
+    .map(word => {
+      const bare = /TEF|TCF|CLB|DELF|B2|法语|Canada|加拿大/i.test(word)
+        ? word
+        : `${tagIdentityBase}${word}`;
+      return bare.length <= 17 ? `#${bare}` : `#${word}`;
+    })
+    .filter(tag => !productId || !hasForbiddenProductIdentity(productId, tag.replace(/^#/, '')))
+    .filter(tag => tag.length >= 3 && tag.length <= 18);
+  for (const tag of rescuePool) {
+    if (finalTags.length >= 6) break;
+    if (!finalTags.includes(tag)) finalTags.push(tag);
+  }
+  return finalTags.slice(0, 10);
 }
 
 function visualLength(value: string) {

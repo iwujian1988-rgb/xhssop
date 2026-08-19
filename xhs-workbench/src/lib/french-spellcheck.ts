@@ -32,6 +32,8 @@ const TOKEN_PATTERN = /[A-Za-zÀ-ÖØ-öø-ÿ]+(?:['’-][A-Za-zÀ-ÖØ-öø-ÿ]
 const ALLOWLIST = new Set([
   'delf', 'tef', 'tcf', 'dalf', 'fle', 'b1', 'b2', 'c1', 'c2', 'a1', 'a2',
   'xiaohongshu', 'canada', 'québec', 'quebec', 'france', 'ok', 'subj', 'cond',
+  'ircc', 'ee', 'express', 'entry', 'selection', 'category-based', 'category', 'based',
+  'federal', 'immigration', 'minister', 'ministerial', 'public', 'consultation',
   // Legitimate French words that dictionary-fr incorrectly reports as
   // concatenation bugs because both halves happen to be valid words.
   // "distracteurs" = distractors (common in TEF/TCF listening/reading); split

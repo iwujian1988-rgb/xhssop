@@ -42,7 +42,13 @@ const directory = (renderer: CreativeCardRenderer, name: string): CoverTemplateS
 
 export const coverTemplateSpecs: Record<Exclude<CreativeCardRenderer, 'ai_scene_overlay'>, CoverTemplateSpec> = {
   parchment_dense_directory: directory('parchment_dense_directory', '羊皮纸高密度资料目录'),
-  white_green_directory: directory('white_green_directory', '白底绿字知识清单'),
+  white_green_directory: {
+    ...directory('white_green_directory', '白底绿字知识清单'),
+    sectionCount: 4,
+    itemsPerSection: 5,
+    minTotalItems: 15,
+    contentInstruction: '输出3到4个互不重复的知识分组，每组5个短知识点。primary写法语词/短语或中文知识标签，secondary写简短中文解释；完整句、条件和长解释移到内页。若某分组主题天然需要较长搭配，只写其中最短的核心搭配片段，不要写完整长句。',
+  },
   clean_purple_directory: {
     renderer: 'clean_purple_directory', name: '白底紫色知识资料', family: 'directory', renderMode: 'code', sectionCount: 4, itemsPerSection: 9, minTotalItems: 28,
     maxPrimaryVisualLength: 40, maxSecondaryVisualLength: 25,
@@ -100,9 +106,11 @@ export const coverTemplateSpecs: Record<Exclude<CreativeCardRenderer, 'ai_scene_
     forbiddenInstruction: '禁止假装本人通过考试，禁止虚构分数、时间和个人经历。',
   },
   plain_experience: {
-    renderer: 'plain_experience', name: '极简经验长图', family: 'experience', renderMode: 'code', sectionCount: 2, itemsPerSection: 2, minTotalItems: 4,
-    maxPrimaryVisualLength: 40, maxSecondaryVisualLength: 54,
-    contentInstruction: '输出2段各2条，组合后成为两段连贯的经验正文；每段合计70到110个中文字，必须是完整中文句子组成的段落（可嵌入法语例句）。第一段讲真实困难和判断，第二段给可执行建议。严禁输出”法语短语+中文翻译”这类词汇/短语释义条目，严禁把多条短语堆叠成伪段落（如”J\'ai bien compris.，我完全理解了。”是错误示例）。没有用户提供的真实经历时，不得使用"我后来发现/我的整理方法/让我/我考前/我上岸/我亲测"这类第一人称经历口吻，只能写成泛化观察和建议。',
+    renderer: 'plain_experience', name: '极简经验长图', family: 'experience', renderMode: 'code', sectionCount: 1, itemsPerSection: 2, minTotalItems: 2,
+    // 这个模板展示的就是两段经验正文。此前正文要求 70-110 字、视觉契约却只允许
+    // 40 字，导致模型按要求写完后必然被密度闸门删除。
+    maxPrimaryVisualLength: 110, maxSecondaryVisualLength: 70,
+    contentInstruction: '输出1个正文分组，分组内正好2条连贯经验段落；每条70到110个中文字，必须是完整中文句子组成的段落（可嵌入法语例句）。第一段讲真实困难和判断，第二段给可执行建议。严禁输出”法语短语+中文翻译”这类词汇/短语释义条目，严禁把多条短语堆叠成伪段落（如”J\'ai bien compris.，我完全理解了。”是错误示例）。没有用户提供的真实经历时，不得使用"我后来发现/我的整理方法/让我/我考前/我上岸/我亲测"这类第一人称经历口吻，只能写成泛化观察和建议。',
     titleInstruction: '封面正文只有2段经验分享（合计不到200字），所以 title 必须是反常识/情绪/结果型钩子（如"B2写不到字数？不是词汇问题"、"DELF B2跑题的人都有一个共同点"），让用户觉得"这说的就是我"。禁止写"X 大全""X 清单""X 资料库""X 整理好了"这类具体内容型标题——2 段经验正文撑不起资料承诺，那种标题请走 dense_directory 类模板。副标题补一句反差或追问。',
     forbiddenInstruction: '禁止虚构第一人称成绩、身份、留学或考试经历。',
   },
@@ -152,6 +160,13 @@ export const coverTemplateSpecs: Record<Exclude<CreativeCardRenderer, 'ai_scene_
     titleInstruction: '封面 title 写整句金句（单数身份+栽在考试上+行动/好奇钩子），封面目的是「隐藏原因制造好奇」，title 绝对不能写具体知识点。LLM 必须替换原图的"我同学/法语B2/快看看因为啥"为本次选题的等价表达：身份从"我室友/我同学/我的朋友/室友/同学/朋友"里选；"X"只到考试+大科目级别（DELF B2 系 seed 优先"法语B2"/"DELF B2"/"DELF B2写作"，TEF/TCF 系 seed 优先"TCF"/"TEF"/"TCF听力"），禁止细化到"跑题/字数/口语"等知识点；行动短语从"赶紧避开/提前绕开/别再踩/快看看因为啥/为啥看看/猜猜为啥/点开避坑"里选，不能照抄原图原句。副标题可省略或写半句反差补刀。禁止"X 大全""X 清单""X 整理"这类资料型标题——本模板只承得下单句金句，承不下资料承诺。',
     forbiddenInstruction: '禁止用"两位X/三个考友/一群研友"等数字+身份的复数泛化形式；禁止具体姓名、学校、年份；禁止虚构第一人称分数、身份、留学经历；禁止塞资料列表/课程卖点/服务承诺；禁止把长解释或资料条目塞进 3 个成分里；禁止在封面写任何具体知识点（如"跑题""字数不够""口语紧张""时态错误""论据不足"等），具体知识点必须放到内页展开——封面只承担"藏原因制造好奇"的功能。',
   },
+  showcase_screenshot: {
+    renderer: 'showcase_screenshot', name: '知识库截图+程序叠字', family: 'offer', renderMode: 'hybrid', sectionCount: 3, itemsPerSection: 3, minTotalItems: 7,
+    maxPrimaryVisualLength: 34, maxSecondaryVisualLength: 30,
+    contentInstruction: '封面使用预置的真实知识库截图作为底图，程序只叠加本篇封面标题、副标题和少量结构化价值点；封面条目用短句，不把正文长解释塞进图里。内页再放具体目录、样张和使用动作。',
+    titleInstruction: '封面标题优先写“法语/考试对象 + 具体用户关系 + 资料获得感或结果”，可以使用资料、大全、稀缺、时效、情绪、结果、反常识等方向；不要只写“知识库介绍”或“资料包”。',
+    forbiddenInstruction: '禁止修改截图里的原始内容；禁止编造截图未展示的商品数量；禁止把截图型封面做成课程招募或纯空口号。',
+  },
 };
 
 const coverTitleTypesByRenderer: Record<Exclude<CreativeCardRenderer, 'ai_scene_overlay'>, CoverTitleType[]> = {
@@ -172,6 +187,7 @@ const coverTitleTypesByRenderer: Record<Exclude<CreativeCardRenderer, 'ai_scene_
   collocation_dense: ['资料', '大全', '稀缺'],
   official_notice: ['资料', '时效', '稀缺', '结果'],
   pain_quote_big: ['情绪', '反常识', '结果'],
+  showcase_screenshot: ['资料', '大全', '稀缺', '时效', '情绪', '结果', '反常识'],
 };
 
 for (const renderer of Object.keys(coverTitleTypesByRenderer) as Exclude<CreativeCardRenderer, 'ai_scene_overlay'>[]) {

@@ -1,3 +1,32 @@
+# XHS Workbench
+
+本地运行的小红书法语资料带货笔记工作台。代码、商品事实卡和展示素材都在本目录内；批次结果与 API 密钥不会提交到仓库。
+
+## 安装运行
+
+```bash
+npm install
+copy .env.example .env.local
+npm run dev
+```
+
+打开 `http://localhost:4000`。首次运行前，在 `.env.local` 填入可用的文本模型配置；需要生图时再填写图片模型配置。不要把真实密钥提交到 GitHub。
+
+生产模式：
+
+```bash
+npm run build
+npm run start
+```
+
+默认事实卡位于 `data/product_facts_delf_b2.json`、`data/product_facts_tef_tcf.json` 和 `data/product_facts_tcf_canada_7day.json`。如果事实卡放在其他位置，可在 `.env.local` 中配置对应路径。
+
+- `public/reference-covers/` 是参考封面库。
+- `public/showcase/` 是商品知识库展示截图。
+- 批次 JSON、日志和临时验收页属于本机运行状态，不随仓库发布。
+
+## Next.js
+
 This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
 ## Getting Started

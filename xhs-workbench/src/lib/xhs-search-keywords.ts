@@ -38,7 +38,7 @@ const KEYWORDS: Record<ProductId, XhsSearchKeywordGroup> = {
   tef_tcf_canada: {
     // 商品2暂未拿到小红书下拉词截图。这里先用资料包内真实需求词兜底，
     // 后续用户补搜索建议后，把 validated_at 改成实测日期。
-    primary: ['TEF Canada', 'TCF Canada', 'CLB7', '法语B2备考', '加拿大法语', '备考资料'],
+    primary: ['TEF Canada', 'TCF Canada', 'CLB7', '加拿大法语', '备考资料'],
     secondary: [
       'TEF还是TCF',
       'TCF备考',
@@ -56,6 +56,12 @@ const KEYWORDS: Record<ProductId, XhsSearchKeywordGroup> = {
     ],
     avoid: [],
     validated_at: 'product-derived-fallback',
+  },
+  tcf_canada_writing_7day: {
+    primary: ['TCF Canada写作', 'TCF写作', 'TCF Canada备考', '法语写作', '考前资料'],
+    secondary: ['TCF写作题型', 'TCF写作范文', 'TCF写作模板', 'TCF写作字数', 'T1写作', 'T2写作', 'T3写作', 'TCF写作怎么练', 'TCF写作纠错', '7天备考'],
+    avoid: [],
+    validated_at: 'product-derived-from-source-markdown',
   },
 };
 

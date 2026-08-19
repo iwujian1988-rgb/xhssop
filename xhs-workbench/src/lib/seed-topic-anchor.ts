@@ -305,6 +305,7 @@ const SEED_TOPIC_KEYWORDS: Record<string, string[]> = {
   ],
   tef_working_adult_strategy: [
     '在职备考', '每天1小时', '在职法语', '上班族法语', '碎片备考', '在职自学',
+    '上班族', '每天一小时', '工作党', '通勤备考',
   ],
   tef_three_attempts_recovery: [
     '三战不过', '反复不过', '多次没过', 'TEF没过', 'TCF没过', '卡分复盘',
@@ -383,6 +384,7 @@ const SEED_TOPIC_KEYWORDS: Record<string, string[]> = {
   ],
   tef_selling_t3_prediction: [
     'T3高概率', 'T3真题', '月度真题', '按月整理', '月度更新', '高概率真题',
+    'T3高频', 'T3高频题', '口语T3', 'T3话题',
   ],
   tef_selling_listening_scenes: [
     '听力场景词', '场景词', '听力高频词', '场景词汇', 'TCF场景词', 'TEF场景词',

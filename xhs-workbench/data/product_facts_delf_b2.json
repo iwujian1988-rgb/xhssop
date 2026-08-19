@@ -1,0 +1,824 @@
+{
+  "audiences": [
+    {
+      "id": "AU-001",
+      "text": "法语水平在 B1-B2 之间、距离考试 1-3 个月、需要系统备考的考生",
+      "source_file": "00_README.md",
+      "source_section": "5 分钟诊断 / 路径推荐",
+      "evidence": "诊断题 Q1 自评法语水平选 2（B1 已通过，正在冲 B2）；Q2 距考时间选 1-3 个月；推荐走路径 2 八周系统备考",
+      "raw_keywords": ["B1-B2", "1-3 个月", "系统备考", "路径 2"]
+    },
+    {
+      "id": "AU-002",
+      "text": "法语水平 A2-B1、距考时间 ≤4 周、需要冲刺的考生",
+      "source_file": "01_学习路径.md",
+      "source_section": "路径 1 · 4 周冲刺",
+      "evidence": "路径 1 适用对象：距考试 4 周以内、每天可投入 60-90 分钟；产出目标为 8 篇完整作文+1 份自评表+3 段仿写",
+      "raw_keywords": ["4 周冲刺", "60-90 分钟/日", "8 篇作文"]
+    },
+    {
+      "id": "AU-003",
+      "text": "距考时间 ≤1 周、临考前需要救命包的考生",
+      "source_file": "01_学习路径.md",
+      "source_section": "路径 3 · 临考救命包",
+      "evidence": "路径 3 适用对象：临考前一周内；给出 5 个救命题 CH-085 / CH-049 / CH-097 / JF-001 / JF-011",
+      "raw_keywords": ["≤1 周", "救命包", "5 个救命题"]
+    },
+    {
+      "id": "AU-004",
+      "text": "已经考过 1 次以上 B2 但写作未通过的复读生",
+      "source_file": "00_README.md",
+      "source_section": "5 分钟诊断 / Q1",
+      "evidence": "Q1 选项 4：已经考过 Dalf B2，写作部分未通过；Q3 薄弱环节勾选项目可直接定位到错题库与检查清单",
+      "raw_keywords": ["复读", "已考过", "写作未通过"]
+    },
+    {
+      "id": "AU-005",
+      "text": "薄弱环节集中在『词汇贫乏』『句式单一』『论证展开不足』的考生",
+      "source_file": "00_README.md",
+      "source_section": "5 分钟诊断 / Q3",
+      "evidence": "Q3 多选项中包含『词汇贫乏』『句式单一』『论证展开不足』『开头结尾没思路』『时间不够』等薄弱点，分别对应词汇库/句法库/观点库/组合示例库/检查清单",
+      "raw_keywords": ["词汇贫乏", "句式单一", "论证展开"]
+    },
+    {
+      "id": "AU-006",
+      "text": "偏好『按主题拆解 + 可直接套用模板』学习方式的考生",
+      "source_file": "00_README.md",
+      "source_section": "5 分钟诊断 / Q5",
+      "evidence": "Q5 学习偏好选项 B（按主题拆解）与 D（可直接套用模板）；推荐路径包含主题矩阵 10 大主题与 22 篇范文",
+      "raw_keywords": ["按主题拆解", "可直接套用", "模板"]
+    },
+    {
+      "id": "AU-007",
+      "text": "偏好『先理解规则再产出』的系统性学习者",
+      "source_file": "00_README.md",
+      "source_section": "5 分钟诊断 / Q5",
+      "evidence": "Q5 选项 A（先理解规则再产出）；推荐路径包含句法库 C1-C9 与检查清单 E1-E7 的规则拆解",
+      "raw_keywords": ["先理解规则", "再产出", "系统性"]
+    }
+  ],
+  "use_cases": [
+    {
+      "id": "UC-001",
+      "text": "4 周冲刺：每天 60-90 分钟，产出 8 篇完整作文 + 1 份自评表 + 3 段仿写",
+      "source_file": "01_学习路径.md",
+      "source_section": "路径 1 · 4 周冲刺",
+      "evidence": "路径 1 周计划：W1 三任务专项 / W2 弱项强化 / W3 主题轮转 / W4 计时模拟；总产出 8 篇作文+1 份自评表+3 段仿写",
+      "raw_keywords": ["4 周", "60-90 分钟", "8 篇作文", "自评表"]
+    },
+    {
+      "id": "UC-002",
+      "text": "8 周系统备考：每周 3-5 小时，产出 5 篇专项作文 + 3 个主题论据库 + 5+ 篇计时模拟",
+      "source_file": "01_学习路径.md",
+      "source_section": "路径 2 · 8 周系统",
+      "evidence": "路径 2 周计划：W1-2 范文库拆解 / W3-4 词汇句法积累 / W5-6 观点库 / W7-8 计时模拟；总产出 5 篇专项作文+3 个主题论据库+5+ 篇计时模拟",
+      "raw_keywords": ["8 周", "3-5 小时/周", "计时模拟"]
+    },
+    {
+      "id": "UC-003",
+      "text": "正式信 lettre formelle 完整写作流程：7 步骤共 60 分钟",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按任务查 / lettre formelle",
+      "evidence": "步骤：1.读题 3min → 2.草稿结构（立场 / 2 论据 / 让步 / 结论）5min → 3.开头段 7min → 4.主体 1（15min）→ 5.主体 2（15min）→ 6.结尾段 5min → 7.检查 10min；引用 CH-085 / CB-001 / CH-097",
+      "raw_keywords": ["lettre formelle", "7 步骤", "60 分钟"]
+    },
+    {
+      "id": "UC-004",
+      "text": "essai argumentatif 议论文写作流程",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按任务查 / essai argumentatif",
+      "evidence": "步骤包含：读题、列提纲、引言、主体段落（论点+例证+让步）、结论；引用 GD-观点库与 CB-006~CB-012 组合",
+      "raw_keywords": ["essai argumentatif", "论点例证", "让步"]
+    },
+    {
+      "id": "UC-005",
+      "text": "contribution à un forum 论坛投稿写作流程",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按任务查 / contribution à un forum",
+      "evidence": "步骤包含：定位帖子立场、选择亲/疏称 tu/vous、调用 CB-013~CB-015 组合；引用 CH-073 总结类与 JF-063 句型",
+      "raw_keywords": ["forum", "tu/vous", "CB-013"]
+    },
+    {
+      "id": "UC-006",
+      "text": "按 5 大评分维度做针对性提升",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按能力维度查",
+      "evidence": "5 维度：Task Fulfillment / Coherence / Vocabulaire / Grammaire / Registre；每维度对应模块（如 Vocabulaire→B 词汇库，Grammaire→C 句法库+F 错题库）",
+      "raw_keywords": ["5 评分维度", "Task Fulfillment", "Coherence", "Registre"]
+    },
+    {
+      "id": "UC-007",
+      "text": "按 10 大主题做主题词与论据积累",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按主题查",
+      "evidence": "10 主题：教育/环境/科技/工作/健康/社交媒体/城市生活/消费/文化/旅行；每主题对应 B10-B15+D 主题词与 GD 观点库",
+      "raw_keywords": ["10 主题", "教育", "环境", "科技"]
+    },
+    {
+      "id": "UC-008",
+      "text": "按错误类型自查与修正",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按错误类型查",
+      "evidence": "9 类错误：性数一致/虚拟式/条件式/直译/口语词/介词/连接词/时态/标点；对应 F 错题库 ER-001~ER-030",
+      "raw_keywords": ["9 类错误", "ER-001", "ER-030"]
+    },
+    {
+      "id": "UC-009",
+      "text": "考试中调用『考场草稿救命包』5 个救命题快速套用",
+      "source_file": "01_学习路径.md",
+      "source_section": "路径 3 / 救命包",
+      "evidence": "5 个救命题编号：CH-085（正式信开头）/ CH-049（让步）/ CH-097（正式信结尾）/ JF-001（虚拟式）/ JF-011（条件式）",
+      "raw_keywords": ["救命包", "CH-085", "JF-001"]
+    },
+    {
+      "id": "UC-010",
+      "text": "考前 5 分钟内用 36 项检查清单逐条核对作文",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E5 字数时间 / CL-025",
+      "evidence": "CL-025 要求预留 5 分钟检查时间；E1-E7 共 36 项可逐条勾选",
+      "raw_keywords": ["5 分钟", "36 项", "CL-025"]
+    },
+    {
+      "id": "UC-011",
+      "text": "考试当天对照 16 条考场规矩清单，从装包到收卷避免低级失误",
+      "source_file": "content/kaochang_guize_v1.md",
+      "source_section": "A/B/C/D 四组 16 条",
+      "evidence": "KS-001~005 装包物资 / KS-006~008 进场核验 / KS-009~013 答卷硬规矩（化名 + 字数标注 + 卷面整洁）/ KS-014~016 一票否决红线（éliminatoire 5/25 + 不传播 sujet + 草稿不批改）",
+      "raw_keywords": ["考场规矩", "16 条", "pseudonyme", "éliminatoire", "KS-014"]
+    },
+    {
+      "id": "UC-012",
+      "text": "读题 30 秒用 3 步识别法判定 5 种文体之一，避免 D1 文体误判扣分",
+      "source_file": "content/renwu_leixing_v1.md",
+      "source_section": "五、3 步识别法 + 二、5 类详解",
+      "evidence": "TL-001 lettre formelle（60% 频率，13 篇范文）/ TL-002 lettre personnelle（10%）/ TL-003 essai forum（25%，7 篇）/ TL-004 article journal（<5%，1 篇 FW-021）/ TL-005 rapport professionnel（<5%，1 篇 FW-022）；每类含 consigne 关键词+卷面格式+必踩点",
+      "raw_keywords": ["5 任务类型", "3 步识别", "lettre formelle", "essai forum", "TL-001"]
+    },
+    {
+      "id": "UC-013",
+      "text": "考场遇到 article / rapport 低频文体也能照搬标准结构",
+      "source_file": "content/fanwenku_v1_supplement.md",
+      "source_section": "FW-021 报刊评论 + FW-022 职场报告",
+      "evidence": "FW-021 article（264 词，titre + accroche + 双方论据 + nuance 结论）+ FW-022 rapport（262 词，Introduction + I/II/III + Recommandations + Conclusion 五段式），含 subjonctif / conditionnel / 名词化 / 被动语态 B2 全要素",
+      "raw_keywords": ["FW-021", "FW-022", "article", "rapport", "Recommandations"]
+    }
+  ],
+  "raw_pain_points": [
+    {
+      "id": "PP-001",
+      "text": "性数一致错误（accords）频发，尤其名词/形容词/过去分词搭配",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A1 性数一致 / ER-001~ER-006",
+      "evidence": "6 条典型错误：ER-001 les problèmes qui m'inquiète → m'inquiètent；ER-002 une décision important → importante；覆盖主谓、名词-形容词、过去分词",
+      "raw_keywords": ["accords", "性数一致", "过去分词"]
+    },
+    {
+      "id": "PP-002",
+      "text": "虚拟式 subjonctif 用错：该用直陈的地方用了直陈，或触发词识别失败",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A2 虚拟式 / ER-007~ER-010, ER-012",
+      "evidence": "ER-007 bien que + 直陈 → bien que soit；ER-008 il faut que je prends → prenne；ER-012 否定与疑问主句后用直陈而非虚拟",
+      "raw_keywords": ["subjonctif", "bien que", "il faut que"]
+    },
+    {
+      "id": "PP-003",
+      "text": "中式法语直译：把中文句式直译为法语，造成不自然或语法错误",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A4 直译腔 / ER-014~ER-017",
+      "evidence": "ER-014『学习知识』apprendre des connaissances（应 dire/accroître ses connaissances）；ER-015『打开视野』ouvrir les yeux → élargir ses horizons",
+      "raw_keywords": ["直译", "中式法语", "apprendre des connaissances"]
+    },
+    {
+      "id": "PP-004",
+      "text": "口语词混入正式写作：on / beaucoup de / genre / ça",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A5 口语词 / ER-018~ER-020",
+      "evidence": "ER-018 on doit → il faut / nous devons；ER-019 ça pose problème → cela pose problème；E4 正式语体 CL-018~CL-023 明确禁用 on",
+      "raw_keywords": ["口语词", "on", "ça", "正式语体"]
+    },
+    {
+      "id": "PP-005",
+      "text": "字数不达标：B2 官方要求 ≥ 250 词，考生常写不到 250 或卡在 230-240",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E5 字数时间 / CL-024",
+      "evidence": "CL-024：字数 ≥ 250 词（官方手册 « 250 mots minimum »）；少于 250 直接扣 Respect de la consigne 分",
+      "raw_keywords": ["≥ 250 词", "字数", "CL-024"]
+    },
+    {
+      "id": "PP-006",
+      "text": "考试时间分配失控：1 小时内完成读题+草稿+正文+检查四步",
+      "source_file": "02_知识库地图.md",
+      "source_section": "lettre formelle 时间分配",
+      "evidence": "1 小时拆分：读题 2min + 草稿 5min + 三段正文 34min + 检查 5min；CL-025 强制预留 5 分钟检查",
+      "raw_keywords": ["1 小时", "时间分配", "5 分钟检查"]
+    },
+    {
+      "id": "PP-007",
+      "text": "开头结尾没思路，缺少可套用的句型模板",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B8 正式信开头 / B9 正式信结尾",
+      "evidence": "B8（CH-085~CH-096）12 句开头模板；B9（CH-097~CH-108）12 句结尾模板；CL-001/CL-006 强调开头身份目的与礼貌收尾",
+      "raw_keywords": ["开头", "结尾", "CH-085", "CH-097"]
+    },
+    {
+      "id": "PP-008",
+      "text": "论证结构散乱：缺少主题句、缺少让步段、段落失衡",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E1 结构 / CL-001~CL-006",
+      "evidence": "CL-002 主体段需含 2 个论据；CL-003 必有主题句；CL-004 让步段；CL-006 段落均衡",
+      "raw_keywords": ["主题句", "让步段", "段落均衡", "CL-002"]
+    },
+    {
+      "id": "PP-009",
+      "text": "词汇贫乏：高频重复 à mon avis / il y a / beaucoup de / donc / mais",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E2 词汇 / CL-008 + E6 连接词 / CL-032",
+      "evidence": "CL-008 避免 à mon avis 重复；CL-032 避免 donc/mais 高频；词汇库 B1-B7 给出替换表达",
+      "raw_keywords": ["à mon avis", "donc", "mais", "替换"]
+    },
+    {
+      "id": "PP-010",
+      "text": "句式单一：全是简单句，缺少复杂结构（虚拟/条件/让步/强调）",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E3 句法 / CL-012~CL-017",
+      "evidence": "CL-012 至少 1 处虚拟式；CL-013 至少 1 处条件式；CL-014 让步；CL-015 强调；CL-016 避免连续简单句",
+      "raw_keywords": ["虚拟式", "条件式", "让步", "强调", "CL-012"]
+    },
+    {
+      "id": "PP-011",
+      "text": "连接词重复或缺失，造成行文不连贯",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A7 连接词 / ER-024~ER-026",
+      "evidence": "ER-024 段首缺过渡；ER-025 donc 重复；ER-026 mais 滥用",
+      "raw_keywords": ["连接词", "过渡", "donc 重复"]
+    },
+    {
+      "id": "PP-012",
+      "text": "时态配合错误：复合过去时/未完成过去时/愈过去时混用",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A8 时态 / ER-027~ER-028",
+      "evidence": "ER-027 imparfait vs passé composé；ER-028 plus-que-parfait 在间接引语中的配合",
+      "raw_keywords": ["imparfait", "passé composé", "plus-que-parfait"]
+    },
+    {
+      "id": "PP-013",
+      "text": "tu/vous 混用、信件格式不规范",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E4 正式语体 / CL-018, CL-023",
+      "evidence": "CL-018 vous/tu 一致；CL-023 信件格式（日期/对象/称呼/署名）",
+      "raw_keywords": ["tu/vous", "信件格式", "CL-018"]
+    },
+    {
+      "id": "PP-014",
+      "text": "拼写与标点错误： accents 缺失、标点前空格",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A9 标点拼写 / ER-029~ER-030",
+      "evidence": "ER-029 à / é / è accents；ER-030 法语标点前空格（: ; ? !）",
+      "raw_keywords": ["accents", "标点", "前空格"]
+    }
+  ],
+  "raw_selling_points": [
+    {
+      "id": "SP-001",
+      "text": "7 大模块 + 2 速查共 519 条独立资料，覆盖任务/能力/主题三维",
+      "source_file": "00_README.md",
+      "source_section": "知识库规模",
+      "evidence": "v1.3 已交付 519 条独立资料：7 大模块 498 条（范文库 22 篇 + 词汇库 240 + 句法库 100 + 观点库 50 + 检查清单 36 + 错题库 30 + 组合示例 20）+ 2 速查 21 条（考场规矩 16 + 任务类型 5）",
+      "raw_keywords": ["519 条", "7 模块", "2 速查", "v1.3"]
+    },
+    {
+      "id": "SP-002",
+      "text": "5 分钟诊断问卷定位起点与路径",
+      "source_file": "00_README.md",
+      "source_section": "5 分钟诊断",
+      "evidence": "Q1 法语水平 5 档 / Q2 距考时间 / Q3 薄弱环节多选 / Q4 时间投入 / Q5 学习偏好；自动推荐路径 1/2/3",
+      "raw_keywords": ["5 分钟", "5 道题", "Q1-Q5"]
+    },
+    {
+      "id": "SP-003",
+      "text": "3 档学习节奏可对应不同时间预算",
+      "source_file": "01_学习路径.md",
+      "source_section": "3 档路径",
+      "evidence": "路径 1：4 周/60-90min；路径 2：8 周/3-5h；路径 3：≤1 周救命包",
+      "raw_keywords": ["4 周", "8 周", "救命包", "3 档"]
+    },
+    {
+      "id": "SP-004",
+      "text": "22 篇完整范文（v1.3），覆盖 4/5 官方文体 + 10 主题",
+      "source_file": "content/fanwenku_v1.md, content/fanwenku_v1_supplement.md",
+      "source_section": "FW-001~FW-022",
+      "evidence": "建议信 6 + 正式信 3 + 投诉反对信 6 + 论坛投稿 5 + 报刊评论 1（FW-021）+ 职场报告 1（FW-022）；剩 lettre personnelle 频率 <10% 暂无独立范文",
+      "raw_keywords": ["22 篇", "FW-001", "FW-022", "4/5 文体", "10 主题", "v1.3"]
+    },
+    {
+      "id": "SP-005",
+      "text": "每篇范文标注 9-10 个可替换表达，可二次组合",
+      "source_file": "content/fanwenku_v1.md",
+      "source_section": "范文格式",
+      "evidence": "FW-001 等每篇含『可替换表达』列表（9-10 项）+『学习提示』；可调用词汇库与句法库替换",
+      "raw_keywords": ["可替换表达", "9-10 个", "学习提示"]
+    },
+    {
+      "id": "SP-006",
+      "text": "240 条词汇表达，按 9 大功能 + 6 主题分类，并标注频率分级",
+      "source_file": "content/cihuiku_v1.md, content/cihuiku_v1_supplement.md",
+      "source_section": "CH-001~CH-240",
+      "evidence": "B1-B9 功能（观点/原因/结果/对比/让步/建议/总结/正式信开头/结尾）；B10-B15 主题（教育/环境/科技/工作/健康/社交媒体）；supplement 补城市/消费/文化/旅行；频率分级 ★★★ 必背 59/★★ 推荐 91/★ 一般 30",
+      "raw_keywords": ["240 条", "9 功能", "6 主题", "★★★ 必背"]
+    },
+    {
+      "id": "SP-007",
+      "text": "100 条句法结构（v1.2），覆盖虚拟/条件/让步/因果/对比/强调/递进/正式信/结论",
+      "source_file": "content/jufaku_v1.md, content/jufaku_v1_supplement.md",
+      "source_section": "JF-001~JF-100",
+      "evidence": "C1 虚拟式 10 / C2 条件式 9 / C3 让步 9 / C4 因果 8 / C5 对比 7 / C6 强调 10 / C7 递进 8 / C8 正式信句型 10 / C9 结论 8；supplement 20 条进阶",
+      "raw_keywords": ["100 条", "9 大类", "JF-001", "JF-100"]
+    },
+    {
+      "id": "SP-008",
+      "text": "50 条观点论据（v1.2），10 主题 × 平均 5 条",
+      "source_file": "content/guandianku_v1.md, content/guandianku_v1_supplement.md",
+      "source_section": "GD-001~GD-050",
+      "evidence": "每条含『中文观点+法语观点句+例子+适用场景+可搭配句型编号』；10 主题：教育/环境/科技/工作/健康/社交媒体/城市/消费/文化/旅行",
+      "raw_keywords": ["50 条", "10 主题", "观点句", "搭配句型"]
+    },
+    {
+      "id": "SP-009",
+      "text": "36 项写作检查清单（v1），按 E1-E7 七大分类可逐条勾选",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E1-E7",
+      "evidence": "E1 结构 6 / E2 词汇 5 / E3 句法 6 / E4 正式语体 6 / E5 字数时间 4 / E6 连接词 5 / E7 结尾 4",
+      "raw_keywords": ["36 项", "7 大分类", "E1-E7"]
+    },
+    {
+      "id": "SP-010",
+      "text": "30 条典型错题（v1），9 类型，每条给出错误句+正确句+解释+修正方法",
+      "source_file": "content/errors_v1.md",
+      "source_section": "ER-001~ER-030",
+      "evidence": "A1 性数 6 / A2 虚拟 5 / A3 条件 2 / A4 直译 4 / A5 口语 3 / A6 介词 3 / A7 连接 3 / A8 时态 2 / A9 拼写 2；每条含关联条目编号",
+      "raw_keywords": ["30 条", "9 类型", "ER-001", "ER-030"]
+    },
+    {
+      "id": "SP-011",
+      "text": "20 条组合示例（v1），把词汇+句法+观点组装成可直接套用的法语句",
+      "source_file": "content/combinations_v1.md",
+      "source_section": "CB-001~CB-020",
+      "evidence": "A1 正式信 5 / A2 观点文 7 / A3 论坛投稿 3 / A4 投诉反对建议 5；每条标注『组合来源』引用 GD/CH/JF 编号 + 仿写变体",
+      "raw_keywords": ["20 条", "4 场景", "组合来源", "仿写变体"]
+    },
+    {
+      "id": "SP-012",
+      "text": "10 主题矩阵可在任意任务形式下交叉调用",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按主题查",
+      "evidence": "教育/环境/科技/工作/健康/社交媒体/城市生活/消费/文化/旅行；每主题可调用 B 主题词+GD 观点+FW 范文",
+      "raw_keywords": ["10 主题矩阵", "交叉调用"]
+    },
+    {
+      "id": "SP-013",
+      "text": "临考『考场草稿救命包』5 个救命题可现场套用",
+      "source_file": "01_学习路径.md",
+      "source_section": "路径 3 / 救命包",
+      "evidence": "CH-085 正式信开头 / CH-049 让步 / CH-097 正式信结尾 / JF-001 虚拟式 / JF-011 条件式",
+      "raw_keywords": ["救命包", "5 命题", "CH-085", "JF-001"]
+    },
+    {
+      "id": "SP-014",
+      "text": "完成度自评 6 题，量化学习进度",
+      "source_file": "01_学习路径.md",
+      "source_section": "完成度自评",
+      "evidence": "6 题覆盖：是否完成既定篇数/是否做计时模拟/是否能调用词汇库/是否能调用句法库/是否能调用观点库/是否能用检查清单",
+      "raw_keywords": ["6 题", "完成度", "自评"]
+    },
+    {
+      "id": "SP-015",
+      "text": "16 条考场规矩清单，避免低级失误被扣分或取消资格",
+      "source_file": "content/kaochang_guize_v1.md",
+      "source_section": "全 16 条",
+      "evidence": "覆盖装包物资/进场核验/答卷硬规矩（化名 + 字数标注 + 卷面整洁）/一票否决红线（éliminatoire 5/25 + 不传播 sujet + 草稿不批改），官方 Manuel 第 6 章 Droits et devoirs 重组",
+      "raw_keywords": ["考场规矩", "16 条", "pseudonyme", "éliminatoire", "Manuel"]
+    },
+    {
+      "id": "SP-016",
+      "text": "5 任务类型识别对照表，30 秒判对文体避免 D1 直接归零",
+      "source_file": "content/renwu_leixing_v1.md",
+      "source_section": "全表",
+      "evidence": "TL-001 lettre formelle（60% 频率，13 篇范文：建议信 3 + 正式信 4 + 投诉反对信 6）/ TL-002 lettre personnelle（10%，暂无独立范文）/ TL-003 essai forum（25%，7 篇：essai 4 + forum 3）/ TL-004 article journal（<5%，1 篇 FW-021）/ TL-005 rapport professionnel（<5%，1 篇 FW-022）；含 consigne 关键词+卷面格式+5 类差异矩阵+看错文体 D1 扣分模拟",
+      "raw_keywords": ["5 任务类型", "30 秒识别", "lettre formelle", "essai forum", "TL-001"]
+    },
+    {
+      "id": "SP-017",
+      "text": "22 篇范文覆盖 4/5 官方文体（含低频 article + rapport 各 1 篇）",
+      "source_file": "content/fanwenku_v1.md + fanwenku_v1_supplement.md",
+      "source_section": "全 22 篇",
+      "evidence": "正式信 4 + 建议信 3 + 投诉反对信 6 + essai argumentatif 4 + forum 3 + 报刊评论 1（FW-021）+ 职场报告 1（FW-022）= 22；剩 lettre personnelle 频率 < 10% 暂无独立范文，可参照 lettre formelle 简化版",
+      "raw_keywords": ["22 篇", "4/5 文体", "article", "rapport", "FW-021", "FW-022"]
+    }
+  ],
+  "knowledge_assets": [
+    {
+      "id": "KA-001",
+      "text": "词汇库-功能表达 B1 表达观点 CH-001~CH-012",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B1",
+      "evidence": "12 条表达观点的功能句（je suis d'avis que / à mon sens / selon moi 等）",
+      "raw_keywords": ["B1", "表达观点", "CH-001"]
+    },
+    {
+      "id": "KA-002",
+      "text": "词汇库-功能表达 B2 表达原因 CH-013~CH-024",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B2",
+      "evidence": "12 条因果表达（en raison de / du fait que / grâce à 等）",
+      "raw_keywords": ["B2", "原因", "CH-013"]
+    },
+    {
+      "id": "KA-003",
+      "text": "词汇库-功能表达 B3 表达结果 CH-025~CH-036",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B3",
+      "evidence": "12 条结果表达（par conséquent / de sorte que / entraîner 等）",
+      "raw_keywords": ["B3", "结果", "CH-025"]
+    },
+    {
+      "id": "KA-004",
+      "text": "词汇库-功能表达 B4 表达对比 CH-037~CH-048",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B4",
+      "evidence": "12 条对比表达（tandis que / contrairement à / par rapport à 等）",
+      "raw_keywords": ["B4", "对比", "CH-037"]
+    },
+    {
+      "id": "KA-005",
+      "text": "词汇库-功能表达 B5 表达让步 CH-049~CH-060",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B5",
+      "evidence": "12 条让步表达（bien que / malgré / en dépit de 等）；CH-049 被列入救命包",
+      "raw_keywords": ["B5", "让步", "CH-049", "救命包"]
+    },
+    {
+      "id": "KA-006",
+      "text": "词汇库-功能表达 B6 表达建议 CH-061~CH-072",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B6",
+      "evidence": "12 条建议表达（il serait préférable de / je suggère de 等）",
+      "raw_keywords": ["B6", "建议", "CH-061"]
+    },
+    {
+      "id": "KA-007",
+      "text": "词汇库-功能表达 B7 表达总结 CH-073~CH-084",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B7",
+      "evidence": "12 条总结表达（en conclusion / pour conclure 等）",
+      "raw_keywords": ["B7", "总结", "CH-073"]
+    },
+    {
+      "id": "KA-008",
+      "text": "词汇库-B8 正式信开头 CH-085~CH-096",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B8",
+      "evidence": "12 条信件开头模板；CH-085 是救命包 5 命题之一",
+      "raw_keywords": ["B8", "正式信开头", "CH-085"]
+    },
+    {
+      "id": "KA-009",
+      "text": "词汇库-B9 正式信结尾 CH-097~CH-108",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B9",
+      "evidence": "12 条信件结尾模板；CH-097 是救命包 5 命题之一",
+      "raw_keywords": ["B9", "正式信结尾", "CH-097"]
+    },
+    {
+      "id": "KA-010",
+      "text": "词汇库-主题词 B10-B15（教育/环境/科技/工作/健康/社交媒体）CH-109~CH-180",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "B10-B15",
+      "evidence": "6 主题共 72 条主题词，每主题 12 条",
+      "raw_keywords": ["B10-B15", "主题词", "教育", "环境"]
+    },
+    {
+      "id": "KA-011",
+      "text": "词汇库-主题词扩展（城市/消费/文化/旅行）CH-181~CH-228",
+      "source_file": "content/cihuiku_v1_supplement.md",
+      "source_section": "主题词扩充",
+      "evidence": "4 主题共 48 条主题词",
+      "raw_keywords": ["CH-181", "城市", "消费", "文化", "旅行"]
+    },
+    {
+      "id": "KA-012",
+      "text": "词汇库-扩展功能（假设等）CH-229~CH-240",
+      "source_file": "content/cihuiku_v1_supplement.md",
+      "source_section": "扩展功能",
+      "evidence": "12 条假设/扩展表达",
+      "raw_keywords": ["CH-229", "假设"]
+    },
+    {
+      "id": "KA-013",
+      "text": "句法库-C1 虚拟式 10 条 JF-001~JF-010",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C1",
+      "evidence": "10 个虚拟式触发结构：bien que / il faut que / avant que / pour que / sans que 等；JF-001 是救命包命题",
+      "raw_keywords": ["C1", "虚拟式", "JF-001", "bien que"]
+    },
+    {
+      "id": "KA-014",
+      "text": "句法库-C2 条件式 9 条 JF-011~JF-020",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C2",
+      "evidence": "Si+imparfait / politesse / devrait-pourrait / Si PQP / au cas où 等；JF-011 是救命包命题",
+      "raw_keywords": ["C2", "条件式", "JF-011", "Si+imparfait"]
+    },
+    {
+      "id": "KA-015",
+      "text": "句法库-C3 让步 9 条 JF-021~JF-028",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C3",
+      "evidence": "qui que / quel que soit / où que / quoi que / malgré / tout en / certes...mais / même si",
+      "raw_keywords": ["C3", "让步", "qui que", "malgré"]
+    },
+    {
+      "id": "KA-016",
+      "text": "句法库-C4 因果 8 条 JF-029~JF-036",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C4",
+      "evidence": "8 条因果结构（étant donné / du fait de / de manière à 等）",
+      "raw_keywords": ["C4", "因果", "JF-029"]
+    },
+    {
+      "id": "KA-017",
+      "text": "句法库-C5 对比 7 条 JF-037~JF-043",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C5",
+      "evidence": "7 条对比结构",
+      "raw_keywords": ["C5", "对比", "JF-037"]
+    },
+    {
+      "id": "KA-018",
+      "text": "句法库-C6 强调 10 条 JF-045~JF-054",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C6",
+      "evidence": "10 条强调结构（c'est...qui / ce que...c'est 等）",
+      "raw_keywords": ["C6", "强调", "mise en relief"]
+    },
+    {
+      "id": "KA-019",
+      "text": "句法库-C7 递进 8 条 JF-055~JF-062",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C7",
+      "evidence": "8 条递进结构（non seulement...mais aussi / de surcroît 等）",
+      "raw_keywords": ["C7", "递进", "non seulement"]
+    },
+    {
+      "id": "KA-020",
+      "text": "句法库-C8 正式信句型 10 条 JF-063~JF-072",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C8",
+      "evidence": "10 条正式信句型",
+      "raw_keywords": ["C8", "正式信句型", "JF-063"]
+    },
+    {
+      "id": "KA-021",
+      "text": "句法库-C9 结论句型 8 条 JF-073~JF-080",
+      "source_file": "content/jufaku_v1.md",
+      "source_section": "C9",
+      "evidence": "8 条结论句型",
+      "raw_keywords": ["C9", "结论", "JF-073"]
+    },
+    {
+      "id": "KA-022",
+      "text": "句法库-supplement 4 类进阶 JF-081~JF-100",
+      "source_file": "content/jufaku_v1_supplement.md",
+      "source_section": "4 类进阶",
+      "evidence": "强调过渡 4 / 让步对立 6 / 因果目的 5 / 时态语式 5（imparfait/plus-que-parfait/conditionnel passé/futur antérieur/gérondif）",
+      "raw_keywords": ["JF-081", "时态", "语式", "gérondif"]
+    },
+    {
+      "id": "KA-023",
+      "text": "观点库-10 主题各 5 条 GD-001~GD-050",
+      "source_file": "content/guandianku_v1.md, content/guandianku_v1_supplement.md",
+      "source_section": "10 主题 × 5",
+      "evidence": "教育 GD-001~005 / 环境 GD-006~010 / 科技 GD-011~015 / 工作 GD-016~020 / 健康 GD-021~025 / 社交媒体 GD-026~030 / 城市 GD-031~035 / 消费 GD-036~040 / 文化 GD-041~045 / 旅行 GD-046~050",
+      "raw_keywords": ["GD-001", "10 主题", "5 条/主题"]
+    },
+    {
+      "id": "KA-024",
+      "text": "观点库字段结构：中文观点+法语观点句+例子+适用场景+可搭配句型",
+      "source_file": "content/guandianku_v1.md",
+      "source_section": "条目结构",
+      "evidence": "每条 GD 条目含 5 字段；『可搭配句型』引用 JF 编号",
+      "raw_keywords": ["观点句", "例子", "适用场景", "可搭配句型"]
+    },
+    {
+      "id": "KA-025",
+      "text": "错题库-9 类型 30 条 ER-001~ER-030",
+      "source_file": "content/errors_v1.md",
+      "source_section": "A1-A9",
+      "evidence": "A1 性数 6 / A2 虚拟 5 / A3 条件 2 / A4 直译 4 / A5 口语 3 / A6 介词 3 / A7 连接 3 / A8 时态 2 / A9 拼写 2",
+      "raw_keywords": ["ER-001", "9 类型", "性数", "直译"]
+    },
+    {
+      "id": "KA-026",
+      "text": "错题库字段结构：错误句+正确句+解释+修正方法+关联条目",
+      "source_file": "content/errors_v1.md",
+      "source_section": "条目结构",
+      "evidence": "每条 ER 含 5 字段；『关联条目』可指向 CL/JF/CH 编号",
+      "raw_keywords": ["错误句", "正确句", "修正方法", "关联条目"]
+    },
+    {
+      "id": "KA-027",
+      "text": "组合示例库-4 场景 20 条 CB-001~CB-020",
+      "source_file": "content/combinations_v1.md",
+      "source_section": "A1-A4",
+      "evidence": "A1 正式信 5 / A2 观点文 7 / A3 论坛 3 / A4 投诉反对建议 5",
+      "raw_keywords": ["CB-001", "4 场景", "组合"]
+    },
+    {
+      "id": "KA-028",
+      "text": "组合示例字段结构：使用场景+任务形式+完整法语句+中文翻译+组合来源+组合说明+仿写变体",
+      "source_file": "content/combinations_v1.md",
+      "source_section": "条目结构",
+      "evidence": "每条 CB 含 7 字段；『组合来源』引用 GD/CH/JF 编号；『仿写变体』给出替换思路",
+      "raw_keywords": ["组合来源", "仿写变体", "GD", "CH", "JF"]
+    }
+  ],
+  "content_modules": [
+    {
+      "id": "CM-001",
+      "text": "模块 A · 范文库：22 篇 v1.3，覆盖 4/5 官方任务形式与 10 主题",
+      "source_file": "00_README.md, content/fanwenku_v1.md, content/fanwenku_v1_supplement.md",
+      "source_section": "模块 A / FW-001~FW-022",
+      "evidence": "建议信 6 + 正式信 3 + 投诉反对信 6 + 论坛投稿 5 + 报刊评论 1（FW-021）+ 职场报告 1（FW-022）；覆盖 4/5 官方文体（剩 lettre personnelle 频率 <10%）",
+      "raw_keywords": ["A 范文库", "22 篇", "FW-001", "FW-022", "v1.3"]
+    },
+    {
+      "id": "CM-002",
+      "text": "模块 B · 词汇库：240 条 v1.2，9 大功能 + 6+4 主题",
+      "source_file": "00_README.md, content/cihuiku_v1.md, content/cihuiku_v1_supplement.md",
+      "source_section": "模块 B / CH-001~CH-240",
+      "evidence": "B1-B9 功能（观点/原因/结果/对比/让步/建议/总结/正式信开头/结尾）；B10-B15 主题（教育/环境/科技/工作/健康/社交媒体）；supplement 加城市/消费/文化/旅行+假设扩展",
+      "raw_keywords": ["B 词汇库", "240 条", "9 功能", "10 主题"]
+    },
+    {
+      "id": "CM-003",
+      "text": "模块 C · 句法库：100 条 v1.2，9 大类",
+      "source_file": "00_README.md, content/jufaku_v1.md, content/jufaku_v1_supplement.md",
+      "source_section": "模块 C / JF-001~JF-100",
+      "evidence": "C1 虚拟 10 / C2 条件 9 / C3 让步 9 / C4 因果 8 / C5 对比 7 / C6 强调 10 / C7 递进 8 / C8 正式信 10 / C9 结论 8；supplement 进阶 20",
+      "raw_keywords": ["C 句法库", "100 条", "9 类"]
+    },
+    {
+      "id": "CM-004",
+      "text": "模块 D · 观点库：50 条 v1.2，10 主题 × 5 条",
+      "source_file": "00_README.md, content/guandianku_v1.md, content/guandianku_v1_supplement.md",
+      "source_section": "模块 D / GD-001~GD-050",
+      "evidence": "10 主题：教育/环境/科技/工作/健康/社交媒体/城市/消费/文化/旅行；每条含中文观点+法语观点句+例子+适用场景+可搭配句型",
+      "raw_keywords": ["D 观点库", "50 条", "10 主题"]
+    },
+    {
+      "id": "CM-005",
+      "text": "模块 E · 检查清单：36 项 v1，E1-E7 七大分类",
+      "source_file": "00_README.md, content/checklist_v1.md",
+      "source_section": "模块 E / CL-001~CL-036",
+      "evidence": "E1 结构 6 / E2 词汇 5 / E3 句法 6 / E4 正式语体 6 / E5 字数时间 4 / E6 连接词 5 / E7 结尾 4",
+      "raw_keywords": ["E 检查清单", "36 项", "E1-E7"]
+    },
+    {
+      "id": "CM-006",
+      "text": "模块 F · 错题库：30 条 v1，9 类型",
+      "source_file": "00_README.md, content/errors_v1.md",
+      "source_section": "模块 F / ER-001~ER-030",
+      "evidence": "A1 性数 6 / A2 虚拟 5 / A3 条件 2 / A4 直译 4 / A5 口语 3 / A6 介词 3 / A7 连接 3 / A8 时态 2 / A9 拼写 2",
+      "raw_keywords": ["F 错题库", "30 条", "9 类型"]
+    },
+    {
+      "id": "CM-007",
+      "text": "模块 G · 组合示例库：20 条 v1，4 场景",
+      "source_file": "00_README.md, content/combinations_v1.md",
+      "source_section": "模块 G / CB-001~CB-020",
+      "evidence": "A1 正式信 5 / A2 观点文 7 / A3 论坛 3 / A4 投诉反对建议 5",
+      "raw_keywords": ["G 组合示例", "20 条", "4 场景"]
+    }
+  ],
+  "displayable_assets": [
+    {
+      "id": "DA-001",
+      "text": "5 分钟诊断问卷（5 道题）",
+      "source_file": "00_README.md",
+      "source_section": "5 分钟诊断",
+      "evidence": "Q1 法语水平 5 档 / Q2 距考时间 / Q3 薄弱环节多选 / Q4 时间投入 / Q5 学习偏好",
+      "raw_keywords": ["5 分钟", "5 题", "Q1-Q5"]
+    },
+    {
+      "id": "DA-002",
+      "text": "3 档学习路径对照表",
+      "source_file": "01_学习路径.md",
+      "source_section": "3 档路径",
+      "evidence": "路径 1：4 周冲刺/60-90min/8 篇作文；路径 2：8 周系统/3-5h/5 篇作文+3 论据库；路径 3：≤1 周救命包/5 命题",
+      "raw_keywords": ["3 档", "路径 1", "路径 2", "路径 3"]
+    },
+    {
+      "id": "DA-003",
+      "text": "lettre formelle 7 步骤流程图（含时长）",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按任务查 / lettre formelle",
+      "evidence": "1.读题 2min / 2.草稿 5min / 3.开头 5min / 4.主体 1 12min / 5.主体 2 12min / 6.结尾 5min / 7.检查 5min",
+      "raw_keywords": ["7 步骤", "流程图", "lettre formelle"]
+    },
+    {
+      "id": "DA-004",
+      "text": "essai argumentatif 写作流程图",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按任务查 / essai argumentatif",
+      "evidence": "步骤含读题/提纲/引言/主体（论点+例证+让步）/结论",
+      "raw_keywords": ["essai", "流程图", "论点例证"]
+    },
+    {
+      "id": "DA-005",
+      "text": "contribution à un forum 写作流程图",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按任务查 / contribution à un forum",
+      "evidence": "步骤含定位立场/选 tu/vous/调用 CB-013~CB-015",
+      "raw_keywords": ["forum", "流程图", "tu/vous"]
+    },
+    {
+      "id": "DA-006",
+      "text": "10 主题矩阵表",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按主题查",
+      "evidence": "教育/环境/科技/工作/健康/社交媒体/城市生活/消费/文化/旅行",
+      "raw_keywords": ["10 主题矩阵", "教育", "环境", "科技"]
+    },
+    {
+      "id": "DA-007",
+      "text": "5 大评分维度对照表（与模块映射）",
+      "source_file": "02_知识库地图.md",
+      "source_section": "按能力维度查",
+      "evidence": "Task Fulfillment / Coherence / Vocabulaire / Grammaire / Registre；分别对应不同模块",
+      "raw_keywords": ["5 维度", "Task Fulfillment", "Coherence", "Registre"]
+    },
+    {
+      "id": "DA-008",
+      "text": "考场草稿救命包 5 命题卡片",
+      "source_file": "01_学习路径.md",
+      "source_section": "路径 3 / 救命包",
+      "evidence": "CH-085 / CH-049 / CH-097 / JF-001 / JF-011",
+      "raw_keywords": ["救命包", "5 命题", "CH-085", "JF-001"]
+    },
+    {
+      "id": "DA-009",
+      "text": "36 项检查清单（E1-E7 可勾选）",
+      "source_file": "content/checklist_v1.md",
+      "source_section": "E1-E7",
+      "evidence": "E1 结构 6 / E2 词汇 5 / E3 句法 6 / E4 正式语体 6 / E5 字数时间 4 / E6 连接词 5 / E7 结尾 4",
+      "raw_keywords": ["36 项", "E1-E7", "勾选清单"]
+    },
+    {
+      "id": "DA-010",
+      "text": "30 条错题对比例（错误句 vs 正确句）",
+      "source_file": "content/errors_v1.md",
+      "source_section": "ER-001~ER-030",
+      "evidence": "每条 ER 给出『错误句+正确句+解释+修正方法』",
+      "raw_keywords": ["错题对照", "错误句", "正确句"]
+    },
+    {
+      "id": "DA-011",
+      "text": "22 篇范文（每篇含 9-14 个可替换表达）",
+      "source_file": "content/fanwenku_v1.md, content/fanwenku_v1_supplement.md",
+      "source_section": "FW-001~FW-022",
+      "evidence": "每篇 FW 含『可替换表达』列表 +『学习提示』；FW-021/FW-022（v1.3 新增 article + rapport）逐句核对动词变位与性数配合",
+      "raw_keywords": ["22 篇", "可替换表达", "学习提示", "v1.3"]
+    },
+    {
+      "id": "DA-012",
+      "text": "20 条组合示例（含完整法语句+中文+仿写变体）",
+      "source_file": "content/combinations_v1.md",
+      "source_section": "CB-001~CB-020",
+      "evidence": "每条 CB 含『完整法语句+中文翻译+组合来源+仿写变体』",
+      "raw_keywords": ["组合示例", "完整法语", "仿写变体"]
+    },
+    {
+      "id": "DA-013",
+      "text": "240 条词汇卡片（带频率分级 ★★★/★★/★）",
+      "source_file": "content/cihuiku_v1.md",
+      "source_section": "频率分级",
+      "evidence": "★★★ 必背 59 / ★★ 推荐 91 / ★ 一般 30",
+      "raw_keywords": ["频率分级", "★★★", "★★", "★"]
+    },
+    {
+      "id": "DA-014",
+      "text": "50 条观点卡片（带例子与适用场景）",
+      "source_file": "content/guandianku_v1.md, content/guandianku_v1_supplement.md",
+      "source_section": "GD-001~GD-050",
+      "evidence": "每条 GD 含『中文观点+法语观点句+例子+适用场景+可搭配句型』",
+      "raw_keywords": ["观点卡片", "例子", "适用场景"]
+    },
+    {
+      "id": "DA-015",
+      "text": "6 题完成度自评表",
+      "source_file": "01_学习路径.md",
+      "source_section": "完成度自评",
+      "evidence": "6 题覆盖篇数/计时模拟/词汇库/句法库/观点库/检查清单使用情况",
+      "raw_keywords": ["6 题", "完成度", "自评表"]
+    }
+  ]
+}

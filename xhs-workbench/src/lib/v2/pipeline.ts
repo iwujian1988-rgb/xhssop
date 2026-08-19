@@ -4,6 +4,7 @@ import type { ProductFacts } from '@/types/content-planning';
 import type { ProductId } from '@/types/data';
 import type {
   CompetitorCreativeCard,
+  CoverTitleCandidate,
   DenseDirectoryCoverPayload,
   DenseDirectorySection,
   EvidenceSnippet,
@@ -29,14 +30,14 @@ import {
 import { generateTitlePackage } from './title-stage';
 import { generateTopicOptions, getCapabilityFallback, migratedToTopicOption, topicOptionToMigrated } from './topic-stage';
 import { inspectForPublish, isReleaseBlockingIssue, issueAsWarning } from './publish-guard';
+import type { ProductShowcasePlan } from '@/lib/product-showcase-library';
 
 export const PIPELINE_PROMPT_VERSION = 'v2-pipeline-1';
 
 export function isV2PipelineEnabled() {
-  // V2 is the production workflow. Keep V1 only as an explicit rollback path;
-  // a missing environment variable must never silently route frontend batches
-  // through the legacy pipeline.
-  return process.env.CONTENT_PIPELINE_VERSION !== 'v1';
+  // V2 is the only active runtime. The legacy implementation remains in the
+  // repository for historical comparison, but no frontend request may enter it.
+  return true;
 }
 
 export interface PlanTopicsV2Input {
@@ -44,6 +45,7 @@ export interface PlanTopicsV2Input {
   card: CompetitorCreativeCard;
   facts: ProductFacts;
   direction?: string;
+  contentMode?: 'standard' | 'product_showcase';
   limit?: number;
   recentAngles?: string[];
 }
@@ -53,6 +55,8 @@ export interface ComposeV2Input {
   card: CompetitorCreativeCard;
   topic: MigratedTopic & { v2_topic?: TopicOption };
   evidence: EvidenceSnippet[];
+  contentMode?: 'standard' | 'product_showcase';
+  showcasePlan?: ProductShowcasePlan;
   resumeArtifacts?: PipelineArtifacts;
 }
 
@@ -77,6 +81,7 @@ export async function composeV2(input: ComposeV2Input): Promise<PipelineResult> 
     topic,
     capability,
     evidence,
+    showcasePlan: input.showcasePlan,
   };
   const publishReadyContent = await prepareContentForTitles({
     productId: input.productId,
@@ -123,6 +128,7 @@ export async function composeV2(input: ComposeV2Input): Promise<PipelineResult> 
     evidence,
     auditWarnings: publishReadyContent.warnings,
     prebuiltTags,
+    showcasePlan: input.showcasePlan,
   });
   const compiledDraft = localArtifact(
     draft,
@@ -155,6 +161,7 @@ interface PrepareContentInput {
   contentInput: Parameters<typeof generateContentPackage>[0];
   selectedTopic: VersionedArtifact<TopicOption>;
   resumeContent?: VersionedArtifact<ContentPackage>;
+  showcasePlan?: ProductShowcasePlan;
 }
 
 async function prepareContentForTitles(input: PrepareContentInput): Promise<VersionedArtifact<ContentPackage>> {
@@ -270,6 +277,7 @@ interface CompileInput {
   evidence: EvidenceSnippet[];
   auditWarnings: string[];
   prebuiltTags?: string[];
+  showcasePlan?: ProductShowcasePlan;
 }
 
 export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
@@ -281,15 +289,27 @@ export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
     sections: compiled.sections,
   };
   const overflowPage = buildOverflowPage(compiled.overflow, input.content.innerPages.length + 1);
-  const innerPages = normalizeInnerPages([
+  let innerPages = normalizeInnerPages([
     ...input.content.innerPages,
     ...(overflowPage ? [overflowPage] : []),
-  ]);
+  ], `${input.productId}|${input.card.id}|${input.topic.id}`);
+  if (input.showcasePlan) {
+    innerPages = innerPages.map((page, index) => {
+      const asset = input.showcasePlan?.innerAssets[index];
+      return asset ? {
+        ...page,
+        showcase_asset_id: asset.id,
+        showcase_asset_label: asset.label,
+        showcase_asset_image: asset.image,
+      } : page;
+    });
+  }
   const brief = buildBrief(input);
   const titleCandidates = input.titles.candidates.map<TitleCandidate>((candidate, index) => ({
     title: candidate.textTitle,
+    title_type: toTextTitleType(candidate),
     formula_id: `v2_${candidate.mechanism || index + 1}`,
-    trigger_type: candidate.mechanism,
+    trigger_type: toTextTitleType(candidate),
     formula_skeleton: '',
     reason: candidate.userRelation,
     risk_flags: [],
@@ -309,6 +329,7 @@ export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
       template_id: input.card.renderer_id,
       title: candidate.coverTitle,
       subtitle: candidate.coverSubtitle,
+      title_type: toCoverTitleType(candidate),
       reason: candidate.userRelation,
     })),
     cover,
@@ -322,6 +343,15 @@ export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
       issues: issues.filter(item => /法语|事实|French|fact/i.test(item)),
     },
     evidence: input.evidence,
+    showcase: input.showcasePlan ? {
+      angle_id: input.showcasePlan.angle.id,
+      angle_label: input.showcasePlan.angle.label,
+      cover_asset_id: input.showcasePlan.coverAsset.id,
+      cover_asset_label: input.showcasePlan.coverAsset.label,
+      cover_image: input.showcasePlan.coverAsset.image,
+      inner_asset_ids: input.showcasePlan.innerAssets.map(asset => asset.id),
+      asset_labels: [input.showcasePlan.coverAsset, ...input.showcasePlan.innerAssets].map(asset => asset.label),
+    } : undefined,
     checks: {
       title_cover_consistent: true,
       template_capacity_ok: true,
@@ -331,6 +361,27 @@ export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
       warnings: issues,
     },
   };
+}
+
+function toTextTitleType(candidate: { mechanism: string; textTitle: string }): NonNullable<TitleCandidate['title_type']> {
+  const title = `${candidate.mechanism} ${candidate.textTitle}`;
+  if (/解释|怎么|为什么|区别|看懂|搞懂|原理/.test(title)) return '解释型';
+  if (/情绪|焦虑|慌|没底|崩溃|急|害怕/.test(title)) return '情绪型';
+  if (/痛点|损失|丢分|不会|写不好|来不及|选错|白背|白练/.test(title)) return '痛点型';
+  if (/反常识|认知冲突|原来|竟然|别再|不是|而是|误区/.test(title)) return '强钩子型';
+  if (/结果|提分|高分|写出来|少走弯路|马上|用得上|省时间/.test(title)) return '结果型';
+  return '资料型';
+}
+
+function toCoverTitleType(candidate: { mechanism: string; coverTitle: string }): NonNullable<CoverTitleCandidate['title_type']> {
+  const title = `${candidate.mechanism} ${candidate.coverTitle}`;
+  if (/反常识|原来|竟然|别再|不是|而是|误区/.test(title)) return '反常识';
+  if (/情绪|焦虑|慌|没底|急|害怕|崩溃/.test(title)) return '情绪';
+  if (/结果|提分|高分|写出来|少走弯路|马上|用得上/.test(title)) return '结果';
+  if (/稀缺|少见|难找|独家/.test(title)) return '稀缺';
+  if (/考前|报名|2026|今年|最后|冲刺/.test(title)) return '时效';
+  if (/大全|全套|合集|资料|清单|速查|目录|体系/.test(title)) return '大全';
+  return '资料';
 }
 
 function sanitizeDisplayTitle(value: string) {
@@ -488,12 +539,23 @@ function buildOverflowPage(
   };
 }
 
-function normalizeInnerPages(pages: GeneratedInnerPage[]) {
+function normalizeInnerPages(pages: GeneratedInnerPage[], styleSeed: string) {
+  // Keep one visual language inside a note, while distributing different
+  // notes across the available inner-page skins. The old V1 normalizer did
+  // this; V2 was dropping style_variant, so the renderer always fell back to
+  // lined-notebook.
+  const styles: NonNullable<GeneratedInnerPage['style_variant']>[] = [
+    'lined-notebook', 'grid-notebook', 'dot-notebook',
+    'sticky-note', 'draft-paper', 'loose-leaf', 'kraft-paper',
+  ];
+  const styleIndex = Number.parseInt(stableHash(styleSeed), 36) % styles.length;
+  const styleVariant = styles[styleIndex];
   return pages.map((page, index) => ({
     ...page,
     page_no: index + 1,
     bullets: page.bullets.map(item => item.trim()).filter(Boolean),
     source_ids: uniqueStrings(page.source_ids),
+    style_variant: styleVariant,
   }));
 }
 

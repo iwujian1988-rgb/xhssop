@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
-import { getRecentAiUsage, resetRecentAiUsage } from '@/lib/ai-client';
-import { formatBatchId, formatJobId, createBatch, deleteJob, listBatches, loadAllJobs, loadBatch, saveJob, type Batch, type BatchJob } from '@/lib/batch-store';
+import { emptyAiUsage, getRecentAiUsage, mergeAiUsage, resetRecentAiUsage } from '@/lib/ai-client';
+import { formatBatchId, formatJobId, createBatch, deleteJob, listBatches, loadAllJobs, loadBatch, saveJob, type Batch, type BatchJob, type ContentMode } from '@/lib/batch-store';
 import { getActiveRunner, startBatchRunner } from '@/lib/batch-runner';
 import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
@@ -10,16 +10,19 @@ import { loadProductFacts } from '@/lib/product-facts-loader';
 import { compactProductContext } from '@/lib/product-fact-retrieval';
 import { planSeededTopics } from '@/lib/editorial-seed-library';
 import { getRecentSeedIds } from '@/lib/seed-usage-store';
+import { findSimilarTopic } from '@/lib/title-usage-store';
 import type { ProductId } from '@/types/data';
+import { isV2PipelineEnabled, planTopicsV2 } from '@/lib/v2/pipeline';
 
 export const runtime = 'nodejs';
 
-const productIds: ProductId[] = ['delf_b2_writing', 'tef_tcf_canada'];
+const productIds: ProductId[] = ['delf_b2_writing', 'tef_tcf_canada', 'tcf_canada_writing_7day'];
 
 interface PlanBody {
   product_id: ProductId;
   card_ids: string[];
   direction?: string;
+  content_mode?: ContentMode;
   topics_per_card?: number;
 }
 
@@ -82,6 +85,7 @@ async function handlePlan(body: PlanBody) {
   if (!Array.isArray(body.card_ids) || body.card_ids.length === 0) return error('card_ids 不能为空', 400);
   const topicsPerCard = clamp(body.topics_per_card ?? 2, 1, 3);
   const direction = (body.direction || '').trim();
+  const contentMode: ContentMode = body.content_mode === 'product_showcase' ? 'product_showcase' : 'standard';
 
   resetRecentAiUsage();
   const batchId = formatBatchId();
@@ -92,8 +96,10 @@ async function handlePlan(body: PlanBody) {
     id: batchId,
     product_id: body.product_id,
     direction,
+    content_mode: contentMode,
     created_at: new Date().toISOString(),
     status: 'planned',
+    pipeline_version: isV2PipelineEnabled() ? 'v2' : 'v1',
     jobs: [],
   };
   await createBatch(batch);
@@ -105,38 +111,62 @@ async function handlePlan(body: PlanBody) {
   const batchUsedSeedIds: string[] = [];
   const batchUsedTopicTexts: string[] = [];
   let seq = 1;
+  let v2Usage = emptyAiUsage();
 
   for (const cardId of body.card_ids) {
     const card = getCompetitorCreativeCard(cardId);
     if (!card || !card.supported) continue;
+    // 商品展示截图只能在“介绍知识库”模式使用，防止绕过前台直接提交错模式卡片。
+    if (contentMode === 'standard' && card.renderer_id === 'showcase_screenshot') continue;
+    if (contentMode === 'product_showcase' && card.renderer_id !== 'showcase_screenshot') continue;
     const spec = getCoverTemplateSpec(card.renderer_id);
     if (!spec) continue;
 
-    const recentSeedIds = await getRecentSeedIds(body.product_id, card.id);
-    const seededTopics = planSeededTopics({
-      productId: body.product_id,
-      card,
-      facts,
-      direction,
-      limit: topicsPerCard,
-      recentSeedIds,
-      batchUsedSeedIds,
-      batchUsedTopicTexts,
-    });
-    const topics = seededTopics.length ? await refineSeededTopics({
-      productId: body.product_id,
-      card,
-      seededTopics,
-      direction,
-    }) : await generateTopics({
+    let topics;
+    if (isV2PipelineEnabled()) {
+      const planned = await planTopicsV2({
         productId: body.product_id,
         card,
-        productContext,
+        facts,
         direction,
+        contentMode,
+        // 前台选择的是最终要生成的选题数；不要再额外硬编码候选池数量。
+        limit: topicsPerCard,
+        recentAngles: batchUsedTopicTexts,
       });
+      topics = planned.topics;
+      v2Usage = mergeAiUsage(v2Usage, planned.usage);
+    } else {
+      const recentSeedIds = await getRecentSeedIds(body.product_id, card.id);
+      const seededTopics = planSeededTopics({
+        productId: body.product_id,
+        card,
+        facts,
+        direction,
+        limit: topicsPerCard,
+        recentSeedIds,
+        batchUsedSeedIds,
+        batchUsedTopicTexts,
+      });
+      topics = seededTopics.length ? await refineSeededTopics({
+        productId: body.product_id,
+        card,
+        seededTopics,
+        direction,
+      }) : await generateTopics({
+          productId: body.product_id,
+          card,
+          productContext,
+          direction,
+        });
+    }
 
-    for (const topic of topics.slice(0, topicsPerCard)) {
-      const topicKey = `${card.renderer_id}:${topic.seed_id || topic.topic}`;
+    let acceptedForCard = 0;
+    for (const topic of topics) {
+      if (acceptedForCard >= topicsPerCard) break;
+      const topicText = `${topic.topic} ${topic.content_promise || ''}`.trim();
+      if (findSimilarTopic(topicText, batchUsedTopicTexts, 0.56)) continue;
+      const topicKey = `${topic.seed_id || topic.topic}`;
       if (seenTopics.has(topicKey)) continue;
       seenTopics.add(topicKey);
       if (topic.seed_id) batchUsedSeedIds.push(topic.seed_id);
@@ -149,14 +179,21 @@ async function handlePlan(body: PlanBody) {
         topic,
         status: 'pending',
         attempts: 0,
+      pipeline_version: 'v2',
+        current_stage: isV2PipelineEnabled() ? 'topic_selected' : undefined,
       };
       await saveJob(batchId, job);
+      acceptedForCard += 1;
       seq += 1;
     }
   }
 
   const finalBatch = await loadBatch(batchId);
-  return NextResponse.json({ batch: finalBatch, usage: getRecentAiUsage() });
+  return NextResponse.json({
+    batch: finalBatch,
+    usage: isV2PipelineEnabled() ? v2Usage : getRecentAiUsage(),
+    pipeline_version: isV2PipelineEnabled() ? 'v2' : 'v1',
+  });
 }
 
 async function handleRun(body: RunBody) {

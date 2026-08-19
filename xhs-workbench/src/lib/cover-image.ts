@@ -1,6 +1,7 @@
 import { getImageTask, loadReferenceImage, submitImageTask, type ImageTaskResult } from '@/lib/image-client';
 import { buildReferenceImagePrompt, referenceImageNegativePrompt } from '@/lib/reference-image-prompt';
 import type { CompetitorCreativeCard, DenseDirectoryCoverPayload } from '@/types/reference-workflow';
+import type { ProductId } from '@/types/data';
 
 // 生图 API 是异步任务制：submit 拿到 task_id 的那一刻就已经扣款。
 // 所以这里刻意把"提交"和"等待"拆成两个函数——调用方必须先把 task_id 持久化
@@ -16,12 +17,13 @@ export interface CoverImageTaskHandle {
 export async function submitCoverImageTask(
   card: CompetitorCreativeCard,
   cover: DenseDirectoryCoverPayload,
+  productId: ProductId,
 ): Promise<CoverImageTaskHandle> {
   // 先把参考图真正读出来（缺文件会得到 null），再决定用哪种 prompt——
   // 图生图 prompt 声称"已附带参考图"，图没传上去时模型会被命令追随一张
   // 不存在的图（resource_16 缺文件时就是这个坑）。
   const referenceImage = card.reference_image ? await loadReferenceImage(card.reference_image) : null;
-  const prompt = buildReferenceImagePrompt(card, cover, Boolean(referenceImage));
+  const prompt = buildReferenceImagePrompt(card, cover, Boolean(referenceImage), productId);
   const task = await submitImageTask({
     prompt,
     negativePrompt: referenceImageNegativePrompt,

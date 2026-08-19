@@ -6,6 +6,7 @@ import type { ComposeFailure, ComposeFailureStage } from '@/lib/compose-with-ret
 import type { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import type { ProductId } from '@/types/data';
 import type { MigratedTopic, ReferenceDrivenDraft } from '@/types/reference-workflow';
+import type { PipelineArtifacts, PipelineStage, StageFailure } from '@/lib/v2/contracts';
 
 // 极简 promise-based 互斥锁。batch-runner 并发跑多个 job 时，每个 job 会调
 // saveJob → loadBatch → 改 jobs 摘要 → writeJsonAtomic(batch.json)。如果两
@@ -55,8 +56,9 @@ function getBatchMutex(batchId: string): Mutex {
 export type BatchJobCard = NonNullable<ReturnType<typeof getCompetitorCreativeCard>>;
 
 export type BatchJobStatus = 'pending' | 'running' | 'success' | 'failed';
+export type ContentMode = 'standard' | 'product_showcase';
 
-export type BatchJobFailureStage = ComposeFailureStage | 'topics' | 'image';
+export type BatchJobFailureStage = ComposeFailureStage | 'topics' | 'image' | 'topic' | 'content' | 'audit' | 'title' | 'compile';
 
 export interface BatchJobFailure {
   stage: BatchJobFailureStage;
@@ -73,6 +75,10 @@ export interface BatchJob {
   topic: MigratedTopic;
   status: BatchJobStatus;
   attempts: number;
+  pipeline_version?: 'v1' | 'v2';
+  current_stage?: PipelineStage;
+  artifacts?: PipelineArtifacts;
+  stage_failures?: StageFailure[];
   draft?: ReferenceDrivenDraft;
   cover_image_url?: string;
   // 生图 API 是异步任务制：task_id 一旦提交就已完成扣款。落盘之后，无论轮询
@@ -90,9 +96,11 @@ export interface Batch {
   id: string;
   product_id: ProductId;
   direction: string;
+  content_mode?: ContentMode;
   created_at: string;
   status: BatchStatus;
-  jobs: Array<Pick<BatchJob, 'id' | 'seq' | 'reference_card_id' | 'topic' | 'status'>>;
+  pipeline_version?: 'v1' | 'v2';
+  jobs: Array<Pick<BatchJob, 'id' | 'seq' | 'reference_card_id' | 'topic' | 'status' | 'pipeline_version' | 'current_stage'>>;
 }
 
 const BATCHES_DIR = path.resolve(process.cwd(), 'data/batches');
@@ -119,7 +127,9 @@ async function ensureDir(dir: string) {
 
 async function writeJsonAtomic(filePath: string, data: unknown) {
   await ensureDir(path.dirname(filePath));
-  await fs.writeFile(filePath, JSON.stringify(data, null, 2), 'utf8');
+  const tempPath = `${filePath}.${process.pid}.${Date.now()}.tmp`;
+  await fs.writeFile(tempPath, JSON.stringify(data, null, 2), 'utf8');
+  await fs.rename(tempPath, filePath);
 }
 
 export function formatJobId(seq: number) {
@@ -182,6 +192,8 @@ export async function saveJob(batchId: string, job: BatchJob): Promise<void> {
       reference_card_id: job.reference_card_id,
       topic: job.topic,
       status: job.status,
+      pipeline_version: job.pipeline_version,
+      current_stage: job.current_stage,
     };
     if (index >= 0) batch.jobs[index] = summary;
     else batch.jobs.push(summary);

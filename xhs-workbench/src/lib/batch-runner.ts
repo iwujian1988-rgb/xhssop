@@ -4,7 +4,7 @@ import { getCompetitorCreativeCard } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { submitCoverImageTask, waitForCoverImageTask, type CoverImageWaitResult } from '@/lib/cover-image';
 import { loadProductFacts } from '@/lib/product-facts-loader';
-import { resolveProductEvidence } from '@/lib/product-fact-retrieval';
+import { resolveProductEvidence, resolveProductEvidenceByIds } from '@/lib/product-fact-retrieval';
 import {
   type Batch,
   type BatchJob,
@@ -19,6 +19,8 @@ import type { ProductId } from '@/types/data';
 import type { ReferenceDrivenDraft } from '@/types/reference-workflow';
 import { recordSeedUsage } from '@/lib/seed-usage-store';
 import { recordTitleUsage } from '@/lib/title-usage-store';
+import { composeV2, isV2PipelineEnabled } from '@/lib/v2/pipeline';
+import { pickProductShowcasePlan } from '@/lib/product-showcase-library';
 
 let activeRunner: string | null = null;
 
@@ -84,6 +86,7 @@ async function runOneJob(
   });
 
   const card = getCompetitorCreativeCard(job.reference_card_id);
+  const batch = await loadBatch(batchId);
   if (!card) {
     await saveJob(batchId, {
       ...job,
@@ -114,7 +117,79 @@ async function runOneJob(
   }
   // 大容量封面模板（4组×8条=30+）要求远超默认 10 条证据；证据不够时 LLM 会
   // 只写有据可依的条目，第一次生成就注定 cover_density_severely_low。提到 25 条。
-  const evidence = await resolveProductEvidence(job.product_id, facts, job.topic, 25);
+  const useV2 = true;
+  let evidence = await resolveProductEvidence(job.product_id, facts, job.topic, useV2 ? 8 : 25);
+  if (useV2 && job.current_stage === 'audited' && job.artifacts?.content) {
+    const resumed = job.artifacts.content.data;
+    const requiredIds = Array.from(new Set([
+      ...resumed.factualClaims.flatMap(claim => claim.sourceIds),
+      ...resumed.coverBlocks.flatMap(block => block.sourceIds),
+      ...resumed.innerPages.flatMap(page => page.source_ids),
+    ]));
+    const boundEvidence = resolveProductEvidenceByIds(job.product_id, facts, requiredIds);
+    evidence = Array.from(new Map([...boundEvidence, ...evidence].map(item => [item.id, item])).values());
+  }
+
+  if (useV2) {
+    try {
+      const result = await composeV2({
+        productId: job.product_id,
+        card,
+        topic: job.topic,
+        evidence,
+        contentMode: batch.content_mode,
+        showcasePlan: batch.content_mode === 'product_showcase'
+          ? pickProductShowcasePlan(job.product_id, facts, `${job.id}|${job.topic.id}`)
+          : undefined,
+        resumeArtifacts: job.current_stage === 'audited' && job.artifacts?.content
+          ? job.artifacts
+          : undefined,
+      });
+      await finishJobWithCoverImage(
+        batchId,
+        {
+          ...job,
+          pipeline_version: 'v2',
+          current_stage: result.currentStage,
+          artifacts: result.artifacts,
+        },
+        card,
+        result.draft,
+        result.usage,
+        1,
+      );
+    } catch (cause) {
+      const message = cause instanceof Error ? cause.message : 'V2内容流水线失败';
+      const stageContext = cause && typeof cause === 'object' ? cause as {
+        v2Stage?: 'topic' | 'content' | 'audit' | 'title' | 'compile';
+        usage?: AiUsageSummary;
+        partialArtifacts?: BatchJob['artifacts'];
+      } : {};
+      const stage = stageContext.v2Stage || inferV2FailureStage(message);
+      const failureUsage = stageContext.usage || emptyUsage();
+      await saveJob(batchId, {
+        ...job,
+        pipeline_version: 'v2',
+        current_stage: stage === 'topic' ? 'topic_selected' : stage === 'content' ? 'content_ready' : stage === 'title' ? 'audited' : 'audited',
+        artifacts: stageContext.partialArtifacts || job.artifacts,
+        status: 'failed',
+        attempts: 1,
+        failure: {
+          stage,
+          message,
+          attempts: 1,
+          usage: failureUsage,
+        },
+        stage_failures: [
+          ...(job.stage_failures || []),
+          { stage, message, retryable: true },
+        ],
+        usage: failureUsage,
+        finished_at: new Date().toISOString(),
+      });
+    }
+    return;
+  }
 
   const outcome = await composeWithRetry({
     productId: job.product_id,
@@ -136,6 +211,14 @@ async function runOneJob(
   }
 
   await finishJobWithCoverImage(batchId, job, card, outcome.draft, outcome.usage, outcome.attempts);
+}
+
+function inferV2FailureStage(message: string): 'topic' | 'content' | 'audit' | 'title' | 'compile' {
+  if (/标题/.test(message)) return 'title';
+  if (/审校|法语|事实/.test(message)) return 'audit';
+  if (/编译|分组|短条目/.test(message)) return 'compile';
+  if (/选题/.test(message)) return 'topic';
+  return 'content';
 }
 
 // 生图阶段统一收口。关键规则：task_id 提交即扣款，所以
@@ -199,7 +282,7 @@ async function finishJobWithCoverImage(
     }
     if (wait) console.info(`[image] 旧任务 ${taskId} 已判死：${wait.error}，重新提交`);
     try {
-      const handle = await submitCoverImageTask(card, draft.cover);
+      const handle = await submitCoverImageTask(card, draft.cover, job.product_id);
       taskId = handle.taskId;
     } catch (cause) {
       await failWithTask(undefined, cause instanceof Error ? cause.message : '生图任务提交失败');

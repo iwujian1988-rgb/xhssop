@@ -2304,6 +2304,9 @@ const topicSeedPools: Record<ProductId, {
     sellingPoint: tefSellingPointSeedIds,
     productShowcase: tefProductShowcaseSeedIds,
   },
+  tcf_canada_writing_7day: {
+    broad: new Set(), searchPain: new Set(), sellingPoint: new Set(), productShowcase: new Set(),
+  },
 };
 
 export function getEditorialSeeds(productId: ProductId): EditorialSeed[] {
@@ -2419,24 +2422,23 @@ export function planSeededTopics(input: {
     const { pool, type } = poolRotation[(firstPoolIndex + offset) % poolRotation.length];
     pick(pool, type);
   }
+
+  // 资料/表格类封面必须给用户一个"直接宣传知识库本身"的选题。
+  // 旧逻辑先补满 search_pain + selling_point + narrow_knowledge，batch 页面最多
+  // 3 个 topic 时 product_showcase 永远排不进去；用户在前台自然看不到"这套资料
+  // 到底长什么样/值不值得买"这种带货选题。
+  const SHOWCASE_FAMILIES = new Set(['directory', 'table', 'phrase', 'document', 'book']);
+  const supportsShowcase = SHOWCASE_FAMILIES.has(spec.family);
+  if (supportsShowcase && selected.length < limit) {
+    pick(pools.productShowcase, 'product_showcase');
+  }
+
   for (const item of ranked.filter(item => pools.broad.has(item.seed.seed_id))) {
     if (selected.length >= Math.min(3, limit)) break;
     if (!selectedIds.has(item.seed.seed_id)) {
       selected.push({ seed: item.seed, topicType: 'narrow_knowledge' });
       selectedIds.add(item.seed.seed_id);
     }
-  }
-  // 商品=笔记 随机化机制（替代之前的"每卡必产 1 个 product_showcase"）：
-  // 1. 只有信息密度高的 family 才适合做"资料型"封面（directory/table/collocation_dense）
-  // 2. 即使支持，每张卡按 hash 掷 30% 骰子决定是否启用
-  // 3. 不支持或没掷中的卡，跳过 product_showcase，多选一个其他类型
-  const SHOWCASE_FAMILIES = new Set(['directory', 'table', 'collocation_dense']);
-  const supportsShowcase = SHOWCASE_FAMILIES.has(spec.family);
-  const showcaseRoll = stableHash(`${input.card.id}:${day}:showcase`) % 100;
-  // 三车道重建：showcase seed 6 → 12 条，骰子 30% → 45%（车道 3 配额）
-  const useShowcase = supportsShowcase && showcaseRoll < 45;
-  if (useShowcase) {
-    pick(pools.productShowcase, 'product_showcase');
   }
   for (const item of ranked) {
     if (selected.length >= limit) break;

@@ -14,6 +14,11 @@ compatibility_matrix:
     - DELF B2 production écrite
     - DELF B2 范文
     - B2 写作资料包
+    tcf_canada_writing_7day:
+    - DELF B2
+    - DALF
+    - TEF Canada
+    - CLB7
   state_required_fields:
     before_content:
     - product_id

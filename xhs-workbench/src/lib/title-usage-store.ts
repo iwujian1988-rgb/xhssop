@@ -245,15 +245,48 @@ export function findSimilarTopic(
 ): { similar: string; score: number } | null {
   if (!topic || recentTopics.length === 0) return null;
   const topicTokens = tokenizeTopic(topic);
+  const topicIntents = topicIntentFingerprint(topic);
   let best: { similar: string; score: number } | null = null;
   for (const recent of recentTopics) {
     if (!recent) continue;
-    const score = jaccardSimilarity(topicTokens, tokenizeTopic(recent));
+    const recentIntents = topicIntentFingerprint(recent);
+    const sharedIntents = Array.from(topicIntents).filter(intent => recentIntents.has(intent)).length;
+    const semanticScore = sharedIntents > 0
+      ? sharedIntents / Math.min(topicIntents.size, recentIntents.size)
+      : 0;
+    const lexicalScore = jaccardSimilarity(topicTokens, tokenizeTopic(recent));
+    // A single specific intent such as "TEF/TCF选考" or "B2写作字数"
+    // is already enough to identify a repeated angle. Generic subject identity
+    // (French/writing/exam) is deliberately not part of the fingerprint.
+    const score = semanticScore >= 0.75 ? Math.max(0.9, semanticScore) : lexicalScore;
     if (score >= threshold && (!best || score > best.score)) {
       best = { similar: recent, score };
     }
   }
   return best;
+}
+
+export function topicIntentFingerprint(text: string): Set<string> {
+  const normalized = text.toLowerCase();
+  const intents = new Set<string>();
+  const rules: Array<[string, RegExp]> = [
+    ['exam_choice', /(?:tef.{0,12}tcf|tcf.{0,12}tef).{0,24}(?:怎么选|选哪个|选择|选对|选错|先考|报名)|(?:怎么选|选哪个|选择|选对|选错|先考).{0,24}(?:tef.{0,12}tcf|tcf.{0,12}tef)/i],
+    ['word_count', /(?:字数|写不够|凑字|扩写|\b2[3-8]0\s*词|\b250\s*词)/i],
+    ['scoring', /(?:评分|得分|扣分|分数|评分标准|评分维度)/i],
+    ['self_check', /(?:检查|自查|查漏|交卷前|改作文|批改)/i],
+    ['letter_format', /(?:正式信|建议信|投诉信|论坛投稿|称呼|结尾语|信件格式|tu\s*\/\s*vous)/i],
+    ['argument_structure', /(?:论证|论点|让步|观点展开|文章结构|段落结构|逻辑展开)/i],
+    ['vocabulary', /(?:词汇|单词|词组|搭配|表达替换|同义词)/i],
+    ['sentence_pattern', /(?:句型|句法|万能句|连接词|衔接词)/i],
+    ['model_essay', /(?:范文|例文|模板|仿写)/i],
+    ['study_plan', /(?:\d+天|学习计划|备考计划|时间安排|冲刺安排|每天\d+小时)/i],
+    ['oral_fluency', /(?:口语.{0,12}(?:卡顿|展开|没话说|流利|开口)|(?:卡顿|展开|没话说|流利).{0,12}口语)/i],
+    ['listening', /(?:听力|听不懂|精听|泛听)/i],
+    ['exam_process', /(?:报名|考场|考试当天|查分|考试流程)/i],
+    ['product_overview', /(?:知识库|资料包|资料合集|资料大全|资料库).{0,16}(?:有什么|包含|怎么用|长什么样|使用顺序)/i],
+  ];
+  for (const [name, pattern] of rules) if (pattern.test(normalized)) intents.add(name);
+  return intents;
 }
 
 // titleTemplateFingerprint：句式模板指纹。

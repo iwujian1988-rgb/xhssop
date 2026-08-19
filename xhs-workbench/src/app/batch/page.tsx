@@ -7,7 +7,7 @@ import JSZip from 'jszip';
 import { saveAs } from 'file-saver';
 import { DraftReview } from '@/components/draft/DraftReview';
 import { BatchExportSlot, type ExportNodes } from '@/components/batch/BatchExportSlot';
-import { competitorCreativeCards, getCompetitorCreativeCard } from '@/lib/creative-card-library';
+import { getCompetitorCreativeCard, productShowcaseCreativeCards, standardCreativeCards } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { nodeToPngBlob } from '@/lib/export-image';
 import { buildBatchTxt, fetchUrlAsBlobOrNull, seqFolderName, type CoverStatus } from '@/lib/batch-export';
@@ -15,8 +15,9 @@ import type { ProductId } from '@/types/data';
 import type { CompetitorCreativeCard } from '@/types/reference-workflow';
 import type { Batch, BatchJob } from '@/lib/batch-store';
 import type { AiUsageSummary } from '@/lib/ai-client';
+import { applyDraftTitleSelection, type DraftTitleSelection } from '@/lib/draft-title-selection';
 
-const supportedCards = competitorCreativeCards.filter(card => card.supported);
+const supportedCards = standardCreativeCards.filter(card => card.supported);
 
 type PlanResponse = { batch: Batch; usage: AiUsageSummary };
 type BatchQueryResponse = { batch: Batch; jobs: BatchJob[]; active_runner: string | null };
@@ -33,6 +34,7 @@ function BatchPageContent() {
   const [productId, setProductId] = useState<ProductId>('delf_b2_writing');
   const [selectedCardIds, setSelectedCardIds] = useState<Set<string>>(() => initialCardSelection());
   const [direction, setDirection] = useState('');
+  const [contentMode, setContentMode] = useState<'standard' | 'product_showcase'>('standard');
   const [topicsPerCard, setTopicsPerCard] = useState(2);
   const [planning, setPlanning] = useState(false);
   const [planError, setPlanError] = useState('');
@@ -43,10 +45,13 @@ function BatchPageContent() {
   const [tab, setTab] = useState<'success' | 'failed'>('success');
   const [expandedJobIds, setExpandedJobIds] = useState<Set<string>>(new Set());
   const [exportState, setExportState] = useState<{ running: boolean; current: number; total: number; title: string; failures: string[] } | null>(null);
-  const [slotJob, setSlotJob] = useState<{ job: BatchJob; card: CompetitorCreativeCard } | null>(null);
+  const [slotJob, setSlotJob] = useState<{ job: BatchJob; card: CompetitorCreativeCard; skinId?: string } | null>(null);
+  const [titleSelections, setTitleSelections] = useState<Record<string, DraftTitleSelection>>({});
+  const [skinSelections, setSkinSelections] = useState<Record<string, string>>({});
   const slotReadyRef = useRef<((nodes: ExportNodes) => void) | null>(null);
   const pollRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const searchParams = useSearchParams();
+  const cardsForMode = contentMode === 'product_showcase' ? productShowcaseCreativeCards : supportedCards;
 
   const fetchBatchState = useCallback(async (batchId: string) => {
     const response = await fetch(`/api/batch?batch_id=${encodeURIComponent(batchId)}`);
@@ -89,8 +94,10 @@ function BatchPageContent() {
     setJobs([]);
     setActiveRunner(null);
     setExpandedJobIds(new Set());
+    setTitleSelections({});
+    setSkinSelections({});
     try {
-      const cardIds = supportedCards.filter(c => selectedCardIds.has(c.id)).map(c => c.id);
+      const cardIds = cardsForMode.filter(c => selectedCardIds.has(c.id)).map(c => c.id);
       if (!cardIds.length) {
         setPlanError('请至少选择一个模板');
         return;
@@ -103,6 +110,7 @@ function BatchPageContent() {
           product_id: productId,
           card_ids: cardIds,
           direction,
+          content_mode: contentMode,
           topics_per_card: topicsPerCard,
         }),
       });
@@ -181,13 +189,16 @@ function BatchPageContent() {
         continue;
       }
 
-      setExportState(prev => prev ? { ...prev, current: i + 1, title: job.topic.topic } : prev);
+      const effectiveJob: BatchJob = titleSelections[job.id] && job.draft
+        ? { ...job, draft: applyDraftTitleSelection(job.draft, titleSelections[job.id]) }
+        : job;
+      setExportState(prev => prev ? { ...prev, current: i + 1, title: effectiveJob.topic.topic } : prev);
 
       let nodes: ExportNodes;
       try {
         nodes = await new Promise<ExportNodes>(resolve => {
           slotReadyRef.current = resolve;
-          setSlotJob({ job, card });
+          setSlotJob({ job: effectiveJob, card, skinId: skinSelections[job.id] });
         });
       } catch (cause) {
         const msg = cause instanceof Error ? cause.message : '渲染失败';
@@ -195,7 +206,7 @@ function BatchPageContent() {
         continue;
       }
 
-      const folderName = seqFolderName(i, total, job.draft.selected_title);
+      const folderName = seqFolderName(i, total, effectiveJob.draft!.selected_title);
       const folder = zip.folder(folderName)!;
 
       try {
@@ -225,7 +236,7 @@ function BatchPageContent() {
           }
         }
 
-        folder.file('内容.txt', buildBatchTxt(job, { coverStatus }));
+        folder.file('内容.txt', buildBatchTxt(effectiveJob, { coverStatus }));
       } catch (cause) {
         const msg = cause instanceof Error ? cause.message : '未知错误';
         setExportState(prev => prev ? { ...prev, failures: [...prev.failures, `${job.id}: ${msg}`] } : prev);
@@ -296,8 +307,12 @@ function BatchPageContent() {
             setProductId={setProductId}
             selectedCardIds={selectedCardIds}
             toggleCard={toggleCard}
+            setSelectedCardIds={setSelectedCardIds}
             direction={direction}
             setDirection={setDirection}
+            contentMode={contentMode}
+            setContentMode={setContentMode}
+            cardsForMode={cardsForMode}
             topicsPerCard={topicsPerCard}
             setTopicsPerCard={setTopicsPerCard}
             planning={planning}
@@ -402,7 +417,7 @@ function BatchPageContent() {
                             </div>
                             <button className="border border-neutral-300 bg-white px-3 py-1.5 text-xs font-bold" onClick={() => toggleExpand(job.id)}>{expanded ? '收起' : '展开预览'}</button>
                           </div>
-                          {expanded ? <div className="mt-4 border-t border-neutral-200 pt-4"><DraftReview draft={job.draft} card={card} presetCoverImageUrl={job.cover_image_url} /></div> : null}
+                          {expanded ? <div className="mt-4 border-t border-neutral-200 pt-4"><DraftReview draft={job.draft} card={card} presetCoverImageUrl={job.cover_image_url} initialTitleSelection={titleSelections[job.id]} onTitleSelectionChange={selection => setTitleSelections(current => ({ ...current, [job.id]: selection }))} initialSkinId={skinSelections[job.id]} onSkinChange={skinId => setSkinSelections(current => ({ ...current, [job.id]: skinId }))} /></div> : null}
                         </div>
                       );
                     })}
@@ -458,6 +473,7 @@ function BatchPageContent() {
         <BatchExportSlot
           job={slotJob.job}
           card={slotJob.card}
+          skinId={slotJob.skinId}
           onReady={nodes => {
             const resolve = slotReadyRef.current;
             slotReadyRef.current = null;
@@ -499,8 +515,12 @@ function PlanForm({
   setProductId,
   selectedCardIds,
   toggleCard,
+  setSelectedCardIds,
   direction,
   setDirection,
+  contentMode,
+  setContentMode,
+  cardsForMode,
   topicsPerCard,
   setTopicsPerCard,
   planning,
@@ -510,8 +530,12 @@ function PlanForm({
   setProductId: (value: ProductId) => void;
   selectedCardIds: Set<string>;
   toggleCard: (id: string) => void;
+  setSelectedCardIds: (value: Set<string>) => void;
   direction: string;
   setDirection: (value: string) => void;
+  contentMode: 'standard' | 'product_showcase';
+  setContentMode: (value: 'standard' | 'product_showcase') => void;
+  cardsForMode: CompetitorCreativeCard[];
   topicsPerCard: number;
   setTopicsPerCard: (value: number) => void;
   planning: boolean;
@@ -527,10 +551,20 @@ function PlanForm({
           <select className="field mt-1" value={productId} onChange={event => setProductId(event.target.value as ProductId)}>
             <option value="delf_b2_writing">商品1：DELF B2写作资料库</option>
             <option value="tef_tcf_canada">商品2：TEF/TCF Canada</option>
+            <option value="tcf_canada_writing_7day">商品3：TCF Canada写作7天急救</option>
           </select>
           <label className="mt-4 block text-xs font-bold text-neutral-500">每卡选题数</label>
           <input type="number" min={1} max={3} className="field mt-1" value={topicsPerCard} onChange={event => setTopicsPerCard(Number(event.target.value) || 2)} />
           <label className="mt-4 block text-xs font-bold text-neutral-500">可选方向</label>
+          <label className="mt-4 block text-xs font-bold text-neutral-500">内容模式</label>
+          <select className="field mt-1" value={contentMode} onChange={event => {
+            const next = event.target.value as 'standard' | 'product_showcase';
+            setContentMode(next);
+            setSelectedCardIds(new Set((next === 'product_showcase' ? productShowcaseCreativeCards : supportedCards).map(card => card.id)));
+          }}>
+            <option value="standard">普通内容：痛点 / 买点 / 干货</option>
+            <option value="product_showcase">介绍知识库：整篇就是商品展示</option>
+          </select>
           <textarea className="field mt-1 min-h-20 resize-y" placeholder="例如：更偏考前急救；留空由AI结合种子和封面选择切口" value={direction} onChange={event => setDirection(event.target.value)} />
           <button className="mt-4 w-full bg-neutral-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-neutral-400" disabled={planning} onClick={onPlan}>
             {planning ? '正在串行生成选题...' : '生成批量计划'}
@@ -538,7 +572,7 @@ function PlanForm({
         </div>
         <div>
           <div className="flex items-center justify-between">
-            <label className="text-xs font-bold text-neutral-500">模板（{selectedCardIds.size}/{supportedCards.length}）</label>
+            <label className="text-xs font-bold text-neutral-500">模板（{selectedCardIds.size}/{cardsForMode.length}）</label>
             <div className="flex gap-2 text-xs">
               <button className="underline" onClick={() => toggleAll(true)}>全选</button>
               <button className="underline" onClick={() => toggleAll(false)}>全不选</button>
@@ -546,7 +580,7 @@ function PlanForm({
             </div>
           </div>
           <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-            {supportedCards.map(card => (
+            {cardsForMode.map(card => (
               <CardCheckbox key={card.id} card={card} checked={selectedCardIds.has(card.id)} onToggle={() => toggleCard(card.id)} />
             ))}
           </div>
@@ -556,7 +590,7 @@ function PlanForm({
   );
 
   function toggleAll(value: boolean) {
-    supportedCards.forEach(card => {
+    cardsForMode.forEach(card => {
       const inSet = selectedCardIds.has(card.id);
       if (value && !inSet) toggleCard(card.id);
       if (!value && inSet) toggleCard(card.id);
@@ -564,7 +598,7 @@ function PlanForm({
   }
 
   function selectByMode(mode: 'code') {
-    supportedCards.forEach(card => {
+    cardsForMode.forEach(card => {
       const spec = getCoverTemplateSpec(card.renderer_id);
       const isCodeLike = spec?.renderMode !== 'image_to_image';
       const inSet = selectedCardIds.has(card.id);

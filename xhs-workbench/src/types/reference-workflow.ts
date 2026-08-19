@@ -18,6 +18,7 @@ export type CreativeCardRenderer =
   | 'collocation_dense'
   | 'official_notice'
   | 'pain_quote_big'
+  | 'showcase_screenshot'
   | 'ai_scene_overlay';
 
 export type ContentShape =
@@ -188,6 +189,10 @@ export interface GeneratedInnerPage {
   bullets: string[];
   source_ids: string[];
   style_variant?: InnerPageStyleVariant;
+  /** 商品介绍模式：这一页对应的真实资料卡截图。普通模式为空。 */
+  showcase_asset_id?: string;
+  showcase_asset_label?: string;
+  showcase_asset_image?: string;
 }
 
 export interface ReferenceDrivenDraft {
@@ -210,6 +215,16 @@ export interface ReferenceDrivenDraft {
     issues: string[];
   };
   evidence: EvidenceSnippet[];
+  /** 仅 product_showcase 模式使用：记录本次随机选到的截图和展示角度。 */
+  showcase?: {
+    angle_id: string;
+    angle_label: string;
+    cover_asset_id: string;
+    cover_asset_label: string;
+    cover_image?: string;
+    inner_asset_ids: string[];
+    asset_labels: string[];
+  };
   checks: {
     title_cover_consistent: boolean;
     template_capacity_ok: boolean;
@@ -225,6 +240,7 @@ export interface ReferenceWorkflowRequest {
   product_id: ProductId;
   reference_card_id: string;
   direction?: string;
+  content_mode?: 'standard' | 'product_showcase';
   topic?: MigratedTopic;
   max_attempts?: number;
 }

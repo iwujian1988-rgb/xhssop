@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { competitorCreativeCards } from '@/lib/creative-card-library';
+import { productShowcaseCreativeCards, standardCreativeCards } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { DraftReview } from '@/components/draft/DraftReview';
 import type { ProductId } from '@/types/data';
@@ -10,12 +10,13 @@ import type { CompetitorCreativeCard, MigratedTopic, ReferenceDrivenDraft } from
 
 interface UsageSummary { prompt_tokens: number; completion_tokens: number; total_tokens: number; calls: number }
 
-const supportedCards = competitorCreativeCards.filter(card => card.supported);
+const supportedCards = standardCreativeCards.filter(card => card.supported);
 
 export default function StudioPage() {
   const [productId, setProductId] = useState<ProductId>('delf_b2_writing');
   const [cardId, setCardId] = useState(supportedCards[0]?.id || '');
   const [direction, setDirection] = useState('');
+  const [contentMode, setContentMode] = useState<'standard' | 'product_showcase'>('standard');
   const [topics, setTopics] = useState<MigratedTopic[]>([]);
   const [selectedTopicId, setSelectedTopicId] = useState('');
   const [draft, setDraft] = useState<ReferenceDrivenDraft | null>(null);
@@ -23,7 +24,8 @@ export default function StudioPage() {
   const [error, setError] = useState('');
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [savedBatchId, setSavedBatchId] = useState<string | null>(null);
-  const card = useMemo(() => supportedCards.find(item => item.id === cardId) || supportedCards[0], [cardId]);
+  const cardsForMode = contentMode === 'product_showcase' ? productShowcaseCreativeCards : supportedCards;
+  const card = useMemo(() => cardsForMode.find(item => item.id === cardId) || cardsForMode[0], [cardId, cardsForMode]);
   const selectedTopic = topics.find(topic => topic.id === selectedTopicId) || topics[0];
 
   function selectCard(nextCardId: string) {
@@ -46,6 +48,16 @@ export default function StudioPage() {
     setSavedBatchId(null);
   }
 
+  function selectContentMode(nextMode: 'standard' | 'product_showcase') {
+    setContentMode(nextMode);
+    const nextCards = nextMode === 'product_showcase' ? productShowcaseCreativeCards : supportedCards;
+    setCardId(nextCards[0]?.id || '');
+    setTopics([]);
+    setSelectedTopicId('');
+    setDraft(null);
+    setError('');
+  }
+
   async function requestWorkflow(action: 'topics' | 'compose') {
     if (!card || (action === 'compose' && !selectedTopic)) return;
     setLoading(action);
@@ -60,6 +72,7 @@ export default function StudioPage() {
           product_id: productId,
           reference_card_id: card.id,
           direction,
+          content_mode: contentMode,
           topic: action === 'compose' ? selectedTopic : undefined,
         }),
       });
@@ -104,10 +117,16 @@ export default function StudioPage() {
             <select className="field mt-1" value={productId} onChange={event => selectProduct(event.target.value as ProductId)}>
               <option value="delf_b2_writing">商品1：DELF B2写作资料库</option>
               <option value="tef_tcf_canada">商品2：TEF/TCF Canada</option>
+              <option value="tcf_canada_writing_7day">商品3：TCF Canada写作7天急救</option>
             </select>
-            <div className="mt-4 space-y-2">{supportedCards.map(item => <ReferenceChoice key={item.id} card={item} active={item.id === cardId} onClick={() => selectCard(item.id)} />)}</div>
+            <div className="mt-4 space-y-2">{cardsForMode.map(item => <ReferenceChoice key={item.id} card={item} active={item.id === cardId} onClick={() => selectCard(item.id)} />)}</div>
             <label className="mt-4 block text-xs font-bold text-neutral-500">可选方向</label>
-            <textarea className="field mt-1 min-h-20 resize-y" placeholder="例如：更偏考前急救；留空由AI结合种子和封面选择切口" value={direction} onChange={event => setDirection(event.target.value)} />
+            <label className="mt-4 block text-xs font-bold text-neutral-500">内容模式</label>
+            <select className="field mt-1" value={contentMode} onChange={event => selectContentMode(event.target.value as 'standard' | 'product_showcase')}>
+              <option value="standard">普通内容：痛点 / 买点 / 干货</option>
+              <option value="product_showcase">介绍知识库：整篇就是商品展示</option>
+            </select>
+            <textarea className="field mt-1 min-h-20 resize-y" placeholder={contentMode === 'product_showcase' ? '例如：重点展示范文库怎么用；留空由AI结合商品展示角度选择切口' : '例如：更偏考前急救；留空由AI结合种子和封面选择切口'} value={direction} onChange={event => setDirection(event.target.value)} />
             <button className="mt-3 w-full bg-neutral-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-neutral-400" disabled={!!loading} onClick={() => requestWorkflow('topics')}>
               {loading === 'topics' ? 'AI正在创作4个适配选题...' : '生成4个新选题'}
             </button>
