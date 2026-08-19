@@ -560,6 +560,8 @@ function PlanForm({
           <select className="field mt-1" value={contentMode} onChange={event => {
             const next = event.target.value as 'standard' | 'product_showcase';
             setContentMode(next);
+            // 介绍模式默认一张已选截图对应一个 job。
+            setTopicsPerCard(next === 'product_showcase' ? 1 : 2);
             setSelectedCardIds(new Set((next === 'product_showcase' ? productShowcaseCreativeCards : supportedCards).map(card => card.id)));
           }}>
             <option value="standard">普通内容：痛点 / 买点 / 干货</option>

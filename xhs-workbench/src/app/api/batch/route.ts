@@ -162,15 +162,21 @@ async function handlePlan(body: PlanBody) {
     }
 
     let acceptedForCard = 0;
+    // 介绍模式中，每张截图本身就是一个独立商品展示任务，不能被跨卡去重吞掉。
+    const cardUsedTopicTexts: string[] = [];
     for (const topic of topics) {
       if (acceptedForCard >= topicsPerCard) break;
       const topicText = `${topic.topic} ${topic.content_promise || ''}`.trim();
-      if (findSimilarTopic(topicText, batchUsedTopicTexts, 0.56)) continue;
-      const topicKey = `${topic.seed_id || topic.topic}`;
+      const duplicateScope = contentMode === 'product_showcase' ? cardUsedTopicTexts : batchUsedTopicTexts;
+      if (findSimilarTopic(topicText, duplicateScope, 0.56)) continue;
+      const topicKey = contentMode === 'product_showcase'
+        ? `${cardId}:${topic.seed_id || topic.id || topic.topic}`
+        : `${topic.seed_id || topic.topic}`;
       if (seenTopics.has(topicKey)) continue;
       seenTopics.add(topicKey);
       if (topic.seed_id) batchUsedSeedIds.push(topic.seed_id);
       batchUsedTopicTexts.push(`${topic.topic} ${topic.content_promise || ''} ${(topic.dynamic_fact_terms || []).join(' ')}`);
+      cardUsedTopicTexts.push(topicText);
       const job: BatchJob = {
         id: formatJobId(seq),
         seq,
