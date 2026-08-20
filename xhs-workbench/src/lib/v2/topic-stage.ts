@@ -153,6 +153,38 @@ export async function generateTopicOptions(input: TopicStageInput): Promise<Vers
         [`唯一候选存在轻微匹配提醒，已继续生成：${topicGateFailures(fallback, input).join('、') || '无'}`],
       );
     }
+    if (productShowcaseMode) {
+      // 商品介绍模式的单位是“选中的封面截图”。某张截图的 LLM 结构化
+      // 返回偶发失败时，不能让整批只剩前面已经落盘的几张卡；用当前卡的
+      // 展示机制生成一个保守选题，后续标题/正文仍按正常链路继续。
+      const fallbackTopic: TopicOption = {
+        id: `showcase_fallback_${input.card.id}_${stableHash(input.productId)}`,
+        productId: input.productId,
+        templateId: input.capability.renderer,
+        primaryGoal: input.capability.allowedGoals.includes('conversion') ? 'conversion' : input.capability.allowedGoals[0] || 'click',
+        topicLane: 'product_value',
+        topic: `${profile.noteIdentity}资料包里到底有什么：从${input.card.name}看真实内容`,
+        audienceState: '正在准备法语考试、想先看清资料内容再决定是否购买的人',
+        scene: '用户刷到资料截图，想判断这套资料是否值得保存和购买',
+        painOrDesire: '不知道资料包具体包含什么，也不知道拿到后怎么用',
+        promise: '用真实资料页说明内容结构、具体价值和使用方式',
+        contentAngle: input.card.content_mechanism,
+        plannedBlockKind: input.capability.acceptedBlockKinds[0],
+        productBridge: `这张${input.card.name}截图对应商品中的真实资料内容`,
+        seo: { primary: profile.noteIdentity, related: ['备考资料', '资料包'] },
+        knowledgeMode: 'product_grounded',
+        factTerms: [input.card.name, '目录', '资料内容'],
+        seedSignals: ['showcase-fallback'],
+        noveltyFingerprint: `showcase|${input.card.id}|${input.productId}`,
+      };
+      return artifact(
+        [fallbackTopic],
+        inputHash,
+        result.usage,
+        result.requestId,
+        [`本张封面选题结构化返回失败，已使用该封面的商品介绍兜底选题：${input.card.name}`],
+      );
+    }
     throw new Error(`V2选题阶段没有得到合格选题（原始${rawTopics.length}，规则拒绝${rejected.length}）`);
   }
 
