@@ -2,7 +2,8 @@ import { callOpenAICompatibleJsonWithUsage, emptyAiUsage, mergeAiUsage, type AiU
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { getProductPromptProfile, hasForbiddenProductIdentity } from '@/lib/product-prompt-profiles';
 import type { EvidenceSnippet, GeneratedInnerPage } from '@/types/reference-workflow';
-import { REQUIRED_INNER_PAGE_COUNT, stableHash, type ContentBlock, type ContentBlockKind, type ContentPackage, type TemplateCapability, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
+import { REQUIRED_INNER_PAGE_COUNT, stableHash, type BridgePlan, type ContentBlock, type ContentBlockKind, type ContentPackage, type TemplateCapability, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
+import { buildConsensusBriefBlock, resolveContentBriefActive } from './content-brief';
 import type { PublishIssue } from './publish-guard';
 import type { ProductShowcasePlan } from '@/lib/product-showcase-library';
 
@@ -24,12 +25,16 @@ interface RawContentResponse {
   tagMaterial?: unknown;
   factualClaims?: Array<Partial<ContentPackage['factualClaims'][number]> & { claim?: string }>;
   frenchSegments?: Array<Partial<ContentPackage['frenchSegments'][number]> & { original?: string }>;
+  bridgePlan?: Partial<BridgePlan>;
 }
 
 export async function generateContentPackage(input: ContentStageInput): Promise<VersionedArtifact<ContentPackage>> {
   const profile = getProductPromptProfile(input.topic.productId);
   const templateSpec = getCoverTemplateSpec(input.capability.renderer);
   const isProductShowcase = input.topic.primaryGoal === 'conversion' || input.topic.topicLane === 'product_value';
+  // 阶段 C（设计 §5）：仅商品1普通模式开启的内容任务单增补；缺失字段软约束（只警告）。
+  const briefActive = resolveContentBriefActive(input.topic.productId, isProductShowcase);
+  const consensusBrief = briefActive ? buildConsensusBriefBlock(input.topic) : null;
   const compactTier = input.capability.densityTiers[0];
   const normalTier = input.capability.densityTiers[1] || compactTier;
   const evidence = input.evidence.slice(0, 10).map(item => ({
@@ -84,8 +89,16 @@ export async function generateContentPackage(input: ContentStageInput): Promise<
       register_every_exam_or_product_number_in_factualClaims: true,
       no_unverified_statistics: true,
     },
+    // 阶段 C：门控关闭（商品2/3、showcase）时该键完全不出现，promptInput 键集合与现状一致。
+    ...(consensusBrief ? { consensus_brief: consensusBrief.block } : {}),
   };
   const inputHash = stableHash(promptInput);
+  // 阶段 C：新增说明行只在门控开启时加入；关闭时数组与现状逐字一致（字节锁定）。
+  const consensusBriefSystemLines = briefActive ? [
+    'consensus_brief 是本篇内容任务单的增补：本篇说话动作与开头情绪起势必须落实在正文第一段，也就是 captionParts.opening 里，不得写成通用开场或自我介绍。consensus_brief 中留空的项不自行编造。',
+    '标题与正文的承诺都不得超出 consensus_brief.标题可承诺范围 列出的核心结果、可展开内容与事实锚词；范围之外的承诺句不要写。',
+    '除原有字段外，再在响应中新增 bridgePlan 字段，按四拍各写一句完整中文：freeSolves=本篇免费内容先解决什么；userStillNeeds=读者照本篇做完后还缺什么；whyProduct=商品为什么能接上（只锚定 consensus_brief.带货承接计划 给出的能力与模块，不得编造输入之外的商品功能）；naturalCta=最后如何自然引导查看商品。四拍缺一不可，只返回 JSON 的约束不变。',
+  ] : [];
   const result = await callOpenAICompatibleJsonWithUsage<RawContentResponse>([
     {
       role: 'system',
@@ -123,6 +136,7 @@ export async function generateContentPackage(input: ContentStageInput): Promise<
         '每条primary和secondary还必须分别不超过maximum_primary_visible_units和maximum_secondary_visible_units。文档解析中的法语句必须完整且简短，不得通过截断句子达到限制。',
         'innerPages必须恰好5项，每项是{page_type,page_title,lead,bullets,source_ids}，每页至少3条具体内容；captionParts必须是{opening,value,productBridge,cta}对象。',
         'factualClaims每项必须是{text,type,sourceIds}；frenchSegments每项必须是{path,text,translation}。禁止使用旧字段title/content/examples/claim/original。',
+        ...consensusBriefSystemLines,
       ].join('\n'),
     },
     { role: 'user', content: JSON.stringify(promptInput) },
@@ -135,7 +149,8 @@ export async function generateContentPackage(input: ContentStageInput): Promise<
   } catch (cause) {
     throw attachStageContext(cause, 'content', result.usage);
   }
-  const warnings = [...normalizationWarnings, ...validateContent(content, input)];
+  const briefFieldWarnings = (consensusBrief?.missing || []).map(field => `共识内容任务单字段缺失：${field}，对应提示留空`);
+  const warnings = [...normalizationWarnings, ...briefFieldWarnings, ...validateContent(content, input)];
   return artifact(content, inputHash, result.usage, result.requestId, warnings);
 }
 
@@ -282,6 +297,8 @@ export async function repairContentPackage(
       tagMaterial: artifactInput.data.tagMaterial,
       factualClaims: Array.isArray(patch.factualClaims) ? patch.factualClaims : artifactInput.data.factualClaims,
       frenchSegments: artifactInput.data.frenchSegments,
+      // 阶段 C：定向返修不重写承接计划，沿用已解析的四拍，避免重复警告/丢字段。
+      bridgePlan: artifactInput.data.bridgePlan,
     };
     content = normalizeContent(merged, input, evidence.map(item => item.id), normalizationWarnings);
   } catch (cause) {
@@ -387,10 +404,12 @@ function normalizeContent(raw: RawContentResponse, input: ContentStageInput, val
     innerPages = ensureInnerPageCount(innerPages, coverBlocks, input);
   }
   const caption = normalizeCaptionParts(raw.captionParts);
+  const bridgePlan = normalizeBridgePlan(raw, input, normalizationWarnings);
   const content: ContentPackage = {
     topicSnapshotHash: stableHash(input.topic),
     coverBlocks,
     innerPages,
+    ...(bridgePlan ? { bridgePlan } : {}),
     captionParts: {
       opening: caption.opening,
       value: caption.value,
@@ -409,6 +428,29 @@ function normalizeContent(raw: RawContentResponse, input: ContentStageInput, val
   };
   if (hasForbiddenProductIdentity(input.topic.productId, JSON.stringify(content))) throw new Error('V2内容阶段发生商品身份串线');
   return content;
+}
+
+/**
+ * 阶段 C（设计 §5）：解析带货承接四拍计划。软约束——缺失或部分缺失只警告，
+ * 绝不让任务失败；四拍完整才写入 ContentPackage（保持类型简单，不存半成品）。
+ * 仅商品1普通模式消费该字段；legacy 路径 raw 里没有 bridgePlan 也不会有任何行为。
+ */
+function normalizeBridgePlan(raw: RawContentResponse, input: ContentStageInput, normalizationWarnings: string[]): BridgePlan | undefined {
+  const isProductShowcase = input.topic.primaryGoal === 'conversion' || input.topic.topicLane === 'product_value';
+  if (!resolveContentBriefActive(input.topic.productId, isProductShowcase)) return undefined;
+  const source = raw.bridgePlan && typeof raw.bridgePlan === 'object' && !Array.isArray(raw.bridgePlan) ? raw.bridgePlan : {};
+  const beats = {
+    freeSolves: clean(source.freeSolves),
+    userStillNeeds: clean(source.userStillNeeds),
+    whyProduct: clean(source.whyProduct),
+    naturalCta: clean(source.naturalCta),
+  };
+  const missingBeats = (Object.keys(beats) as Array<keyof typeof beats>).filter(key => !beats[key]);
+  if (missingBeats.length) {
+    normalizationWarnings.push(`带货承接计划缺失：${missingBeats.length === 4 ? '响应未提供 bridgePlan' : `bridgePlan 缺 ${missingBeats.join('、')}`}，正文仍按原承接规则执行`);
+    return undefined;
+  }
+  return beats;
 }
 
 function containsAuditableFrench(value: string) {

@@ -88,6 +88,14 @@ export interface ContentBlock {
   sourceIds: string[];
 }
 
+/** 带货承接四拍计划（阶段 C，设计 §5：内容 AI 的响应字段，商品1普通模式可选）。 */
+export interface BridgePlan {
+  freeSolves: string;
+  userStillNeeds: string;
+  whyProduct: string;
+  naturalCta: string;
+}
+
 export interface ContentPackage {
   topicSnapshotHash: string;
   coverBlocks: ContentBlock[];
@@ -96,6 +104,8 @@ export interface ContentPackage {
   tagMaterial: string[];
   factualClaims: Array<{ text: string; type: 'product' | 'exam' | 'general_advice' | 'example'; sourceIds: string[] }>;
   frenchSegments: Array<{ path: string; text: string; translation?: string }>;
+  /** 阶段 C 共识内容任务单增补（设计 §5）：带货承接四拍计划；只有商品1普通模式、且 AI 四拍完整时才填。legacy 永不带。 */
+  bridgePlan?: BridgePlan;
 }
 
 export interface TitlePair {
