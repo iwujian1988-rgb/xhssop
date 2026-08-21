@@ -382,7 +382,7 @@ function normalizeContent(raw: RawContentResponse, input: ContentStageInput, val
     }));
     if (innerPages.length < REQUIRED_INNER_PAGE_COUNT) {
       // 与 publish-guard 的补页警告同口径：程序凑数页必须可见，便于统计触发频率。
-      normalizationWarnings.push(`本篇内页由程序从 ${innerPages.length} 页补齐到 ${REQUIRED_INNER_PAGE_COUNT} 页，补充页为固定模板页`);
+      normalizationWarnings.push(`本篇内页由程序从 ${innerPages.length} 页补齐到 ${REQUIRED_INNER_PAGE_COUNT} 页，补充 ${REQUIRED_INNER_PAGE_COUNT - innerPages.length} 页为固定模板页（非AI生成），建议人工复核`);
     }
     innerPages = ensureInnerPageCount(innerPages, coverBlocks, input);
   }

@@ -68,7 +68,7 @@ function content(bullet: string, productBridge = '这套资料把选考和练习
 const correct = inspectForPublish(content('TCF Canada 听力39题35分钟。'), { productId: 'tef_tcf_canada', topic, capability, evidence });
 assert.equal(correct.hardIssues.some(item => item.code === 'risky_fact_not_registered'), false, JSON.stringify(correct.hardIssues));
 assert.equal(correct.content.innerPages.length, 5, '内页仍必须补齐到5页');
-assert.equal(correct.warnings.some(item => item.includes('本篇内页由程序从 2 页补齐到 5 页')), true, '程序补页必须留下非阻断可见提醒');
+assert.equal(correct.warnings.some(item => item.includes('本篇内页由程序从 2 页补齐到 5 页') && item.includes('补充 3 页') && item.includes('非AI生成') && item.includes('建议人工复核')), true, '程序补页警告必须含：补了几页、来源为模板页非AI、建议人工复核');
 assert.equal(correct.hardIssues.some(item => item.code === 'inner_pages_too_few'), false, '补页不得产生硬拦（inner_pages_too_few 已是死规则，应已删除）');
 
 const practiceStructure = inspectForPublish(content('练习示例：针对TEF口语B部分，可先陈述立场，再用两个论据支撑。'), { productId: 'tef_tcf_canada', topic, capability, evidence });

@@ -219,7 +219,7 @@ function ensureInnerPageCount(content: ContentPackage, warnings: string[]) {
   }
   // 补页本身保留，但必须可见：批量结果/审计脚本要能统计“程序凑数页”频率。
   if (content.innerPages.length < REQUIRED_INNER_PAGE_COUNT) {
-    warnings.push(`本篇内页由程序从 ${content.innerPages.length} 页补齐到 ${REQUIRED_INNER_PAGE_COUNT} 页，补充页为固定模板页`);
+    warnings.push(`本篇内页由程序从 ${content.innerPages.length} 页补齐到 ${REQUIRED_INNER_PAGE_COUNT} 页，补充 ${REQUIRED_INNER_PAGE_COUNT - content.innerPages.length} 页为固定模板页（非AI生成），建议人工复核`);
   }
   const sourceIds = Array.from(new Set(content.coverBlocks.flatMap(block => block.sourceIds)));
   const bullets = content.coverBlocks
