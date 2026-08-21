@@ -5,16 +5,22 @@ import { getProductPromptProfile, hasForbiddenProductIdentity, hasRequiredProduc
 import { fingerprintTitle, getRecentTitleFingerprints, titleTemplateFingerprint } from '@/lib/title-usage-store';
 import type { MigratedTopic } from '@/types/reference-workflow';
 import { countVisibleUnits, stableHash, type ContentPackage, type TemplateCapability, type TitlePackage, type TitlePair, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
+import { candidateMixForDirections, clampTitleCandidateCount, classifyTitleDirection, sampleDirectionsForNote, titleDirectionPromptLines, titlePromiseBeyondRange, titlePromiseRangeText, resolveTitleConsensusActive, type TitleDirection } from './title-consensus';
+import { getProductEditorialMap } from './product-editorial-map';
 
 export const TITLE_PROMPT_VERSION = 'v2-title-7';
 export const TITLE_CANDIDATE_COUNT = 4;
 
 type TitleMechanism = 'search_utility' | 'loss_tension' | 'cognitive_conflict' | 'result_gain';
 
+type TitleCategoryFn = (pair: TitlePair) => string;
+
 interface TitleStageInput {
   topic: TopicOption;
   capability: TemplateCapability;
   content: ContentPackage;
+  /** 阶段 D（设计 §4.1）：输出组数入参；仅商品1普通模式（共识门控开）生效，clamp 1-8 默认 4。legacy 路径恒为 4。 */
+  candidateCount?: number;
 }
 
 interface RawTitleResponse {
@@ -51,14 +57,30 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
   const coverRange = getCoverTemplateSpec(input.capability.renderer)?.titleLengthRange || [8, 18];
   const supportedNumbers = contentNumbers(input);
   const productShowcase = input.topic.primaryGoal === 'conversion' || input.topic.topicLane === 'product_value';
+  // 阶段 D 门控：只有商品1普通模式走方向池新逻辑；showcase 与商品2/3 的最终
+  // prompt 拼接结果与 4fdb786 现状逐字节一致（离线测试 sha256 锁定）。
+  const consensusActive = resolveTitleConsensusActive(input.topic.productId, productShowcase);
+  const effectiveCount = consensusActive ? clampTitleCandidateCount(input.candidateCount) : TITLE_CANDIDATE_COUNT;
+  const directions = consensusActive ? sampleDirectionsForNote(input.topic.noveltyFingerprint, effectiveCount) : [];
+  const categoryFn: TitleCategoryFn = consensusActive ? classifyTitleDirection : classifyTitleMechanism;
+  const editorialMap = consensusActive ? getProductEditorialMap(input.topic.productId) : undefined;
+  const baseActualContent = {
+    cover: coverSummary,
+    opening: input.content.captionParts.opening,
+    value_points: input.content.captionParts.value.slice(0, 4),
+  };
   const promptInput = {
     product: { identity: profile.noteIdentity, short_identity: profile.shortIdentity, scope: profile.editorialScopePrompt },
     topic: input.topic,
-    actual_content: {
-      cover: coverSummary,
-      opening: input.content.captionParts.opening,
-      value_points: input.content.captionParts.value.slice(0, 4),
-    },
+    actual_content: consensusActive ? {
+      ...baseActualContent,
+      // 阶段 D（设计 §4.1）：内页摘要 5 页 {page_title, lead, bullets前3} 进 prompt。
+      inner_pages: input.content.innerPages.slice(0, 5).map(page => ({
+        page_title: page.page_title,
+        lead: page.lead,
+        bullets: page.bullets.slice(0, 3),
+      })),
+    } : baseActualContent,
     cover: {
       renderer: input.capability.renderer,
       family: input.capability.family,
@@ -68,7 +90,7 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
     },
     allowed_numbers_from_actual_content: supportedNumbers,
     formula_skeletons: formulas,
-    required_candidate_mix: productShowcase ? {
+    required_candidate_mix: consensusActive ? candidateMixForDirections(directions) : productShowcase ? {
       search_utility: 1,
       loss_tension: 1,
       cognitive_conflict: 1,
@@ -87,8 +109,22 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
       '强获得感：突出体系、大全、稀缺整理或考前可直接使用的价值，但不能只报数量',
       '适度吹爆：用有依据的强判断表达资料的完整、好用、值得看，不冒充官方或虚构效果',
     ] : undefined,
+    // 阶段 D 输入增补（仅门控开；全部是结构化输入，不含固定文字示例）：
+    // 商品能力列表、购买者地图三块全量、标题可承诺范围。legacy 路径这些键不存在。
+    ...(consensusActive ? {
+      product_capabilities: editorialMap ? editorialMap.capabilities.map(item => ({
+        capability_id: item.capabilityId,
+        capability: item.capability,
+        modules: item.modules,
+      })) : undefined,
+      buyer_map: editorialMap?.buyerMap,
+      title_promise_range: titlePromiseRangeText(input.topic),
+    } : {}),
   };
   const inputHash = stableHash(promptInput);
+  // 阶段 D（设计 §4.4）：candidateCount>4 时首轮 900+320*count，返修按 1800:1400 同比例放大；默认 4 维持 1800/1400。
+  const firstMaxTokens = consensusActive && effectiveCount > 4 ? 900 + 320 * effectiveCount : 1800;
+  const repairMaxTokens = firstMaxTokens === 1800 ? 1400 : Math.round((firstMaxTokens * 1400) / 1800);
   const result = await callOpenAICompatibleJsonWithUsage<RawTitleResponse>([
     {
       role: 'system',
@@ -111,25 +147,36 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
         '每个标题必须是一句可以直接念出口的完整中文短句，词序要符合日常口语。禁止把“对象、数量、类别、动作”压成名词串，禁止为了缩短字数写成“语法错9类、清单查短板、5维度自查定位”这类电报式表达。',
         '具体痛点要用学习者会说的话表达，避免把编辑标签或内容分类直接当成标题。不要反复使用同一组情绪词或同义改写。',
         '不得整批都写成问句、冒号句或“别再X”句式；候选的机制、句式和核心对象必须有差异。',
-        '无论普通模式还是知识库介绍模式，最终只返回4组成对候选，四种机制各1组：search_utility（搜索/资料获得感）、loss_tension（风险/损失）、cognitive_conflict（反常识/认知冲突）、result_gain（结果/行动收益）。不要返回第5组或更多，也不要把四组写成同一个句式的改写。',
-        'mechanism字段必须填写这4个英文值之一。四类候选的句式和核心点击理由必须真正不同，不能只换同义词。',
+        // 阶段 D：门控开时 legacy「四种机制各1组」两行替换为本次方向子集说明（title-consensus 模块生成）。
+        ...(consensusActive
+          ? titleDirectionPromptLines(directions, effectiveCount)
+          : [
+            '无论普通模式还是知识库介绍模式，最终只返回4组成对候选，四种机制各1组：search_utility（搜索/资料获得感）、loss_tension（风险/损失）、cognitive_conflict（反常识/认知冲突）、result_gain（结果/行动收益）。不要返回第5组或更多，也不要把四组写成同一个句式的改写。',
+            'mechanism字段必须填写这4个英文值之一。四类候选的句式和核心点击理由必须真正不同，不能只换同义词。',
+          ]),
         '标题末尾不能是冒号、逗号或顿号。若写“从X词到Y词”，实际内页必须包含完整达到Y词的法语示例；只有片段时不得使用该承诺。',
         'formula_skeletons只用于学习结构和心理触发，不得机械填槽或照抄固定措辞。',
-        productShowcase ? '生成4组成对候选，每类恰好1组：search_utility平铺介绍知识库具体有什么；loss_tension写备考者会直接说出的具体困扰；cognitive_conflict写反常识或改变原有做法；result_gain把资料价值说得很强、很值得买或马上能用。四类不能只换几个词。允许适度“吹爆”资料，但必须基于本篇真实内容，不能写空泛口号。' : '生成4组成对候选，每类恰好1组。',
+        ...(consensusActive
+          ? [
+            `生成${effectiveCount}组成对候选，每方向恰好1组；缺少的方向要新写候选，不得用同一方向改写凑数。`,
+            '标题只能承诺user输入里title_promise_range与actual_content实际展开的内容；超出范围的效果承诺（如保过、押题、快速提分）不得出现，返修时也要删掉。',
+          ]
+          : [productShowcase ? '生成4组成对候选，每类恰好1组：search_utility平铺介绍知识库具体有什么；loss_tension写备考者会直接说出的具体困扰；cognitive_conflict写反常识或改变原有做法；result_gain把资料价值说得很强、很值得买或马上能用。四类不能只换几个词。允许适度“吹爆”资料，但必须基于本篇真实内容，不能写空泛口号。' : '生成4组成对候选，每类恰好1组。']),
         'mechanism写本候选的实际机制；userRelation明确写它与用户的关系信号；noveltyFingerprint写“机制|对象|角度”。',
         '每个candidates项必须严格为{textTitle,coverTitle,coverSubtitle,mechanism,userRelation,seoKeyword,noveltyFingerprint}。禁止使用title、cover_title、cover_subtitle、title_type等旧字段。',
         '只返回JSON对象，顶层字段candidates。',
       ].join('\n'),
     },
     { role: 'user', content: JSON.stringify(promptInput) },
-  ], { maxTokens: 1800, temperature: 0.86, retries: 1 });
+  ], { maxTokens: firstMaxTokens, temperature: 0.86, retries: 1 });
   const normalizedCandidates = (Array.isArray(result.data.candidates) ? result.data.candidates : [])
     .map(normalizePair)
     .filter((pair): pair is TitlePair => Boolean(pair))
-    .map(pair => normalizePairForInput(pair, input));
+    .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive }));
   let titleUsage = result.usage;
-  let candidates = normalizedCandidates.filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles));
-  if (candidates.length < TITLE_CANDIDATE_COUNT) {
+  const consensusWarnings: string[] = [];
+  let candidates = normalizedCandidates.filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles, false, consensusActive));
+  if (candidates.length < effectiveCount) {
     const repairable = normalizedCandidates.slice(0, 8);
     if (repairable.length) {
       const repaired = await repairTitleCandidates(repairable, {
@@ -140,42 +187,72 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
         painOrDesire: input.topic.painOrDesire,
         coverRange,
         supportedNumbers,
-        targetCount: TITLE_CANDIDATE_COUNT,
-      }, input, recent.selectedTitles, recent.coverTitles);
+        targetCount: effectiveCount,
+        ...(consensusActive ? { required_directions: directions } : {}),
+      }, input, recent.selectedTitles, recent.coverTitles, repairMaxTokens);
       titleUsage = mergeAiUsage(titleUsage, repaired.usage);
       const repairedCandidates = repaired.candidates
-        .map(pair => normalizePairForInput(pair, input))
-        .filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles));
-      candidates = dedupeCandidates([...candidates, ...repairedCandidates]);
+        .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive }))
+        .filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles, false, consensusActive));
+      candidates = dedupeCandidates([...candidates, ...repairedCandidates], categoryFn);
       if (!candidates.length) {
         candidates = repairable
           .map(pair => ({ ...pair, textTitle: fitTextTitle(pair.textTitle) }))
-          .filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles));
+          .filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles, false, consensusActive));
+      }
+      // 阶段 D（设计 §4.3）：门控开时封面标题超长先返修；返修后组数仍不足，
+      // 才把「其余都合格、只是封面超长」的候选拿回来截断兜底，不让整篇 job 失败。
+      // legacy 路径没有这一步（封面在 normalizePairForInput 已预先截断）。
+      if (consensusActive && candidates.length < effectiveCount) {
+        const rescuedCover = repairable
+          .map(pair => {
+            const truncated = fitCoverTitle(pair.coverTitle, input, true);
+            return { pair: { ...pair, textTitle: fitTextTitle(pair.textTitle), coverTitle: truncated }, didTruncate: truncated !== pair.coverTitle };
+          })
+          .filter(item => passesHardGates(item.pair, input, recent.selectedTitles, recent.coverTitles, false, true));
+        const before = candidates.length;
+        candidates = dedupeCandidates([...candidates, ...rescuedCover.map(item => item.pair)], categoryFn);
+        if (candidates.length > before && rescuedCover.some(item => item.didTruncate)) {
+          consensusWarnings.push(`封面标题超长且返修未补齐，已截断兜底${candidates.length - before}组，请人工复核封面文案`);
+        }
       }
     }
   }
-  const diversified = diversifyCandidates(dedupeCandidates(candidates), input, recent.records);
-  const unique = limitTitleCandidates(diversified).slice(0, TITLE_CANDIDATE_COUNT);
+  const diversified = diversifyCandidates(dedupeCandidates(candidates, categoryFn), input, recent.records, categoryFn, consensusActive ? directions : undefined);
+  const { list: unique, warnings: coverFallbackWarnings } = applyCoverTruncateFallback(
+    limitTitleCandidates(diversified, categoryFn, effectiveCount).slice(0, effectiveCount),
+    input,
+    consensusActive,
+  );
   if (!unique.length) {
     // 标题是可返修字段，不应因为历史标题重复或某个窄正则把整篇内容判死。
     // 先在不读取历史占用的前提下保留一个当前内容最匹配的候选；后续仍会在
     // warnings 中记录降级，便于人工换标题，而不是让整篇 job 失败。
     const salvagePool = dedupeCandidates(
       normalizedCandidates
-        .map(pair => normalizePairForInput(pair, input))
+        .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive }))
         .filter(pair => passesHardGates(pair, input, new Set(), new Set(), true)),
+      categoryFn,
     );
     if (salvagePool.length) {
-      const salvageCandidates = limitTitleCandidates(diversifyCandidates(salvagePool, input, [])).slice(0, TITLE_CANDIDATE_COUNT);
+      const salvageCandidates = applyCoverTruncateFallback(
+        limitTitleCandidates(diversifyCandidates(salvagePool, input, [], categoryFn, consensusActive ? directions : undefined), categoryFn, effectiveCount).slice(0, effectiveCount),
+        input,
+        consensusActive,
+      );
+      const salvageFinal = salvageCandidates.list.length ? salvageCandidates.list : salvagePool.slice(0, effectiveCount);
       const data: TitlePackage = {
         contentSnapshotHash: stableHash(input.content),
-        candidates: salvageCandidates.length ? salvageCandidates : salvagePool.slice(0, TITLE_CANDIDATE_COUNT),
-        selected: selectTitleCandidate(salvageCandidates.length ? salvageCandidates : salvagePool.slice(0, TITLE_CANDIDATE_COUNT), input, new Map(), []),
+        candidates: salvageFinal,
+        selected: selectTitleCandidate(salvageFinal, input, new Map(), []),
       };
-      const mechanismCount = new Set(data.candidates.map(classifyTitleMechanism)).size;
+      const categoryCount = new Set(data.candidates.map(categoryFn)).size;
       return artifact(data, inputHash, titleUsage, result.requestId, [
         '标题候选与历史或长度规则冲突，已保留当前内容最匹配的候选，请人工复核标题新鲜度',
-        ...(mechanismCount < 3 ? [`本次标题候选只覆盖${mechanismCount}种点击机制`] : []),
+        ...(categoryCount < 3 ? [`本次标题候选只覆盖${categoryCount}种点击机制`] : []),
+        ...salvageCandidates.warnings,
+        ...consensusWarnings,
+        ...shortTextTitleWarnings(salvageFinal, consensusActive),
       ]);
     }
     console.error('[v2-title-rejected]', JSON.stringify({
@@ -190,12 +267,42 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
   }
   const selected = selectTitleCandidate(unique, input, recent.selectedTitleTemplates, recent.records);
   const data: TitlePackage = { contentSnapshotHash: stableHash(input.content), candidates: unique, selected };
-  const mechanismCount = new Set(unique.map(classifyTitleMechanism)).size;
+  const categoryCount = new Set(unique.map(categoryFn)).size;
   const warnings = [
-    ...(unique.length < TITLE_CANDIDATE_COUNT ? [`本次只有${unique.length}组标题通过硬门槛，未达到${TITLE_CANDIDATE_COUNT}组`] : []),
-    ...(mechanismCount < 3 ? [`本次标题候选只覆盖${mechanismCount}种点击机制`] : []),
+    ...(unique.length < effectiveCount ? [`本次只有${unique.length}组标题通过硬门槛，未达到${effectiveCount}组`] : []),
+    ...(categoryCount < 3 ? [`本次标题候选只覆盖${categoryCount}种点击机制`] : []),
+    ...coverFallbackWarnings,
+    ...consensusWarnings,
+    ...shortTextTitleWarnings(unique, consensusActive),
   ];
   return artifact(data, inputHash, titleUsage, result.requestId, warnings);
+}
+
+/**
+ * 阶段 D（设计 §4.3）：门控开时文字标题 <12 字只警告不淘汰。对最终存活的
+ * 短标题候选记一条人工复核警告（legacy 路径 <12 仍在硬门槛判死，不产生该警告）。
+ */
+function shortTextTitleWarnings(candidates: TitlePair[], consensusActive: boolean): string[] {
+  if (!consensusActive) return [];
+  return candidates
+    .filter(pair => countVisibleUnits(pair.textTitle) < 12)
+    .map(pair => `文字标题仅${countVisibleUnits(pair.textTitle)}字，低于推荐下限12字，请人工复核：「${pair.textTitle}」`);
+}
+
+/**
+ * 阶段 D（设计 §4.3）：门控开时封面标题超长先带 failures 进返修（fitCoverTitle
+ * 不再预先截断）；返修后仍超长才在这里截断兜底并记警告。legacy 路径恒为直通。
+ */
+function applyCoverTruncateFallback(candidates: TitlePair[], input: TitleStageInput, consensusActive: boolean): { list: TitlePair[]; warnings: string[] } {
+  if (!consensusActive) return { list: candidates, warnings: [] };
+  const range = getCoverTemplateSpec(input.capability.renderer)?.titleLengthRange || [8, 18];
+  const warnings: string[] = [];
+  const list = candidates.map(pair => {
+    if (countVisibleUnits(pair.coverTitle) <= range[1]) return pair;
+    warnings.push(`封面标题超长，返修后仍超${range[1]}字，已截断兜底：「${pair.coverTitle}」`);
+    return { ...pair, coverTitle: trimTitleAtNaturalBoundary(pair.coverTitle, range[1]) };
+  });
+  return { list, warnings };
 }
 
 function fitTextTitle(value: string) {
@@ -224,11 +331,13 @@ function compactTitleLanguage(value: string) {
     .trim();
 }
 
-function limitTitleCandidates(candidates: TitlePair[]) {
+// 阶段 D：共用机器（limit/dedupe/penalty/diversify）的分类器可传参，
+// 默认值 = 现有 4 机制分类，legacy 调用点行为零变化；门控路径传 6 方向分类器。
+function limitTitleCandidates(candidates: TitlePair[], classifier: TitleCategoryFn = classifyTitleMechanism, targetCount = TITLE_CANDIDATE_COUNT) {
   const limits = new Map<string, number>();
   const result: TitlePair[] = [];
   for (const candidate of candidates) {
-    const mechanism = classifyTitleMechanism(candidate);
+    const mechanism = classifier(candidate);
     const count = limits.get(mechanism) || 0;
     if (count >= 1) continue;
     limits.set(mechanism, count + 1);
@@ -236,7 +345,7 @@ function limitTitleCandidates(candidates: TitlePair[]) {
   }
   // AI偶尔漏掉某一机制时，用其余合格候选补足展示位，避免前台出现1组/2组。
   for (const candidate of candidates) {
-    if (result.length >= TITLE_CANDIDATE_COUNT) break;
+    if (result.length >= targetCount) break;
     if (!result.includes(candidate)) result.push(candidate);
   }
   return result;
@@ -251,7 +360,7 @@ function trimTitleAtNaturalBoundary(value: string, max: number) {
   return text.replace(/[，：、]$/u, '');
 }
 
-function normalizePairForInput(pair: TitlePair, input: TitleStageInput): TitlePair {
+function normalizePairForInput(pair: TitlePair, input: TitleStageInput, opts: { coverTruncate?: boolean } = {}): TitlePair {
   let coverTitle = pair.coverTitle;
   const hasExplicitCoverIdentity = input.topic.productId === 'delf_b2_writing'
     ? /(?:DELF\s*B2|法语\s*B2)/i.test(coverTitle)
@@ -266,11 +375,11 @@ function normalizePairForInput(pair: TitlePair, input: TitleStageInput): TitlePa
   return {
     ...pair,
     textTitle: fitTextTitle(pair.textTitle),
-    coverTitle: fitCoverTitle(coverTitle, input),
+    coverTitle: fitCoverTitle(coverTitle, input, opts.coverTruncate !== false),
   };
 }
 
-function fitCoverTitle(value: string, input: TitleStageInput) {
+function fitCoverTitle(value: string, input: TitleStageInput, allowTruncate = true) {
   const range = getCoverTemplateSpec(input.capability.renderer)?.titleLengthRange || [8, 18];
   const text = compactTitleLanguage(normalizeNaturalCounters(value))
     .replace(/还在/g, '')
@@ -279,11 +388,20 @@ function fitCoverTitle(value: string, input: TitleStageInput) {
     .replace(/\s+/g, ' ')
     .trim();
   if (countVisibleUnits(text) <= range[1]) return text;
+  if (!allowTruncate) return text;
   return trimTitleAtNaturalBoundary(text, range[1]);
 }
 
-function passesHardGates(pair: TitlePair, input: TitleStageInput, selected: Set<string>, coverTitles: Set<string>, ignoreLength = false) {
-  if (!ignoreLength && (countVisibleUnits(pair.textTitle) > 20 || countVisibleUnits(pair.textTitle) < 12)) return false;
+function passesHardGates(
+  pair: TitlePair,
+  input: TitleStageInput,
+  selected: Set<string>,
+  coverTitles: Set<string>,
+  ignoreLength = false,
+  // 阶段 D：门控开时 <12 字只警告不淘汰（设计 §0.7 / §4.3）；>20 硬上限两个路径都保留。
+  relaxMinTextTitle = false,
+) {
+  if (!ignoreLength && (countVisibleUnits(pair.textTitle) > 20 || (!relaxMinTextTitle && countVisibleUnits(pair.textTitle) < 12))) return false;
   const coverRange = getCoverTemplateSpec(input.capability.renderer)?.titleLengthRange || [8, 18];
   if (!ignoreLength && (countVisibleUnits(pair.coverTitle) < coverRange[0] || countVisibleUnits(pair.coverTitle) > coverRange[1])) return false;
   if (!hasRequiredProductIdentity(input.topic.productId, pair.textTitle)) return false;
@@ -334,10 +452,11 @@ function introducesNewPain(pair: TitlePair, input: TitleStageInput) {
 
 async function repairTitleCandidates(
   candidates: TitlePair[],
-  context: { productIdentity: string; topic: string; promise: string; audience: string; painOrDesire: string; coverRange: number[]; supportedNumbers: string[]; targetCount: number },
+  context: { productIdentity: string; topic: string; promise: string; audience: string; painOrDesire: string; coverRange: number[]; supportedNumbers: string[]; targetCount: number; required_directions?: string[] },
   input: TitleStageInput,
   selected: Set<string>,
   coverTitles: Set<string>,
+  maxTokens = 1400,
 ) {
   const payload = candidates.map((candidate, index) => ({
     index,
@@ -356,7 +475,9 @@ async function repairTitleCandidates(
       role: 'system',
       content: [
         '你是小红书标题精修编辑。候选角度已确定，逐项修复failures，不新增内容里没有的角度、承诺或数字。',
-        `当前输入可能只有${candidates.length}组，但最终必须补齐到${context.targetCount}组；缺少的点击机制要补写新候选，不得复制已有标题，也不能只返回原候选。`,
+        context.required_directions
+          ? `当前输入可能只有${candidates.length}组，但最终必须补齐到${context.targetCount}组；缺少的方向按required_directions补写新候选，每方向恰好1组，不得复制已有标题，也不能只返回原候选。`
+          : `当前输入可能只有${candidates.length}组，但最终必须补齐到${context.targetCount}组；缺少的点击机制要补写新候选，不得复制已有标题，也不能只返回原候选。`,
         '每个textTitle必须为12到20个可见字；汉字、字母、数字、标点都各算1个，空格不算。',
         `每个coverTitle必须为${context.coverRange[0]}到${context.coverRange[1]}个可见字；只留用户关系和核心收益，解释移到coverSubtitle。`,
         `封面标题本身必须保留商品考试身份：${context.productIdentity}。标题末尾不能是冒号、逗号或顿号。`,
@@ -371,7 +492,7 @@ async function repairTitleCandidates(
       ].join('\n'),
     },
     { role: 'user', content: JSON.stringify({ context, candidates: payload }) },
-  ], { maxTokens: 1400, temperature: 0.35, retries: 1 });
+  ], { maxTokens, temperature: 0.35, retries: 1 });
   return {
     candidates: (Array.isArray(result.data.candidates) ? result.data.candidates : [])
       .map(normalizePair)
@@ -502,17 +623,17 @@ function titleMotifs(value: string) {
   return motifs;
 }
 
-function recentTitlePenalty(pair: TitlePair, records: Array<{ title: string; cover_title: string }>) {
+function recentTitlePenalty(pair: TitlePair, records: Array<{ title: string; cover_title: string }>, classifier: TitleCategoryFn = classifyTitleMechanism) {
   const recent = records.slice(-16);
   const candidateMotifs = titleMotifs(`${pair.textTitle} ${pair.coverTitle}`);
-  const mechanism = classifyTitleMechanism(pair);
+  const mechanism = classifier(pair);
   let motifHits = 0;
   let mechanismHits = 0;
   for (const record of recent) {
     const prior = `${record.title || ''} ${record.cover_title || ''}`;
     const priorMotifs = titleMotifs(prior);
     if ([...candidateMotifs].some(item => priorMotifs.has(item))) motifHits += 1;
-    if (classifyTitleMechanism({ ...pair, textTitle: record.title || '', coverTitle: record.cover_title || '', coverSubtitle: undefined, mechanism: '' }) === mechanism) mechanismHits += 1;
+    if (classifier({ ...pair, textTitle: record.title || '', coverTitle: record.cover_title || '', coverSubtitle: undefined, mechanism: '' }) === mechanism) mechanismHits += 1;
   }
   return Math.min(32, motifHits * 5) + Math.min(16, mechanismHits * 2);
 }
@@ -521,20 +642,20 @@ function diversifyCandidates(
   candidates: TitlePair[],
   input: TitleStageInput,
   records: Array<{ title: string; cover_title: string }>,
+  classifier: TitleCategoryFn = classifyTitleMechanism,
+  categories?: string[],
 ) {
-  const buckets = new Map<TitleMechanism, TitlePair[]>([
-    ['search_utility', []],
-    ['loss_tension', []],
-    ['cognitive_conflict', []],
-    ['result_gain', []],
-  ]);
-  for (const candidate of candidates) buckets.get(classifyTitleMechanism(candidate))?.push(candidate);
+  const bucketKeys: string[] = categories && categories.length
+    ? categories
+    : ['search_utility', 'loss_tension', 'cognitive_conflict', 'result_gain'];
+  const buckets = new Map<string, TitlePair[]>(bucketKeys.map(key => [key, []]));
+  for (const candidate of candidates) buckets.get(classifier(candidate))?.push(candidate);
   for (const bucket of buckets.values()) {
-    bucket.sort((a, b) => recentTitlePenalty(a, records) - recentTitlePenalty(b, records));
+    bucket.sort((a, b) => recentTitlePenalty(a, records, classifier) - recentTitlePenalty(b, records, classifier));
   }
   const ordered: TitlePair[] = [];
   for (let index = 0; index < 3; index += 1) {
-    for (const mechanism of ['search_utility', 'loss_tension', 'cognitive_conflict', 'result_gain'] as TitleMechanism[]) {
+    for (const mechanism of bucketKeys) {
       const candidate = buckets.get(mechanism)?.[index];
       if (candidate) ordered.push(candidate);
     }
@@ -635,7 +756,7 @@ function normalizeNaturalCounters(value: string) {
     .replace(/必考差异/g, '关键差异');
 }
 
-function dedupeCandidates(candidates: TitlePair[]) {
+function dedupeCandidates(candidates: TitlePair[], classifier: TitleCategoryFn = classifyTitleMechanism) {
   const seenExact = new Set<string>();
   const seenSemantic = new Set<string>();
   return candidates.filter(item => {
@@ -644,7 +765,7 @@ function dedupeCandidates(candidates: TitlePair[]) {
     seenExact.add(exactKey);
     const objects = `${item.textTitle}${item.coverTitle}`.match(/自查|检查|评分|短板|差异|题型|范文|模板|句型|词汇|语法|连接词|资料|大全|速查|错误|选考|报名/g) || [];
     const motifs = [...titleMotifs(`${item.textTitle} ${item.coverTitle}`)].sort();
-    const semanticKey = `${classifyTitleMechanism(item)}|${motifs.join(',')}|${Array.from(new Set(objects)).sort().join(',')}`;
+    const semanticKey = `${classifier(item)}|${motifs.join(',')}|${Array.from(new Set(objects)).sort().join(',')}`;
     if ((motifs.length || objects.length) && seenSemantic.has(semanticKey)) return false;
     seenSemantic.add(semanticKey);
     return true;
@@ -689,6 +810,11 @@ function titleGateFailures(pair: TitlePair, input: TitleStageInput, selected: Se
   if (!contentSupports(pair, input)) failures.push('标题核心对象没有被本篇内容支撑');
   if (isUnnatural(pair.textTitle) || isUnnatural(pair.coverTitle)) failures.push('存在机器化或不说人话表达');
   if (/[：:，、]$/u.test(pair.textTitle) || /[：:，、]$/u.test(pair.coverTitle)) failures.push('标题句尾残缺');
+  // 阶段 D（设计 §5 末尾 / §6.2）：标题承诺超出本篇可承诺范围只进返修级 failures，不加硬拦、不动内容阶段。
+  if (resolveTitleConsensusActive(input.topic.productId, input.topic.primaryGoal === 'conversion' || input.topic.topicLane === 'product_value')) {
+    const beyondRange = titlePromiseBeyondRange(pair, input.topic);
+    if (beyondRange) failures.push(beyondRange);
+  }
   if (selected.has(fingerprintTitle(pair.textTitle)) || coverTitles.has(fingerprintTitle(pair.coverTitle))) failures.push('与近期标题重复');
   return failures;
 }
