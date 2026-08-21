@@ -13,6 +13,11 @@ import { getRecentSeedIds } from '@/lib/seed-usage-store';
 import { findSimilarTopic } from '@/lib/title-usage-store';
 import type { ProductId } from '@/types/data';
 import { isV2PipelineEnabled, planTopicsV2 } from '@/lib/v2/pipeline';
+import { resolvePipelineFeatures } from '@/lib/v2/pipeline-features';
+import { selectTopicsForCard } from '@/lib/v2/batch-topic-selection';
+import { topicOptionToMigrated } from '@/lib/v2/topic-stage';
+import type { ConsensusTopicOption } from '@/lib/v2/consensus-topic-stage';
+import type { BatchPlanMeta } from '@/lib/batch-store';
 
 export const runtime = 'nodejs';
 
@@ -110,6 +115,12 @@ async function handlePlan(body: PlanBody) {
   // delf_pain_logic_jump），不同 seed 也会收敛到同一知识点。
   const batchUsedSeedIds: string[] = [];
   const batchUsedTopicTexts: string[] = [];
+  // B2（§3.4）：仅商品1 + 普通模式走共识 3 候选池 + 程序挑选；
+  // 商品2/3 与 showcase 的批量路径完全不走新逻辑。
+  const useConsensusPlan = isV2PipelineEnabled()
+    && resolvePipelineFeatures(body.product_id).consensusTopicStage
+    && contentMode !== 'product_showcase';
+  const planMeta: BatchPlanMeta = {};
   let seq = 1;
   let v2Usage = emptyAiUsage();
 
@@ -131,11 +142,34 @@ async function handlePlan(body: PlanBody) {
         direction,
         contentMode,
         // 前台选择的是最终要生成的选题数；不要再额外硬编码候选池数量。
+        // （共识分支忽略 limit：候选池恒为 3，由 selectTopicsForCard 挑 topicsPerCard 个。）
         limit: topicsPerCard,
         recentAngles: batchUsedTopicTexts,
+        topicMode: 'batch',
       });
-      topics = planned.topics;
       v2Usage = mergeAiUsage(v2Usage, planned.usage);
+      if (useConsensusPlan) {
+        // 共识挑选：卡内候选间互查 + 方向覆盖 + 跨卡软规避；未选中候选与警告进 plan_meta。
+        const selection = selectTopicsForCard({
+          candidates: planned.artifact.data as ConsensusTopicOption[],
+          topicsPerCard,
+          cardUsedTopicTexts: [],
+          batchUsedTopicTexts,
+        });
+        topics = selection.selected.map(topicOptionToMigrated);
+        planMeta.unselected_candidates = [
+          ...(planMeta.unselected_candidates || []),
+          ...selection.unselected.map(item => ({ card_id: cardId, topic: item.topic.topic, reason: item.reason })),
+        ];
+        planMeta.warnings = [
+          ...(planMeta.warnings || []),
+          ...planned.artifact.warnings,
+          ...selection.warnings,
+        ];
+        if (planned.artifact.needsManualReview) planMeta.needs_manual_review = true;
+      } else {
+        topics = planned.topics;
+      }
     } else {
       const recentSeedIds = await getRecentSeedIds(body.product_id, card.id);
       const seededTopics = planSeededTopics({
@@ -195,6 +229,11 @@ async function handlePlan(body: PlanBody) {
   }
 
   const finalBatch = await loadBatch(batchId);
+  // plan_meta 持久化进批计划（只加字段，不破坏现有结构；仅共识挑选路径有值）。
+  if (planMeta.unselected_candidates || planMeta.warnings || planMeta.needs_manual_review) {
+    finalBatch.plan_meta = planMeta;
+    await createBatch(finalBatch);
+  }
   return NextResponse.json({
     batch: finalBatch,
     usage: isV2PipelineEnabled() ? v2Usage : getRecentAiUsage(),

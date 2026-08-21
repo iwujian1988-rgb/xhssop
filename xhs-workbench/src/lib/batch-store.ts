@@ -75,6 +75,8 @@ export interface BatchJob {
   topic: MigratedTopic;
   status: BatchJobStatus;
   attempts: number;
+  /** composeV2 的 result.warnings（含补页警告/法语返修提醒），B2 起随 job 落盘供前台展示。 */
+  warnings?: string[];
   pipeline_version?: 'v1' | 'v2';
   current_stage?: PipelineStage;
   artifacts?: PipelineArtifacts;
@@ -92,6 +94,16 @@ export interface BatchJob {
 
 export type BatchStatus = 'planned' | 'running' | 'done';
 
+/** 批计划元数据（B2，仅商品1普通模式共识挑选路径写入；其他路径不带该字段）。 */
+export interface BatchPlanMeta {
+  /** 每张卡未选中的候选 + 淘汰原因（§3.4-5 / §8.1-9）。 */
+  unselected_candidates?: Array<{ card_id: string; topic: string; reason: string }>;
+  /** 撞题/降级/兜底等警告（§3.4-3 / §8.1-10）。 */
+  warnings?: string[];
+  /** 兜底选题标记：需人工复核（§8.1-10）。 */
+  needs_manual_review?: boolean;
+}
+
 export interface Batch {
   id: string;
   product_id: ProductId;
@@ -100,6 +112,7 @@ export interface Batch {
   created_at: string;
   status: BatchStatus;
   pipeline_version?: 'v1' | 'v2';
+  plan_meta?: BatchPlanMeta;
   jobs: Array<Pick<BatchJob, 'id' | 'seq' | 'reference_card_id' | 'topic' | 'status' | 'pipeline_version' | 'current_stage'>>;
 }
 

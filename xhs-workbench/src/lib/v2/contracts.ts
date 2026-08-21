@@ -7,6 +7,15 @@ export const REQUIRED_INNER_PAGE_COUNT = 5;
 
 export type PrimaryGoal = 'search' | 'save' | 'click' | 'conversion';
 export type TopicLane = 'broad_pain' | 'result_need' | 'narrow_knowledge' | 'product_value';
+
+/** 共识选题 3 方向（共识第 5 节，阶段 B）。legacy 路径不产 direction。 */
+export type ConsensusTopicDirection = '大痛点型' | '省时路径型' | '具体方法型';
+
+/** 商品承接依据：命中 editorial map 的能力编号 + 支持模块（阶段 B 新字段）。 */
+export interface TopicBridgeBasis {
+  capabilityId: string;
+  modules: string[];
+}
 export type ContentBlockKind = 'group' | 'pair' | 'paragraph' | 'quote' | 'example' | 'step' | 'benefit';
 export type CompilerFamily = 'directory' | 'pairs' | 'narrative' | 'document' | 'offer';
 export type PipelineStage = 'planned' | 'topic_ready' | 'topic_selected' | 'content_ready' | 'audited' | 'title_ready' | 'compiled' | 'rendering';
@@ -50,6 +59,17 @@ export interface TopicOption {
   factTerms: string[];
   seedSignals: string[];
   noveltyFingerprint: string;
+  // —— 阶段 B 共识选题可选扩展（仅商品1普通模式会填；legacy 路径永远不填）——
+  direction?: ConsensusTopicDirection;
+  /** 准备展开的 3-5 条内容；<3 只警告（§8.1-6）。 */
+  expandContents?: string[];
+  bridgeBasis?: TopicBridgeBasis;
+  coverFitReason?: string;
+  clickReason?: string;
+  /** 内容提示，非合格硬条件；缺失只警告（§3.3）。 */
+  speechAction?: string;
+  openingEmotion?: string;
+  duplicateWithHistory?: boolean;
 }
 
 export interface ContentItem {
@@ -102,6 +122,8 @@ export interface ArtifactMeta {
   usage: AiUsageSummary;
   warnings: string[];
   request_id?: string;
+  /** 机器可读标记：本工件产自程序保守兜底，需人工复核（§8.1-10）。legacy 永远不带。 */
+  needsManualReview?: boolean;
 }
 
 export interface VersionedArtifact<T> extends ArtifactMeta {

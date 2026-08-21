@@ -3,9 +3,12 @@
 // 全程离线：AI 调用注入 stub，不碰真实 LLM。
 import { execSync } from 'node:child_process';
 import { readFileSync } from 'node:fs';
+import { mkdir, readdir, readFile, writeFile } from 'node:fs/promises';
+import path from 'node:path';
 import { getCoverTemplateSpec } from '../src/lib/cover-template-specs';
 import { getXhsSearchKeywords } from '../src/lib/xhs-search-keywords';
-import { getCapabilityFallback } from '../src/lib/v2/topic-stage';
+import { emptyAiUsage } from '../src/lib/ai-client';
+import { getCapabilityFallback, generateTopicOptions, TOPIC_PROMPT_VERSION } from '../src/lib/v2/topic-stage';
 import {
   CONSENSUS_CANDIDATE_POOL_SIZE,
   buildConsensusTopicPrompt,
@@ -15,6 +18,7 @@ import {
   generateTopicOptionsConsensus,
   getConsensusPromptBudget,
   selectTopicRelevantExamFacts,
+  wrapConsensusTopicArtifact,
   type ConsensusTopicDirection,
   type ConsensusTopicOption,
   type ConsensusTopicStageInput,
@@ -263,6 +267,16 @@ assert(aiCalls === 1, `兜底零额外 AI 调用（实际调用 ${aiCalls} 次�
 assert(fallbackResult.usedFallback === true, '3 全灭触发保守兜底');
 assert(fallbackResult.data.length === 1, '兜底产 1 个选题');
 assert(fallbackResult.warnings.some(w => w.includes('保守兜底')), '兜底带警告');
+assert(fallbackResult.warnings.some(w => w.includes('需人工复核')), '兜底警告含人工复核提示文案（§8.1-10）');
+assert(fallbackResult.needsManualReview === true, '兜底结果带 needsManualReview 机器可读标记');
+assert(normalResult.needsManualReview === false, '正常结果 needsManualReview=false');
+const fallbackArtifact = wrapConsensusArtifactForTest();
+function wrapConsensusArtifactForTest() {
+  return wrapConsensusTopicArtifact(fallbackResult, 'hash-x', emptyAiUsage(), 'req-x');
+}
+assert(fallbackArtifact.needsManualReview === true, '兜底 artifact 带 needsManualReview');
+assert(wrapConsensusTopicArtifact(normalResult, 'hash-y', emptyAiUsage(), 'req-y').needsManualReview === undefined, '正常 artifact 不带 needsManualReview');
+assert(fallbackArtifact.warnings.some(w => w.includes('商品无法承接')), '逐候选死因可读文案进 artifact warnings（供前台展示）');
 const fallbackGateDeaths = diagnoseConsensusTopicCandidate(fallbackResult.data[0], {
   productId: 'delf_b2_writing',
   capability,
@@ -339,6 +353,19 @@ const hardDedup = selectTopicsForCard({ candidates: pool, topicsPerCard: 2, card
 assert(!hardDedup.selected.some(t => t.id === 'c1'), '卡内重复候选被硬去重落选');
 assert(hardDedup.unselected.some(u => u.topic.id === 'c1' && u.reason.includes('与历史重复')), '落选原因归类为与历史重复');
 
+// §8.1-9 候选间相似度互查：方向不同但文本雷同 → 后者落选且只记一次死因，名额由其余候选补
+const similarPool = [
+  poolCandidate('s1', '大痛点型', 'DELF B2写作总写不够250词怎么办'),
+  poolCandidate('s2', '省时路径型', 'DELF B2写作总写不够250词怎么破'),
+  poolCandidate('s3', '具体方法型', 'DELF B2写作自查三步法'),
+];
+const interCandidate = selectTopicsForCard({ candidates: similarPool, topicsPerCard: 2, cardUsedTopicTexts: [], batchUsedTopicTexts: [] });
+assert(interCandidate.selected.length === 2, `雷同候选剔除后仍凑满2个（实际 ${interCandidate.selected.length}）`);
+assert(!interCandidate.selected.some(t => t.id === 's2'), '与已选候选雷同者（方向不同）不选中');
+assert(interCandidate.selected.some(t => t.id === 's1') && interCandidate.selected.some(t => t.id === 's3'), '名额由不雷同候选补齐');
+assert(interCandidate.unselected.filter(u => u.topic.id === 's2').length === 1, '雷同落选只记一次死因');
+assert(interCandidate.unselected.some(u => u.topic.id === 's2' && u.reason.includes('与其他候选内容重复')), '落选原因归类为与其他候选内容重复');
+
 // 跨卡撞题：只进统一 warnings（前缀"跨卡撞题"），照常选中，不吞（N=3 保证撞题候选真的被选中）
 const collision = selectTopicsForCard({ candidates: pool, topicsPerCard: 3, cardUsedTopicTexts: [], batchUsedTopicTexts: [pool[2].topic] });
 assert(collision.selected.some(t => t.id === 'c3'), '跨卡撞题候选照常选中（只警告不吞）');
@@ -350,13 +377,15 @@ const emptyPool = selectTopicsForCard({ candidates: [], topicsPerCard: 2, cardUs
 assert(emptyPool.selected.length === 0 && emptyPool.warnings.some(w => w.includes('候选池为空')), '空池返回警告不抛错');
 
 // ---------------------------------------------------------------------------
-// 10. 零现有文件改动：git diff HEAD 对本仓库内已跟踪文件必须为空
+// 10. 接线改动范围（报告项，B2 起不再断言零改动）
+// B1 的"零旧文件改动"保证已完成使命；B2 合法修改接线文件，
+// 这里只打印当前改动清单供验收记录。商品2/3 与 showcase 不受影响由
+// test-v2-b2-isolation.mts 用 fetch 打桩端到端锁定。
 // ---------------------------------------------------------------------------
-console.log(`\n== 10. 零改动证明 ==`);
+console.log(`\n== 10. 接线改动范围（报告） ==`);
 const diff = execSync('git diff HEAD --name-only', { cwd: '../', encoding: 'utf8' }).trim();
 const inRepo = diff.split('\n').map(l => l.trim()).filter(l => l && !l.startsWith('.claude/'));
-console.log(`  git diff HEAD --name-only 原文：\n${diff || '(空)'}`);
-assert(inRepo.length === 0, `xhs-workbench 内已跟踪文件零改动（异常文件：${inRepo.join('、') || '无'}）`);
+console.log(`  当前已跟踪文件改动（排除 .claude/）：${inRepo.length ? inRepo.join('、') : '(无)'}`);
 
 console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURES`}`);
 process.exit(failures === 0 ? 0 : 1);

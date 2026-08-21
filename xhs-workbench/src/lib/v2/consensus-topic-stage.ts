@@ -7,7 +7,7 @@ import type { CompetitorCreativeCard, EvidenceSnippet } from '@/types/reference-
 import type { ProductId } from '@/types/data';
 import { getProductEditorialMap, type EditorialCapability } from './product-editorial-map';
 import { diagnoseTopicOption } from './topic-stage';
-import { stableHash, type TemplateCapability, type TopicLane, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
+import { stableHash, type ConsensusTopicDirection, type TemplateCapability, type TopicBridgeBasis, type TopicLane, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
 import { listVerifiedExamFacts } from './verified-exam-facts';
 
 /**
@@ -23,7 +23,8 @@ export const CONSENSUS_TOPIC_PROMPT_VERSION = 'v2-topic-consensus-b1';
 export const CONSENSUS_CANDIDATE_POOL_SIZE = 3;
 
 /** 3 个选题方向（共识第 5 节）。名称+定义可进 prompt，但不带例子词。 */
-export type ConsensusTopicDirection = '大痛点型' | '省时路径型' | '具体方法型';
+// ConsensusTopicDirection / TopicBridgeBasis 已合并进 contracts.ts（B2 接线），此处 re-export 保持既有导入路径兼容。
+export type { ConsensusTopicDirection, TopicBridgeBasis } from './contracts';
 
 export const CONSENSUS_TOPIC_DIRECTIONS: ConsensusTopicDirection[] = ['大痛点型', '省时路径型', '具体方法型'];
 
@@ -40,23 +41,13 @@ const DIRECTION_GOALS: Record<ConsensusTopicDirection, TopicOption['primaryGoal'
 };
 
 /** 商品承接依据：必须命中 editorial map 的能力编号 + 支持模块。 */
-export interface TopicBridgeBasis {
-  capabilityId: string;
-  modules: string[];
-}
+// TopicBridgeBasis 定义在 contracts.ts，此处 re-export 保持兼容。
 
-/** 新选题类型：TopicOption + 共识第 8 节新字段。B2 接线后才合并进 contracts.ts。 */
+/** 新选题类型：TopicOption + 共识第 8 节新字段。基础字段已在 contracts.ts，此处收窄必填项。 */
 export type ConsensusTopicOption = TopicOption & {
   direction?: ConsensusTopicDirection;
   /** 准备展开的 3-5 条内容；<3 → 警告放行（§8.1-6）。 */
   expandContents: string[];
-  bridgeBasis?: TopicBridgeBasis;
-  coverFitReason?: string;
-  clickReason?: string;
-  /** 内容提示，非合格硬条件；缺失 → 警告（§3.3）。 */
-  speechAction?: string;
-  openingEmotion?: string;
-  duplicateWithHistory?: boolean;
 };
 
 /** 逐候选死因（§3.4 / §8.1-4）：候选级失败永不升级为整卡失败。 */
@@ -727,6 +718,8 @@ export interface ConsensusTopicStageResult {
   /** 逐候选死因（含被剔除的 product_value 候选），供前台显示。 */
   deaths: TopicCandidateDeath[];
   usedFallback: boolean;
+  /** §8.1-10：兜底只保证不失败不保证好；机器可读标记，前台据此提示人工复核。 */
+  needsManualReview: boolean;
   promptVersion: string;
   schemaVersion: string;
   promptCharCount: number;
@@ -793,12 +786,18 @@ export async function generateTopicOptionsConsensus(
     candidates.push(parsed.candidate);
   });
 
+  // §8.1-4：逐候选死因以可读文案进 warnings（满池/降级/兜底三条返回路径都带）。
+  // 单一来源在这里产出；wrapConsensusTopicArtifact 与 B2 接线均原样透传，前台由此显示候选级死因。
+  for (const death of deaths) {
+    warnings.push(`选题候选淘汰“${death.topicLabel}”：${describeTopicFailure(death)}`);
+  }
+
   if (candidates.length >= CONSENSUS_CANDIDATE_POOL_SIZE) {
-    return { data: candidates.slice(0, CONSENSUS_CANDIDATE_POOL_SIZE), warnings, deaths, usedFallback: false, promptVersion: CONSENSUS_TOPIC_PROMPT_VERSION, schemaVersion: V2_SCHEMA_VERSION, promptCharCount: prompt.charCount };
+    return { data: candidates.slice(0, CONSENSUS_CANDIDATE_POOL_SIZE), warnings, deaths, usedFallback: false, needsManualReview: false, promptVersion: CONSENSUS_TOPIC_PROMPT_VERSION, schemaVersion: V2_SCHEMA_VERSION, promptCharCount: prompt.charCount };
   }
   if (candidates.length > 0) {
     warnings.push(`可用候选${candidates.length}个，少于候选池${CONSENSUS_CANDIDATE_POOL_SIZE}个；降级继续，不阻断任务。缺的方向：${CONSENSUS_TOPIC_DIRECTIONS.filter(dir => !candidates.some(c => c.direction === dir)).join('、') || '无'}`);
-    return { data: candidates, warnings, deaths, usedFallback: false, promptVersion: CONSENSUS_TOPIC_PROMPT_VERSION, schemaVersion: V2_SCHEMA_VERSION, promptCharCount: prompt.charCount };
+    return { data: candidates, warnings, deaths, usedFallback: false, needsManualReview: false, promptVersion: CONSENSUS_TOPIC_PROMPT_VERSION, schemaVersion: V2_SCHEMA_VERSION, promptCharCount: prompt.charCount };
   }
 
   // 3 候选全灭 → 保守兜底（零 AI 调用，仿 showcase_fallback 思路）
@@ -806,7 +805,8 @@ export async function generateTopicOptionsConsensus(
   const fallbackDeaths = diagnoseConsensusTopicCandidate(fallback, { ...ctx, recentTopics });
   if (fallbackDeaths.length === 0) {
     warnings.push(`3个候选全部不可用，已使用程序生成的保守兜底选题（零额外AI调用）：${fallback.topic}`);
-    return { data: [fallback], warnings, deaths, usedFallback: true, promptVersion: CONSENSUS_TOPIC_PROMPT_VERSION, schemaVersion: V2_SCHEMA_VERSION, promptCharCount: prompt.charCount };
+    warnings.push('本选题为程序保守兜底，需人工复核后使用');
+    return { data: [fallback], warnings, deaths, usedFallback: true, needsManualReview: true, promptVersion: CONSENSUS_TOPIC_PROMPT_VERSION, schemaVersion: V2_SCHEMA_VERSION, promptCharCount: prompt.charCount };
   }
   // 兜底也不成立 → 逐候选列死因（§3.4：禁止只写“选题阶段失败”）
   const lines = [
@@ -832,6 +832,7 @@ export function wrapConsensusTopicArtifact(
     usage,
     warnings: result.warnings,
     request_id: requestId,
+    needsManualReview: result.usedFallback ? true : undefined,
   };
 }
 

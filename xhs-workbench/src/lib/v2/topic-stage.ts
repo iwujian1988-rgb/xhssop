@@ -8,6 +8,8 @@ import type { ProductId } from '@/types/data';
 import type { CompetitorCreativeCard, MigratedTopic } from '@/types/reference-workflow';
 import { stableHash, type TemplateCapability, type TopicLane, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
 import { listVerifiedExamFacts } from './verified-exam-facts';
+import { resolvePipelineFeatures } from './pipeline-features';
+import { generateTopicOptionsConsensus, getConsensusPromptBudget, type ConsensusTopicAiCall } from './consensus-topic-stage';
 
 export const TOPIC_PROMPT_VERSION = 'v2-topic-8';
 
@@ -32,6 +34,8 @@ interface TopicStageInput {
   contentMode?: 'standard' | 'product_showcase';
   limit?: number;
   recentAngles?: string[];
+  /** 共识分支用：single=前台单卡；batch=批量（跨卡软规避经 recentAngles 传入）。legacy 路径忽略。 */
+  topicMode?: 'single' | 'batch';
 }
 
 interface RawTopicResponse {
@@ -39,72 +43,23 @@ interface RawTopicResponse {
 }
 
 export async function generateTopicOptions(input: TopicStageInput): Promise<VersionedArtifact<TopicOption[]>> {
-  const profile = getProductPromptProfile(input.productId);
-  const templateSpec = getCoverTemplateSpec(input.capability.renderer);
-  const keywords = getXhsSearchKeywords(input.productId);
-  const history = await getRecentTitleFingerprints(input.productId, { days: 30 });
-  const factSignals = summarizeFacts(input.facts, `${input.card.id}|${history.records.length}`);
-  const verifiedExamFacts = listVerifiedExamFacts(input.productId);
-  // This is the final number selected in the frontend. Keep the request aligned
-  // with it; a hidden larger candidate pool made one selected topic cost 6.
-  const limit = Math.max(1, Math.min(6, input.limit ?? 1));
-  const candidateCount = limit;
-  const productShowcaseMode = input.contentMode === 'product_showcase';
-  const promptInput = {
-    product: {
-      id: input.productId,
-      identity: profile.noteIdentity,
-      scope: profile.topicScopePrompt,
-      product_facts: factSignals,
-      verified_exam_facts: verifiedExamFacts.map(item => ({ id: item.id, text: item.text })),
-    },
-    cover: {
-      id: input.card.id,
-      name: input.card.name,
-      family: input.capability.family,
-      compiler: input.capability.compiler,
-      content_mechanism: input.card.content_mechanism,
-      click_mechanism: input.card.click_mechanism,
-      accepted_blocks: input.capability.acceptedBlockKinds,
-      allowed_goals: input.capability.allowedGoals,
-      content_instruction: templateSpec?.contentInstruction || '',
-      forbidden_instruction: templateSpec?.forbiddenInstruction || '',
-    },
-    search_signals: [...keywords.primary, ...keywords.secondary].slice(0, 12),
-    recent_topics_to_avoid: [...history.recentTopics.slice(-20), ...(input.recentAngles || []).slice(-20)],
-    current_batch_topics_to_avoid: (input.recentAngles || []).slice(-20),
-    direction: input.direction || '',
-    requested_content_mode: input.contentMode || 'standard',
-    count: candidateCount,
-  };
-  const inputHash = stableHash(promptInput);
+  // B2 入口分流（§0-1）：仅商品1 + 普通模式走共识新分支；商品2/3 与 showcase
+  // 一字不改地走下面的 legacy 路径。共享辅助函数不改语义。
+  const features = resolvePipelineFeatures(input.productId);
+  if (features.consensusTopicStage && input.contentMode !== 'product_showcase') {
+    return generateTopicOptionsViaConsensus(input);
+  }
+  const legacyPrompt = await buildLegacyTopicPrompt(input);
   const result = await callOpenAICompatibleJsonWithUsage<RawTopicResponse>([
-    {
-      role: 'system',
-      content: [
-        '你是资深小红书法语教育编辑。当前阶段只决定“这篇笔记讲什么”，不要写标题、正文、封面文案或内页文案。',
-        '先写出一条自然、具体、用户看得懂的选题，再补齐结构字段。选题质量优先级：商品身份正确 > 用户确实会遇到 > 说人话 > 能被当前封面承载 > 有自然搜索词 > 能承接商品。',
-        '每个候选必须输出 plannedBlockKind，值只能从 cover.accepted_blocks 中选择；它只是后续排版提示，不要为了迁就它改变选题主题。',
-        '人群、场景、痛点、承诺和商品承接是给后续写作使用的背景字段，不要把这些字段名硬塞进公开选题句子。',
-        productShowcaseMode
-          ? `当前是“介绍知识库”模式：输出${candidateCount}个明显不同的商品介绍选题，全部使用topicLane=product_value；primaryGoal优先用conversion，若当前封面不支持conversion则用该封面允许的目标。每个选题都要有不同的商品展示角度，例如目录结构、模块组合、样张使用、适合人群、备考场景或资料稀缺价值，不能退回普通知识分享。`
-          : `输出${candidateCount}个明显不同的候选；当数量为1时只输出1个最合适的选题，不要额外扩写。`,
-        'topicLane=broad_pain讲用户普遍遇到的大问题；result_need讲用户想获得的结果或省事方法；narrow_knowledge讲一个具体但真实有用的知识点；product_value讲资料包能给用户带来的具体获得感，不等于罗列目录。',
-        '当前封面只决定视觉承载方式，不决定内容主题。痛点/真人经验封面优先写用户经历和问题；表格/目录封面优先写可分组、可对照、可速查的内容；不要为了套模板硬改商品主题。',
-        '大痛点要像备考者平时会说的话，表达具体问题和想要的结果，避免抽象运营术语、广告腔和生硬的“X→Y”句式。',
-        '细分干货可以具体，但要有上位需求；商品展示不能只罗列页数和模块，要说明用户为什么需要看。',
-        'SEO词只自然选择1个主词和少量相关词，不堆词。不得复制近期选题，不得跨商品。',
-        'product_facts 是商品内容、方法和卖点，不自动等于官方考试规则；verified_exam_facts 才能支撑“官方要求、评分标准、题数、时长、最低字数”等硬事实。没有证据时可以做学习建议或科普，但不要伪装成官方规则。',
-        'DELF B2 写作官方评分是 5 个维度按表现档位评分，不是按错误逐项扣分。禁止写“考官逐条扣分、每错一项扣几分、扣分表”这类错误角度。',
-        '评分选题优先做“5个维度如何自查、四档表现是什么意思”；不要把AI原创例文包装成官方0分/5分标准答案，也不要承诺模拟考官精确打分。',
-        'primaryGoal只能是search/save/click/conversion；knowledgeMode只能是product_grounded/exam_grounded/educational_original/mixed。',
-        '只返回JSON对象，顶层字段topics。每项必须使用这些字段：id, primaryGoal, topicLane, topic, audienceState, scene, painOrDesire, promise, contentAngle, productBridge, seo{primary,related}, knowledgeMode, factTerms, seedSignals, noveltyFingerprint。字段可以简洁，但不能留空。',
-        '禁止返回旧字段title、targetAudience、useCase、painPoint、sellingPoint、knowledgeAsset、contentModule、coverBlock、searchKeywords、avoidDuplicate。',
-      ].join('\n'),
-    },
-    { role: 'user', content: JSON.stringify(promptInput) },
+    { role: 'system', content: legacyPrompt.system },
+    { role: 'user', content: legacyPrompt.user },
   ], { maxTokens: 2200, temperature: 0.8, retries: 2 });
 
+  // legacy 路径的局部变量全部从同源 builder 派生，语义与提取前一致。
+  const limit = legacyPrompt.limit;
+  const productShowcaseMode = legacyPrompt.productShowcaseMode;
+  const inputHash = stableHash(legacyPrompt.promptInput);
+  const profile = getProductPromptProfile(input.productId);
   const responseData = result.data as RawTopicResponse | Partial<TopicOption>[] | Record<string, unknown>;
   const rawTopics = Array.isArray(responseData)
     ? responseData
@@ -197,6 +152,127 @@ export async function generateTopicOptions(input: TopicStageInput): Promise<Vers
   }
 
   return artifact(topics.slice(0, limit), inputHash, result.usage, result.requestId, [...softWarnings, ...candidateFailureWarnings]);
+}
+
+export interface LegacyTopicPrompt {
+  system: string;
+  user: string;
+  promptInput: Record<string, unknown>;
+  charCount: number;
+  limit: number;
+  productShowcaseMode: boolean;
+}
+
+/**
+ * legacy 选题 prompt 组装（从 generateTopicOptions 原样提取，未改任何字符）。
+ * 提取目的：共识分支用它量 legacy prompt 字符数，按 130% 给 5 块契约设上限（§8.1-7）。
+ * 商品2/3 + showcase 仍走 generateTopicOptions 的 legacy 分支，prompt 字节由
+ * 离线 fixture 测试锁死等价。
+ */
+async function buildLegacyTopicPrompt(input: TopicStageInput): Promise<LegacyTopicPrompt> {
+  const profile = getProductPromptProfile(input.productId);
+  const templateSpec = getCoverTemplateSpec(input.capability.renderer);
+  const keywords = getXhsSearchKeywords(input.productId);
+  const history = await getRecentTitleFingerprints(input.productId, { days: 30 });
+  const factSignals = summarizeFacts(input.facts, `${input.card.id}|${history.records.length}`);
+  const verifiedExamFacts = listVerifiedExamFacts(input.productId);
+  // This is the final number selected in the frontend. Keep the request aligned
+  // with it; a hidden larger candidate pool made one selected topic cost 6.
+  const limit = Math.max(1, Math.min(6, input.limit ?? 1));
+  const candidateCount = limit;
+  const productShowcaseMode = input.contentMode === 'product_showcase';
+  const promptInput = {
+    product: {
+      id: input.productId,
+      identity: profile.noteIdentity,
+      scope: profile.topicScopePrompt,
+      product_facts: factSignals,
+      verified_exam_facts: verifiedExamFacts.map(item => ({ id: item.id, text: item.text })),
+    },
+    cover: {
+      id: input.card.id,
+      name: input.card.name,
+      family: input.capability.family,
+      compiler: input.capability.compiler,
+      content_mechanism: input.card.content_mechanism,
+      click_mechanism: input.card.click_mechanism,
+      accepted_blocks: input.capability.acceptedBlockKinds,
+      allowed_goals: input.capability.allowedGoals,
+      content_instruction: templateSpec?.contentInstruction || '',
+      forbidden_instruction: templateSpec?.forbiddenInstruction || '',
+    },
+    search_signals: [...keywords.primary, ...keywords.secondary].slice(0, 12),
+    recent_topics_to_avoid: [...history.recentTopics.slice(-20), ...(input.recentAngles || []).slice(-20)],
+    current_batch_topics_to_avoid: (input.recentAngles || []).slice(-20),
+    direction: input.direction || '',
+    requested_content_mode: input.contentMode || 'standard',
+    count: candidateCount,
+  };
+  const system = [
+    '你是资深小红书法语教育编辑。当前阶段只决定“这篇笔记讲什么”，不要写标题、正文、封面文案或内页文案。',
+    '先写出一条自然、具体、用户看得懂的选题，再补齐结构字段。选题质量优先级：商品身份正确 > 用户确实会遇到 > 说人话 > 能被当前封面承载 > 有自然搜索词 > 能承接商品。',
+    '每个候选必须输出 plannedBlockKind，值只能从 cover.accepted_blocks 中选择；它只是后续排版提示，不要为了迁就它改变选题主题。',
+    '人群、场景、痛点、承诺和商品承接是给后续写作使用的背景字段，不要把这些字段名硬塞进公开选题句子。',
+    productShowcaseMode
+      ? `当前是“介绍知识库”模式：输出${candidateCount}个明显不同的商品介绍选题，全部使用topicLane=product_value；primaryGoal优先用conversion，若当前封面不支持conversion则用该封面允许的目标。每个选题都要有不同的商品展示角度，例如目录结构、模块组合、样张使用、适合人群、备考场景或资料稀缺价值，不能退回普通知识分享。`
+      : `输出${candidateCount}个明显不同的候选；当数量为1时只输出1个最合适的选题，不要额外扩写。`,
+    'topicLane=broad_pain讲用户普遍遇到的大问题；result_need讲用户想获得的结果或省事方法；narrow_knowledge讲一个具体但真实有用的知识点；product_value讲资料包能给用户带来的具体获得感，不等于罗列目录。',
+    '当前封面只决定视觉承载方式，不决定内容主题。痛点/真人经验封面优先写用户经历和问题；表格/目录封面优先写可分组、可对照、可速查的内容；不要为了套模板硬改商品主题。',
+    '大痛点要像备考者平时会说的话，表达具体问题和想要的结果，避免抽象运营术语、广告腔和生硬的“X→Y”句式。',
+    '细分干货可以具体，但要有上位需求；商品展示不能只罗列页数和模块，要说明用户为什么需要看。',
+    'SEO词只自然选择1个主词和少量相关词，不堆词。不得复制近期选题，不得跨商品。',
+    'product_facts 是商品内容、方法和卖点，不自动等于官方考试规则；verified_exam_facts 才能支撑“官方要求、评分标准、题数、时长、最低字数”等硬事实。没有证据时可以做学习建议或科普，但不要伪装成官方规则。',
+    'DELF B2 写作官方评分是 5 个维度按表现档位评分，不是按错误逐项扣分。禁止写“考官逐条扣分、每错一项扣几分、扣分表”这类错误角度。',
+    '评分选题优先做“5个维度如何自查、四档表现是什么意思”；不要把AI原创例文包装成官方0分/5分标准答案，也不要承诺模拟考官精确打分。',
+    'primaryGoal只能是search/save/click/conversion；knowledgeMode只能是product_grounded/exam_grounded/educational_original/mixed。',
+    '只返回JSON对象，顶层字段topics。每项必须使用这些字段：id, primaryGoal, topicLane, topic, audienceState, scene, painOrDesire, promise, contentAngle, productBridge, seo{primary,related}, knowledgeMode, factTerms, seedSignals, noveltyFingerprint。字段可以简洁，但不能留空。',
+    '禁止返回旧字段title、targetAudience、useCase、painPoint、sellingPoint、knowledgeAsset、contentModule、coverBlock、searchKeywords、avoidDuplicate。',
+  ].join('\n');
+  const user = JSON.stringify(promptInput);
+  return { system, user, promptInput, charCount: system.length + user.length, limit, productShowcaseMode };
+}
+
+/**
+ * 共识分支包装：AI 客户端与 legacy 同源同重试语义（callOpenAICompatibleJsonWithUsage，
+ * maxTokens 2200 / temperature 0.8 / retries 2），只是把 result.usage/resultId 捕获进
+ * 工件元数据。5 块契约字符预算 = legacy prompt × 1.3（§8.1-7）。
+ */
+async function generateTopicOptionsViaConsensus(input: TopicStageInput): Promise<VersionedArtifact<TopicOption[]>> {
+  const legacyPrompt = await buildLegacyTopicPrompt(input);
+  let captured: { usage: AiUsageSummary; requestId: string } | undefined;
+  const aiCall: ConsensusTopicAiCall = async messages => {
+    const result = await callOpenAICompatibleJsonWithUsage<Record<string, unknown>>(messages, {
+      maxTokens: 2200,
+      temperature: 0.8,
+      retries: 2,
+    });
+    captured = { usage: result.usage, requestId: result.requestId };
+    return result.data;
+  };
+  const result = await generateTopicOptionsConsensus(
+    {
+      productId: input.productId,
+      card: input.card,
+      capability: input.capability,
+      mode: input.topicMode || 'single',
+      userDirection: input.direction,
+      recentAngles: input.recentAngles,
+      charBudget: getConsensusPromptBudget(legacyPrompt.charCount),
+    },
+    aiCall,
+  );
+  // §8.1-4：逐候选死因已由 consensus 阶段写入 result.warnings（单一来源），这里原样透传。
+  return {
+    data: result.data,
+    schema_version: V2_SCHEMA_VERSION,
+    prompt_version: result.promptVersion,
+    input_hash: stableHash({ source: 'consensus', productId: input.productId, cardId: input.card.id, fingerprint: result.data.map(topic => topic.noveltyFingerprint) }),
+    created_at: new Date().toISOString(),
+    usage: captured?.usage || { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0, calls: 0, autofix_count: 0, autofix_events: [] },
+    warnings: result.warnings,
+    request_id: captured?.requestId,
+    needsManualReview: result.needsManualReview ? true : undefined,
+  };
 }
 
 export function topicOptionToMigrated(topic: TopicOption): MigratedTopic & { v2_topic: TopicOption } {

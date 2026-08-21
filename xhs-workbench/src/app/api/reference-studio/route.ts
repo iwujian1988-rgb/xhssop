@@ -13,6 +13,7 @@ import { createBatch, formatJobId, saveJob } from '@/lib/batch-store';
 import type { ProductId } from '@/types/data';
 import type { ReferenceWorkflowRequest } from '@/types/reference-workflow';
 import { composeV2, isV2PipelineEnabled, planTopicsV2 } from '@/lib/v2/pipeline';
+import { resolvePipelineFeatures } from '@/lib/v2/pipeline-features';
 import { pickProductShowcasePlan } from '@/lib/product-showcase-library';
 
 const productIds: ProductId[] = ['delf_b2_writing', 'tef_tcf_canada', 'tcf_canada_writing_7day'];
@@ -31,13 +32,17 @@ export async function POST(request: Request) {
     const facts = await loadProductFacts(body.product_id);
     if (body.action === 'topics') {
       if (isV2PipelineEnabled()) {
+        const contentMode = body.content_mode === 'product_showcase' ? 'product_showcase' : 'standard';
+        // B2（§3.4）：商品1普通模式单条 limit 3（共识 3 候选池）；showcase 与商品2/3 维持 4。
+        const consensusSingle = resolvePipelineFeatures(body.product_id).consensusTopicStage && contentMode !== 'product_showcase';
         const planned = await planTopicsV2({
           productId: body.product_id,
           card,
           facts,
           direction: body.direction || '',
-          contentMode: body.content_mode === 'product_showcase' ? 'product_showcase' : 'standard',
-          limit: 4,
+          contentMode,
+          limit: consensusSingle ? 3 : 4,
+          topicMode: 'single',
         });
         return NextResponse.json({
           card,
@@ -45,6 +50,8 @@ export async function POST(request: Request) {
           usage: planned.usage,
           pipeline_version: 'v2',
           artifacts: { topics: planned.artifact },
+          warnings: planned.artifact.warnings,
+          needs_manual_review: planned.artifact.needsManualReview || false,
         });
       }
       const recentSeedIds = await getRecentSeedIds(body.product_id, card.id);

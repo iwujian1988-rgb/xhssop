@@ -4,6 +4,7 @@ import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { productShowcaseCreativeCards, standardCreativeCards } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
+import { resolvePipelineFeatures } from '@/lib/v2/pipeline-features';
 import { DraftReview } from '@/components/draft/DraftReview';
 import type { ProductId } from '@/types/data';
 import type { CompetitorCreativeCard, MigratedTopic, ReferenceDrivenDraft } from '@/types/reference-workflow';
@@ -24,9 +25,14 @@ export default function StudioPage() {
   const [error, setError] = useState('');
   const [usage, setUsage] = useState<UsageSummary | null>(null);
   const [savedBatchId, setSavedBatchId] = useState<string | null>(null);
+  // 生成提醒：单条 topics/compose 响应里的 warnings + 兜底标记（补页警告/候选死因/需人工复核）。
+  const [reminders, setReminders] = useState<string[]>([]);
+  const [needsManualReview, setNeedsManualReview] = useState(false);
   const cardsForMode = contentMode === 'product_showcase' ? productShowcaseCreativeCards : supportedCards;
   const card = useMemo(() => cardsForMode.find(item => item.id === cardId) || cardsForMode[0], [cardId, cardsForMode]);
   const selectedTopic = topics.find(topic => topic.id === selectedTopicId) || topics[0];
+  // B2（§3.4）：商品1普通模式单条候选池=3；showcase 与商品2/3 维持 4。
+  const topicCount = resolvePipelineFeatures(productId).consensusTopicStage && contentMode === 'standard' ? 3 : 4;
 
   function selectCard(nextCardId: string) {
     setCardId(nextCardId);
@@ -36,6 +42,8 @@ export default function StudioPage() {
     setUsage(null);
     setError('');
     setSavedBatchId(null);
+    setReminders([]);
+    setNeedsManualReview(false);
   }
 
   function selectProduct(nextProductId: ProductId) {
@@ -46,6 +54,8 @@ export default function StudioPage() {
     setUsage(null);
     setError('');
     setSavedBatchId(null);
+    setReminders([]);
+    setNeedsManualReview(false);
   }
 
   function selectContentMode(nextMode: 'standard' | 'product_showcase') {
@@ -56,6 +66,8 @@ export default function StudioPage() {
     setSelectedTopicId('');
     setDraft(null);
     setError('');
+    setReminders([]);
+    setNeedsManualReview(false);
   }
 
   async function requestWorkflow(action: 'topics' | 'compose') {
@@ -83,9 +95,12 @@ export default function StudioPage() {
         const nextTopics = json.topics as MigratedTopic[];
         setTopics(nextTopics);
         setSelectedTopicId(nextTopics[0]?.id || '');
+        setReminders(Array.isArray(json.warnings) ? json.warnings : []);
+        setNeedsManualReview(Boolean(json.needs_manual_review));
       } else {
         setDraft(json.draft as ReferenceDrivenDraft);
         setSavedBatchId((json as { saved_batch_id?: string }).saved_batch_id || null);
+        setReminders(Array.isArray(json.warnings) ? json.warnings : []);
       }
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : '生成失败');
@@ -128,7 +143,7 @@ export default function StudioPage() {
             </select>
             <textarea className="field mt-1 min-h-20 resize-y" placeholder={contentMode === 'product_showcase' ? '例如：重点展示范文库怎么用；留空由AI结合商品展示角度选择切口' : '例如：更偏考前急救；留空由AI结合种子和封面选择切口'} value={direction} onChange={event => setDirection(event.target.value)} />
             <button className="mt-3 w-full bg-neutral-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-neutral-400" disabled={!!loading} onClick={() => requestWorkflow('topics')}>
-              {loading === 'topics' ? 'AI正在创作4个适配选题...' : '生成4个新选题'}
+              {loading === 'topics' ? `AI正在创作${topicCount}个适配选题...` : `生成${topicCount}个新选题`}
             </button>
           </section>
           {card ? <section className="border border-neutral-200 bg-white p-4 text-sm leading-relaxed"><div className="font-black">这张参考为什么成立</div><dl className="mt-3 space-y-3"><CardFact label="内容机制" value={card.content_mechanism} /><CardFact label="点击机制" value={card.click_mechanism} /><CardFact label="视觉机制" value={card.visual_mechanism} /></dl></section> : null}
@@ -137,6 +152,15 @@ export default function StudioPage() {
         <section className="min-w-0 space-y-5">
           {error ? <div className="border border-red-300 bg-red-50 px-4 py-3 text-sm font-semibold text-red-700">{error}</div> : null}
           {usage ? <div className="border border-neutral-200 bg-white px-4 py-3 text-sm text-neutral-600">本次 AI 用量：<b className="text-neutral-950">{usage.total_tokens.toLocaleString()} tokens</b> · 输入 {usage.prompt_tokens.toLocaleString()} · 输出 {usage.completion_tokens.toLocaleString()} · {usage.calls} 次调用</div> : null}
+          {reminders.length || needsManualReview ? (
+            <div className="border border-amber-300 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+              <div className="font-black">生成提醒</div>
+              <ul className="mt-2 list-disc space-y-1 pl-5">
+                {needsManualReview ? <li className="font-bold">本次有程序兜底选题，需人工复核后再发布。</li> : null}
+                {reminders.map((reminder, index) => <li key={index}>{reminder}</li>)}
+              </ul>
+            </div>
+          ) : null}
           {savedBatchId ? (
             <div className="border border-emerald-300 bg-emerald-50 px-4 py-3 text-sm text-emerald-800">
               已保存到：<Link href={`/batch?batch_id=${savedBatchId}`} className="font-mono font-bold underline">{savedBatchId}</Link>

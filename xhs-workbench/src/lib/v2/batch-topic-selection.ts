@@ -12,6 +12,8 @@ import type { ConsensusTopicOption } from './consensus-topic-stage';
  * 1. 同一候选至多选中一次；
  * 2. 优先覆盖不同 direction（N=2 时两个 job 必不同方向）；
  * 3. 卡内硬去重（findSimilarTopic 0.56 对 cardUsedTopicTexts）：命中即落选；
+ * 3b. 候选间相似度互查（§8.1-9）：与已选中候选 findSimilarTopic 同阈值命中 → 该候选落选
+ *     （死因「与其他候选内容重复」），保证同卡选出的 N 个候选内容互不雷同；
  * 4. 跨卡撞题只警告不吞（对 batchUsedTopicTexts 命中 → 统一 warnings，前缀「跨卡撞题」，照选）；
  * 5. 未选中候选连同原因返回（供 plan_meta.unselected_candidates）。
  */
@@ -70,19 +72,30 @@ export function selectTopicsForCard(input: BatchTopicSelectionInput): BatchTopic
     buckets.get(key)!.push(candidate);
   }
 
-  const pick = (candidate: ConsensusTopicOption) => {
+  const attempted = new Set<ConsensusTopicOption>();
+  const pick = (candidate: ConsensusTopicOption): boolean => {
+    if (attempted.has(candidate)) return false;
+    attempted.add(candidate);
+    // §8.1-9 候选间相似度互查：待选候选与已选中列表内部 findSimilarTopic（同阈值 0.56），
+    // 命中则该候选落选（死因：与其他候选内容重复），防止方向不同但文本雷同的候选同时选中。
+    const similarHit = findSimilarTopic(candidate.topic, selected.map(item => item.topic), CARD_TOPIC_DEDUP_THRESHOLD);
+    if (similarHit) {
+      unselected.push({ topic: candidate, reason: `与其他候选内容重复：与已选“${similarHit.similar}”相似度${similarHit.score.toFixed(2)}` });
+      return false;
+    }
     selected.push(candidate);
     // 跨卡撞题：只警告不吞（§3.4-3），进统一 warnings，前缀标识供人工在批计划元数据查看。
     const crossHit = findSimilarTopic(candidate.topic, input.batchUsedTopicTexts, CROSS_CARD_COLLISION_THRESHOLD);
     if (crossHit) {
       warnings.push(`跨卡撞题：选中“${candidate.topic}”与前面卡已选“${crossHit.similar}”相似度${crossHit.score.toFixed(2)}（照常生成，人工复核）`);
     }
+    return true;
   };
 
   // 第一轮：每个方向桶取一个，凑满 N 或桶用尽（保证 N 个尽量来自不同方向）。
   for (const group of buckets.values()) {
     if (selected.length >= desired) break;
-    pick(group.shift()!);
+    pick(group[0]!);
   }
   // 第二轮：还有名额就从剩余候选补。
   for (const candidate of hardFiltered) {
@@ -91,7 +104,8 @@ export function selectTopicsForCard(input: BatchTopicSelectionInput): BatchTopic
   }
 
   for (const candidate of hardFiltered) {
-    if (!selected.includes(candidate)) {
+    // pick() 里已带具体死因（如「与其他候选内容重复」）的候选不再重复登记。
+    if (!selected.includes(candidate) && !unselected.some(item => item.topic === candidate)) {
       unselected.push({ topic: candidate, reason: selected.length >= desired ? '名额已满，落选' : '与其他候选方向或内容重复，落选' });
     }
   }

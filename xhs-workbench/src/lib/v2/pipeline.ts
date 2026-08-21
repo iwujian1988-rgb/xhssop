@@ -48,6 +48,8 @@ export interface PlanTopicsV2Input {
   contentMode?: 'standard' | 'product_showcase';
   limit?: number;
   recentAngles?: string[];
+  /** 共识分支（商品1普通模式）用：single=前台单卡；batch=批量挑选前的候选池生成。 */
+  topicMode?: 'single' | 'batch';
 }
 
 export interface ComposeV2Input {

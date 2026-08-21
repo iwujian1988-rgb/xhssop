@@ -155,6 +155,8 @@ async function runOneJob(
           pipeline_version: 'v2',
           current_stage: result.currentStage,
           artifacts: result.artifacts,
+          // §8.1-3：compose 警告（含补页警告/法语返修提醒）随 job 落盘，前台可见。
+          warnings: result.warnings,
         },
         card,
         result.draft,

@@ -333,6 +333,28 @@ function BatchPageContent() {
               </div>
             </section>
 
+            {batch.plan_meta && (batch.plan_meta.needs_manual_review || batch.plan_meta.unselected_candidates?.length || batch.plan_meta.warnings?.length) ? (
+              <section className="border border-amber-300 bg-amber-50 p-4 text-sm text-amber-900">
+                <div className="font-black">选题计划提醒</div>
+                {batch.plan_meta.needs_manual_review ? <div className="mt-2 font-bold">本批含程序兜底选题，需人工复核后再发布。</div> : null}
+                {batch.plan_meta.warnings?.length ? (
+                  <ul className="mt-2 list-disc space-y-1 pl-5">
+                    {batch.plan_meta.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                  </ul>
+                ) : null}
+                {batch.plan_meta.unselected_candidates?.length ? (
+                  <div className="mt-3">
+                    <div className="font-bold">未选中的候选（{batch.plan_meta.unselected_candidates.length}）</div>
+                    <ul className="mt-1 list-disc space-y-1 pl-5">
+                      {batch.plan_meta.unselected_candidates.map((candidate, index) => (
+                        <li key={index}>{cardName(candidate.card_id)}：{candidate.topic} —— {candidate.reason}</li>
+                      ))}
+                    </ul>
+                  </div>
+                ) : null}
+              </section>
+            ) : null}
+
             {batch.status === 'planned' ? (
               <section className="border border-neutral-200 bg-white p-5">
                 <div className="flex items-end justify-between gap-3">
@@ -414,6 +436,14 @@ function BatchPageContent() {
                               <div className="text-xs font-bold text-neutral-400">{job.id} · 尝试 {job.attempts} 次</div>
                               <div className="mt-1 font-bold">{card.name}</div>
                               <div className="mt-1 text-sm text-neutral-600">{job.topic.topic}</div>
+                              {job.warnings?.length ? (
+                                <details className="mt-2">
+                                  <summary className="cursor-pointer text-xs font-bold text-amber-700">生成提醒（{job.warnings.length}）</summary>
+                                  <ul className="mt-1 list-disc space-y-1 pl-5 text-xs text-amber-800">
+                                    {job.warnings.map((warning, index) => <li key={index}>{warning}</li>)}
+                                  </ul>
+                                </details>
+                              ) : null}
                             </div>
                             <button className="border border-neutral-300 bg-white px-3 py-1.5 text-xs font-bold" onClick={() => toggleExpand(job.id)}>{expanded ? '收起' : '展开预览'}</button>
                           </div>

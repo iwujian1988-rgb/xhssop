@@ -93,8 +93,10 @@ if (map) {
 check('商品2 map = undefined', getProductEditorialMap('tef_tcf_canada') === undefined);
 check('商品3 map = undefined', getProductEditorialMap('tcf_canada_writing_7day') === undefined);
 
-// 5. git 自查：3 个新文件均为未跟踪新增；除无关的 .claude/settings.local.json 外，
-//    没有任何已跟踪文件被改动（工作区里大量历史未跟踪产物不算改动，不检查）。
+// 5. git 状态（报告项）：阶段 A 的"新文件未跟踪 + 零已跟踪改动"两条提交前卫生检查
+//    在 A 提交（6309237）后即完成使命；B2 起接线合法修改已跟踪文件，
+//    这里只打印当前状态供验收记录。商品2/3 与 showcase 的行为隔离由
+//    scripts/test-v2-b2-isolation.mts 用 fetch 打桩端到端锁定。
 const newFiles = [
   'src/lib/v2/pipeline-features.ts',
   'src/lib/v2/product-editorial-map.ts',
@@ -102,12 +104,12 @@ const newFiles = [
 ];
 for (const f of newFiles) {
   const isNew = execSync(`git status --porcelain -- "${f}"`, { encoding: 'utf8' }).startsWith('??');
-  check(`新文件未被跟踪: ${f}`, isNew);
+  console.log(`  新文件未跟踪（报告项）: ${f} = ${isNew}`);
 }
 const trackedChanges = execSync('git diff --name-only HEAD', { encoding: 'utf8' })
   .split('\n').map(s => s.trim()).filter(Boolean)
   .filter(p => !p.endsWith('.claude/settings.local.json'));
-check('无已跟踪文件被改动（除无关 settings.local.json）', trackedChanges.length === 0, trackedChanges.join('; '));
+console.log(`  当前已跟踪文件改动（报告项，排除 settings.local.json）：${trackedChanges.length ? trackedChanges.join('、') : '(无)'}`);
 
 if (failures) {
   console.error(`\n${failures} 项失败`);
