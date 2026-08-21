@@ -2,7 +2,7 @@ import { callOpenAICompatibleJsonWithUsage, emptyAiUsage, mergeAiUsage, type AiU
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { getProductPromptProfile, hasForbiddenProductIdentity } from '@/lib/product-prompt-profiles';
 import type { EvidenceSnippet, GeneratedInnerPage } from '@/types/reference-workflow';
-import { stableHash, type ContentBlock, type ContentBlockKind, type ContentPackage, type TemplateCapability, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
+import { REQUIRED_INNER_PAGE_COUNT, stableHash, type ContentBlock, type ContentBlockKind, type ContentPackage, type TemplateCapability, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
 import type { PublishIssue } from './publish-guard';
 import type { ProductShowcasePlan } from '@/lib/product-showcase-library';
 
@@ -96,7 +96,7 @@ export async function generateContentPackage(input: ContentStageInput): Promise<
           ? '本篇是商品介绍型笔记，不是普通知识分享：封面、内页、正文都要围绕“这套法语备考知识库/资料包有什么、适合谁、怎么用、为什么值得买”展开。封面展示目录/模块/样张/价值主张；内页必须至少有一页具体目录或模块、一页真实内容样张/使用方式；正文开头就点明商品和用户场景，后面用具体模块说明获得感，不能只在结尾加一句“资料已整理好”。'
           : '',
         isProductShowcase && input.showcasePlan
-          ? `本次已经由程序选定商品展示角度“${input.showcasePlan.angle.label}”：${input.showcasePlan.angle.instruction}。封面截图是“${input.showcasePlan.coverAsset.label}”，内页优先解释这些真实资料卡：${input.showcasePlan.innerAssets.map(asset => asset.label).join('、')}。不要另起一个主题，也不要把截图里的原始内容当成普通科普题。`
+          ? `本次已经由程序选定商品展示角度“${input.showcasePlan.angle.label}”：${input.showcasePlan.angle.instruction}。封面截图是“${input.showcasePlan.coverAsset.label}”。内页必须按下面5张截图逐张对应说明，不得串图：${input.showcasePlan.innerAssets.map((asset, index) => `第${index + 1}张｜模块：${asset.moduleLabel || asset.sourceSection}｜截图：${asset.label}｜图中内容：${asset.realContent}｜用户价值：${asset.userValue}`).join('；')}。每张图的page_title、lead和bullets只解释对应截图，不要另起一个主题，也不要把截图里的原始内容当成普通科普题。`
           : '',
         'coverBlocks输出语义块候选池，不需要精确填满模板格子；每条必须完整，不能为了短而截半句。',
         '目录/词表类信息要密但可读；经验/痛点类必须是自然中文段落或完整短句，禁止伪装真人经历；文档解析类必须保留原句、解释、迁移用途。',
@@ -117,11 +117,11 @@ export async function generateContentPackage(input: ContentStageInput): Promise<
         '同一段既有官方数字事实又有学习建议时，必须先用完整句写事实并登记factualClaims，再另起完整句写建议；不要把事实、偏好和推荐揉成一句。',
         '内页标题若承诺“练习示例、正反例、从X到Y”，该页必须给出完整可核对的内容；不能只写一句标题或用几十词片段冒充完整250词范文。',
         'tagMaterial只给与正文实际内容相关的词根，不加#，不堆身份大词。',
-        '只返回JSON对象，字段严格为coverBlocks、innerPages、captionParts、tagMaterial、factualClaims、frenchSegments。captionParts必须一次写完整，value数组固定4个非空字符串。',
+        '只返回JSON对象，字段严格为coverBlocks、innerPages、captionParts、tagMaterial、factualClaims、frenchSegments。captionParts必须一次写完整，value数组固定4个非空字符串。innerPages必须恰好5页。',
         'coverBlocks每项必须是{id,kind,heading,items:[{primary,secondary,note}],priority,sourceMode,sourceIds}；items禁止使用字符串数组。',
         '必须优先遵守cover_contract.required_output和template_content_instruction。coverBlocks数量不得少于minimum_sections，每个block的items不得少于absolute_minimum_items_per_section；长解释放innerPages，不得用少写组数规避封面密度。',
         '每条primary和secondary还必须分别不超过maximum_primary_visible_units和maximum_secondary_visible_units。文档解析中的法语句必须完整且简短，不得通过截断句子达到限制。',
-        'innerPages每项必须是{page_type,page_title,lead,bullets,source_ids}；captionParts必须是{opening,value,productBridge,cta}对象。',
+        'innerPages必须恰好5项，每项是{page_type,page_title,lead,bullets,source_ids}，每页至少3条具体内容；captionParts必须是{opening,value,productBridge,cta}对象。',
         'factualClaims每项必须是{text,type,sourceIds}；frenchSegments每项必须是{path,text,translation}。禁止使用旧字段title/content/examples/claim/original。',
       ].join('\n'),
     },
@@ -245,7 +245,7 @@ export async function repairContentPackage(
           : '',
         '只返回需要替换的字段补丁，可用字段为 coverBlocks、innerPages、captionParts、tagMaterial、factualClaims、frenchSegments；不要回显 product、topic、template、evidence、existing_content 或 exact_failures。',
         '如果失败只涉及正文，只返回 captionParts；如果只涉及封面，只返回 coverBlocks；涉及事实时同时返回 factualClaims。',
-        '数组字段一旦返回就是完整替换值，不是局部片段：coverBlocks必须返回满足模板最低组数和每组条数的完整数组；innerPages至少2页且每页至少3条；captionParts.value必须完整返回3到5段。',
+        '数组字段一旦返回就是完整替换值，不是局部片段：coverBlocks必须返回满足模板最低组数和每组条数的完整数组；innerPages必须返回完整5页且每页至少3条；captionParts.value必须完整返回3到5段。',
         '封面条目必须满足模板组数、每组条数和单条长度；长解释移到内页，禁止截断半句话。',
         '正文写 320-700 个可见字，至少 3 段具体干货；主 SEO 词自然出现在前 100 字；商品承接指向付费商品，不写免费领取、私信领取。',
         'captionParts.productBridge必须引用evidence中的具体商品资产，说明它与本篇问题的关系；同时在factualClaims登记对应product事实和sourceIds。禁止只写“资料已整理好、需要可看看”这类空承接。',
@@ -370,15 +370,15 @@ function normalizeContent(raw: RawContentResponse, input: ContentStageInput, val
     throw new Error('V2内容阶段没有生成可供封面编译的完整内容块');
   }
   let innerPages = normalizePages(raw.innerPages);
-  if (innerPages.length < 2) {
-    console.error('[v2-pages-rejected]', JSON.stringify({
+  if (innerPages.length !== REQUIRED_INNER_PAGE_COUNT) {
+    console.warn('[v2-pages-normalized]', JSON.stringify({
       product_id: input.topic.productId,
       template_id: input.topic.templateId,
       raw_pages: Array.isArray(raw.innerPages) ? raw.innerPages.length : 0,
       normalized_pages: innerPages.length,
       response_preview: JSON.stringify(raw).slice(0, 5000),
     }));
-    innerPages = ensureMinimumPages(innerPages, coverBlocks, input);
+    innerPages = ensureInnerPageCount(innerPages, coverBlocks, input);
   }
   const caption = normalizeCaptionParts(raw.captionParts);
   const content: ContentPackage = {
@@ -456,30 +456,44 @@ function normalizeBullets(value: unknown): string[] {
   }).filter(Boolean)));
 }
 
-function ensureMinimumPages(
+function ensureInnerPageCount(
   pages: GeneratedInnerPage[],
   coverBlocks: ContentBlock[],
   input: ContentStageInput,
 ): GeneratedInnerPage[] {
   const result = [...pages];
-  if (result.length >= 2) return result;
-  const bullets = coverBlocks.flatMap(block => block.items.map(item => (
+  const evidenceBullets = coverBlocks.flatMap(block => block.items.map(item => (
     [block.heading, item.primary, item.secondary, item.note].filter(Boolean).join('：')
-  ))).filter(Boolean).slice(0, 8);
-  const fallbackBullets = bullets.length >= 3
-    ? bullets
+  ))).filter(Boolean);
+  const fallbackBullets = evidenceBullets.length >= 3
+    ? evidenceBullets
     : input.topic.promise.split(/[；。]/u).map(clean).filter(Boolean);
-  result.push({
-    page_no: result.length + 2,
-    page_type: input.capability.family === 'offer' ? 'product_bridge' : 'steps',
-    page_title: input.capability.family === 'offer' ? '这份资料可以怎么用' : '把这篇内容用起来',
-    lead: input.capability.family === 'offer'
-      ? '先对照自己的当前情况，再按需要查对应部分。'
-      : '先看懂核心区别，再用一个小练习检查自己是否掌握。',
-    bullets: fallbackBullets.slice(0, 8),
-    source_ids: unique(coverBlocks.flatMap(block => block.sourceIds)),
-  });
-  return result;
+  if (fallbackBullets.length < 3) fallbackBullets.push('结合本篇主题完成一次替换练习', '把这一页内容和自己的情况对照一遍', '记下一个下一步可以执行的动作');
+  const sourceIds = unique(coverBlocks.flatMap(block => block.sourceIds));
+  const fallbackTypes: GeneratedInnerPage['page_type'][] = input.capability.family === 'offer'
+    ? ['product_bridge', 'knowledge_list', 'example_explain', 'steps', 'product_bridge']
+    : ['steps', 'knowledge_list', 'example_explain', 'wrong_right', 'steps'];
+  const fallbackTitles = input.capability.family === 'offer'
+    ? ['这份资料适合怎么查', '里面具体整理了什么', '拿一页内容举个例子', '按这个顺序使用', '最后看它能帮你什么']
+    : ['先把核心问题看懂', '这页知识怎么记', '放进例子里看一遍', '常见错误怎么避开', '最后这样练一遍'];
+  const fallbackLeads = input.capability.family === 'offer'
+    ? '先看本页，再按自己的情况继续往下查。'
+    : '先看懂这一页，再用一个小练习确认自己会用。';
+  while (result.length < REQUIRED_INNER_PAGE_COUNT) {
+    const index = result.length;
+    result.push({
+      page_no: index + 2,
+      page_type: fallbackTypes[index] || 'knowledge_list',
+      page_title: fallbackTitles[index] || `第${index + 1}页继续看`,
+      lead: fallbackLeads,
+      bullets: Array.from(new Set([
+        ...fallbackBullets.slice((index * 2) % Math.max(fallbackBullets.length, 1), ((index * 2) % Math.max(fallbackBullets.length, 1)) + 6),
+        ...fallbackBullets.slice(0, 3),
+      ])).slice(0, 8),
+      source_ids: sourceIds,
+    });
+  }
+  return result.slice(0, REQUIRED_INNER_PAGE_COUNT).map((page, index) => ({ ...page, page_no: index + 2 }));
 }
 
 function normalizeCaptionParts(value: RawContentResponse['captionParts']): ContentPackage['captionParts'] {

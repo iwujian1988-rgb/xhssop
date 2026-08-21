@@ -7,6 +7,7 @@ import type { MigratedTopic } from '@/types/reference-workflow';
 import { countVisibleUnits, stableHash, type ContentPackage, type TemplateCapability, type TitlePackage, type TitlePair, type TopicOption, V2_SCHEMA_VERSION, type VersionedArtifact } from './contracts';
 
 export const TITLE_PROMPT_VERSION = 'v2-title-7';
+export const TITLE_CANDIDATE_COUNT = 4;
 
 type TitleMechanism = 'search_utility' | 'loss_tension' | 'cognitive_conflict' | 'result_gain';
 
@@ -68,15 +69,15 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
     allowed_numbers_from_actual_content: supportedNumbers,
     formula_skeletons: formulas,
     required_candidate_mix: productShowcase ? {
-      search_utility: 2,
-      loss_tension: 2,
-      cognitive_conflict: 2,
-      result_gain: 2,
+      search_utility: 1,
+      loss_tension: 1,
+      cognitive_conflict: 1,
+      result_gain: 1,
     } : {
-      search_utility: 3,
-      loss_tension: 3,
-      cognitive_conflict: 3,
-      result_gain: 3,
+      search_utility: 1,
+      loss_tension: 1,
+      cognitive_conflict: 1,
+      result_gain: 1,
     },
     recent_selected_titles_to_avoid: recent.records.slice(-30).map(item => item.title),
     recent_cover_titles_to_avoid: recent.records.slice(-30).map(item => item.cover_title),
@@ -99,7 +100,7 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
         '封面标题不能只是栏目名、资料名或内容摘要。必须让用户立刻看见“这和我有什么关系”：至少出现当前阶段、正在担心的后果、马上能做的动作或看完收益中的一项；纯“差异对比、知识体系、资料整理、任务详解”不合格。注意“自查、清单、大全”只是内容形式，不等于用户关系，封面还要写出没底、怕丢分、考前、报名前、不会检查等当前状态。',
         '封面标题本身必须明确出现本商品考试身份（DELF B2/法语B2，或TEF/TCF），不能把身份只放在小副标题，也不能只写“150到250、3步扩写”这类脱离领域的标题。',
         '封面标题必须兑现实际封面内容：高密度资料模板可用资料、大全、时效、稀缺；经验痛点模板用情绪、结果、反常识；文档解析说清解析对象。',
-        productShowcase ? '这是知识库介绍模式：8组候选必须覆盖“平铺介绍、具体痛点、反常识、结果/强获得感”四个方向，标题要讲商品本身，但不能把“知识库宣传”写成内部栏目名。封面标题和文字标题都要让备考者看出这套资料与自己有关；至少有一部分候选出现“法语/DELF B2/写作”等身份和用户动作或获得感。' : '',
+        productShowcase ? '这是知识库介绍模式：4组候选必须覆盖“平铺介绍、具体痛点、反常识、结果/强获得感”四个方向，标题要讲商品本身，但不能把“知识库宣传”写成内部栏目名。封面标题和文字标题都要让备考者看出这套资料与自己有关；至少有一部分候选出现“法语/DELF B2/写作”等身份和用户动作或获得感。' : '',
         '标题可以有冲突、恐惧、反常识、结果和适度夸张，但不得冒充不存在的官方、服务、经历或具体数据来源。',
         '标题里的数量、天数、分钟、分数和库存数字只能使用allowed_numbers_from_actual_content；B2、TEF、TCF、CLB7等考试名称中的数字除外。禁止为了钩子新编20词、10分钟、35分钟、1个月等数字。',
         '标题必须概括本篇主轴，而不是抓住某个次要条目另起题目。若写“3步、5点、36项”等数量结构，actual_content的主题、承诺或一级封面分组中必须真的存在同名数量结构，不能从评分档位、例句或角落数字拼出新钩子。',
@@ -110,26 +111,26 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
         '每个标题必须是一句可以直接念出口的完整中文短句，词序要符合日常口语。禁止把“对象、数量、类别、动作”压成名词串，禁止为了缩短字数写成“语法错9类、清单查短板、5维度自查定位”这类电报式表达。',
         '具体痛点要用学习者会说的话表达，避免把编辑标签或内容分类直接当成标题。不要反复使用同一组情绪词或同义改写。',
         '不得整批都写成问句、冒号句或“别再X”句式；候选的机制、句式和核心对象必须有差异。',
-        productShowcase ? '商品介绍模式输出8组候选，严格分成4类，每类2组：search_utility（搜索/资料获得感）、loss_tension（风险/损失）、cognitive_conflict（反常识/认知冲突）、result_gain（结果/行动收益）。' : '普通模式输出12组候选，严格分成4类，每类3组：search_utility（搜索/资料获得感）、loss_tension（风险/损失）、cognitive_conflict（反常识/认知冲突）、result_gain（结果/行动收益）。',
+        '无论普通模式还是知识库介绍模式，最终只返回4组成对候选，四种机制各1组：search_utility（搜索/资料获得感）、loss_tension（风险/损失）、cognitive_conflict（反常识/认知冲突）、result_gain（结果/行动收益）。不要返回第5组或更多，也不要把四组写成同一个句式的改写。',
         'mechanism字段必须填写这4个英文值之一。四类候选的句式和核心点击理由必须真正不同，不能只换同义词。',
         '标题末尾不能是冒号、逗号或顿号。若写“从X词到Y词”，实际内页必须包含完整达到Y词的法语示例；只有片段时不得使用该承诺。',
         'formula_skeletons只用于学习结构和心理触发，不得机械填槽或照抄固定措辞。',
-        productShowcase ? '生成8组成对候选。必须各有2组：search_utility的两组要一组平铺介绍知识库具体有什么，另一组解释这些内容怎么帮用户解决备考问题；loss_tension的两组要写备考者会直接说出的具体困扰；cognitive_conflict的两组要写反常识或改变原有做法；result_gain的两组要一组写实际结果，一组把资料价值说得很强、很值得买或马上能用。四类不能只换几个词。允许适度“吹爆”资料，但必须基于本篇真实内容，不能写空泛口号。' : '生成12组成对候选。',
+        productShowcase ? '生成4组成对候选，每类恰好1组：search_utility平铺介绍知识库具体有什么；loss_tension写备考者会直接说出的具体困扰；cognitive_conflict写反常识或改变原有做法；result_gain把资料价值说得很强、很值得买或马上能用。四类不能只换几个词。允许适度“吹爆”资料，但必须基于本篇真实内容，不能写空泛口号。' : '生成4组成对候选，每类恰好1组。',
         'mechanism写本候选的实际机制；userRelation明确写它与用户的关系信号；noveltyFingerprint写“机制|对象|角度”。',
         '每个candidates项必须严格为{textTitle,coverTitle,coverSubtitle,mechanism,userRelation,seoKeyword,noveltyFingerprint}。禁止使用title、cover_title、cover_subtitle、title_type等旧字段。',
         '只返回JSON对象，顶层字段candidates。',
       ].join('\n'),
     },
     { role: 'user', content: JSON.stringify(promptInput) },
-  ], { maxTokens: productShowcase ? 2400 : 3000, temperature: 0.86, retries: productShowcase ? 1 : 2 });
+  ], { maxTokens: 1800, temperature: 0.86, retries: 1 });
   const normalizedCandidates = (Array.isArray(result.data.candidates) ? result.data.candidates : [])
     .map(normalizePair)
     .filter((pair): pair is TitlePair => Boolean(pair))
     .map(pair => normalizePairForInput(pair, input));
   let titleUsage = result.usage;
   let candidates = normalizedCandidates.filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles));
-  if (candidates.length === 0) {
-    const repairable = normalizedCandidates.slice(0, 6);
+  if (candidates.length < TITLE_CANDIDATE_COUNT) {
+    const repairable = normalizedCandidates.slice(0, 8);
     if (repairable.length) {
       const repaired = await repairTitleCandidates(repairable, {
         productIdentity: profile.noteIdentity,
@@ -139,6 +140,7 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
         painOrDesire: input.topic.painOrDesire,
         coverRange,
         supportedNumbers,
+        targetCount: TITLE_CANDIDATE_COUNT,
       }, input, recent.selectedTitles, recent.coverTitles);
       titleUsage = mergeAiUsage(titleUsage, repaired.usage);
       const repairedCandidates = repaired.candidates
@@ -153,7 +155,7 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
     }
   }
   const diversified = diversifyCandidates(dedupeCandidates(candidates), input, recent.records);
-  const unique = productShowcase ? limitShowcaseCandidates(diversified) : diversified;
+  const unique = limitTitleCandidates(diversified).slice(0, TITLE_CANDIDATE_COUNT);
   if (!unique.length) {
     // 标题是可返修字段，不应因为历史标题重复或某个窄正则把整篇内容判死。
     // 先在不读取历史占用的前提下保留一个当前内容最匹配的候选；后续仍会在
@@ -164,11 +166,11 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
         .filter(pair => passesHardGates(pair, input, new Set(), new Set(), true)),
     );
     if (salvagePool.length) {
-      const salvaged = diversifyCandidates(salvagePool, input, []);
+      const salvageCandidates = limitTitleCandidates(diversifyCandidates(salvagePool, input, [])).slice(0, TITLE_CANDIDATE_COUNT);
       const data: TitlePackage = {
         contentSnapshotHash: stableHash(input.content),
-        candidates: salvaged.length ? salvaged : salvagePool,
-        selected: selectTitleCandidate(salvaged.length ? salvaged : salvagePool, input, new Map(), []),
+        candidates: salvageCandidates.length ? salvageCandidates : salvagePool.slice(0, TITLE_CANDIDATE_COUNT),
+        selected: selectTitleCandidate(salvageCandidates.length ? salvageCandidates : salvagePool.slice(0, TITLE_CANDIDATE_COUNT), input, new Map(), []),
       };
       const mechanismCount = new Set(data.candidates.map(classifyTitleMechanism)).size;
       return artifact(data, inputHash, titleUsage, result.requestId, [
@@ -190,7 +192,7 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
   const data: TitlePackage = { contentSnapshotHash: stableHash(input.content), candidates: unique, selected };
   const mechanismCount = new Set(unique.map(classifyTitleMechanism)).size;
   const warnings = [
-    ...(unique.length < 2 ? ['本次只有1组标题通过硬门槛'] : []),
+    ...(unique.length < TITLE_CANDIDATE_COUNT ? [`本次只有${unique.length}组标题通过硬门槛，未达到${TITLE_CANDIDATE_COUNT}组`] : []),
     ...(mechanismCount < 3 ? [`本次标题候选只覆盖${mechanismCount}种点击机制`] : []),
   ];
   return artifact(data, inputHash, titleUsage, result.requestId, warnings);
@@ -222,15 +224,20 @@ function compactTitleLanguage(value: string) {
     .trim();
 }
 
-function limitShowcaseCandidates(candidates: TitlePair[]) {
+function limitTitleCandidates(candidates: TitlePair[]) {
   const limits = new Map<string, number>();
   const result: TitlePair[] = [];
   for (const candidate of candidates) {
     const mechanism = classifyTitleMechanism(candidate);
     const count = limits.get(mechanism) || 0;
-    if (count >= 2) continue;
+    if (count >= 1) continue;
     limits.set(mechanism, count + 1);
     result.push(candidate);
+  }
+  // AI偶尔漏掉某一机制时，用其余合格候选补足展示位，避免前台出现1组/2组。
+  for (const candidate of candidates) {
+    if (result.length >= TITLE_CANDIDATE_COUNT) break;
+    if (!result.includes(candidate)) result.push(candidate);
   }
   return result;
 }
@@ -327,7 +334,7 @@ function introducesNewPain(pair: TitlePair, input: TitleStageInput) {
 
 async function repairTitleCandidates(
   candidates: TitlePair[],
-  context: { productIdentity: string; topic: string; promise: string; audience: string; painOrDesire: string; coverRange: number[]; supportedNumbers: string[] },
+  context: { productIdentity: string; topic: string; promise: string; audience: string; painOrDesire: string; coverRange: number[]; supportedNumbers: string[]; targetCount: number },
   input: TitleStageInput,
   selected: Set<string>,
   coverTitles: Set<string>,
@@ -349,6 +356,7 @@ async function repairTitleCandidates(
       role: 'system',
       content: [
         '你是小红书标题精修编辑。候选角度已确定，逐项修复failures，不新增内容里没有的角度、承诺或数字。',
+        `当前输入可能只有${candidates.length}组，但最终必须补齐到${context.targetCount}组；缺少的点击机制要补写新候选，不得复制已有标题，也不能只返回原候选。`,
         '每个textTitle必须为12到20个可见字；汉字、字母、数字、标点都各算1个，空格不算。',
         `每个coverTitle必须为${context.coverRange[0]}到${context.coverRange[1]}个可见字；只留用户关系和核心收益，解释移到coverSubtitle。`,
         `封面标题本身必须保留商品考试身份：${context.productIdentity}。标题末尾不能是冒号、逗号或顿号。`,

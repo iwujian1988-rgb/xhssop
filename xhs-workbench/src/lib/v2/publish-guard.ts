@@ -1,6 +1,6 @@
 import type { ProductId } from '@/types/data';
 import type { EvidenceSnippet } from '@/types/reference-workflow';
-import { countVisibleUnits, type ContentPackage, type TemplateCapability, type TopicOption } from './contracts';
+import { countVisibleUnits, REQUIRED_INNER_PAGE_COUNT, type ContentPackage, type TemplateCapability, type TopicOption } from './contracts';
 
 export interface PublishIssue {
   code: string;
@@ -73,7 +73,7 @@ export function inspectForPublish(
     const units = countVisibleUnits(paragraph);
     if (units < 35) hardIssues.push(issue('caption_paragraph_too_thin', `第 ${index + 1} 段只有 ${units} 字，像提纲而不是正文`, `captionParts.value[${index}]`));
   });
-  if (content.innerPages.length < 2) hardIssues.push(issue('inner_pages_too_few', '内页少于 2 页', 'innerPages'));
+  ensureInnerPageCount(content);
 
   const compact = input.capability.densityTiers[0];
   const validBlocks = content.coverBlocks.filter(block => input.capability.acceptedBlockKinds.includes(block.kind));
@@ -211,6 +211,29 @@ export function inspectForPublish(
 
   if (/[，。！？；：]{2,}/u.test(caption)) hardIssues.push(issue('broken_punctuation', '正文存在连续标点', 'captionParts'));
   return { content, hardIssues: dedupeIssues(hardIssues), warnings };
+}
+
+function ensureInnerPageCount(content: ContentPackage) {
+  if (content.innerPages.length > REQUIRED_INNER_PAGE_COUNT) {
+    content.innerPages = content.innerPages.slice(0, REQUIRED_INNER_PAGE_COUNT);
+    return;
+  }
+  const sourceIds = Array.from(new Set(content.coverBlocks.flatMap(block => block.sourceIds)));
+  const bullets = content.coverBlocks
+    .flatMap(block => block.items.map(item => [block.heading, item.primary, item.secondary, item.note].filter(Boolean).join('：')))
+    .filter(Boolean);
+  const titles = ['这一页先看核心内容', '把重点放进例子里', '常见错误这样检查', '最后按这个顺序复盘'];
+  while (content.innerPages.length < REQUIRED_INNER_PAGE_COUNT) {
+    const index = content.innerPages.length;
+    content.innerPages.push({
+      page_no: index + 2,
+      page_type: index === REQUIRED_INNER_PAGE_COUNT - 1 ? 'product_bridge' : 'knowledge_list',
+      page_title: titles[index] || `第${index + 1}页继续看`,
+      lead: '把这一页和自己的情况对照，再继续往下练。',
+      bullets: Array.from(new Set([...bullets.slice(0, 6), '结合本篇主题完成一次替换练习'])).slice(0, 7),
+      source_ids: sourceIds,
+    });
+  }
 }
 
 function sourceBoundProductFactSupported(

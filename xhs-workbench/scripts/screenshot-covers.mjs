@@ -10,7 +10,7 @@ import path from 'node:path';
 import { chromium } from 'playwright';
 
 const HTML_PATH = path.resolve('tmp-preview-rendered.html');
-const OUT_DIR = path.resolve('tmp-cover-screenshots');
+const OUT_DIR = path.resolve(process.env.COVER_SCREENSHOT_DIR || 'tmp-cover-screenshots');
 
 const CELL_WIDTH = 600; // 模拟小红书卡片实际渲染宽度（信息流点击后大图）
 const CELL_HEIGHT = 800;
@@ -20,9 +20,11 @@ async function main() {
     throw new Error(`找不到 ${HTML_PATH}，先跑 render-batch-covers.mjs`);
   }
   fs.mkdirSync(OUT_DIR, { recursive: true });
-  // 清空旧 PNG
-  for (const f of fs.readdirSync(OUT_DIR)) {
-    if (f.endsWith('.png')) fs.unlinkSync(path.join(OUT_DIR, f));
+  if (process.env.NO_CLEAR_SCREENSHOTS !== '1') {
+    // 清空旧 PNG
+    for (const f of fs.readdirSync(OUT_DIR)) {
+      if (f.endsWith('.png')) fs.unlinkSync(path.join(OUT_DIR, f));
+    }
   }
 
   const browser = await chromium.launch();

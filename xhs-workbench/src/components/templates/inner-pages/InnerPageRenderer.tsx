@@ -153,13 +153,18 @@ export function InnerPageRenderer({ page, registerNode }: InnerPageRendererProps
         <div className="flex items-center justify-between text-[11px] font-semibold text-[#7b8190]" style={{ fontSize: 'clamp(9px, 2.3cqw, 13px)' }}>
           <span>☷ 知识库 · {page.showcase_asset_label || '资料卡'}</span><span>P{page.page_no}</span>
         </div>
-        <div className="mt-[7%] flex items-center gap-2 border-b border-[#e2e4e8] pb-[4%]" style={{ fontSize: 'clamp(10px, 2.7cqw, 16px)' }}>
+        {page.showcase_asset_image ? (
+          <div className="mt-[3%] overflow-hidden rounded-md border border-[#d9dce3] bg-white shadow-sm" style={{ height: '62%' }}>
+            <img src={page.showcase_asset_image} alt={page.showcase_asset_label || '商品资料截图'} className="h-full w-full object-contain" />
+          </div>
+        ) : null}
+        <div className="mt-[3%] flex items-center gap-2 border-b border-[#e2e4e8] pb-[2%]" style={{ fontSize: 'clamp(9px, 2.2cqw, 13px)' }}>
           <span className="h-2 w-2 rounded-full bg-[#3b82f6]" /><span className="font-semibold text-[#686f7d]">商品资料页</span>
         </div>
-        <h3 className="mt-[7%] font-black leading-tight" style={{ fontSize: 'clamp(18px, 6.2cqw, 38px)' }}>{page.page_title}</h3>
-        <p className="mt-[4%] rounded-md bg-[#eef4ff] p-[4%] font-semibold leading-relaxed text-[#315b9a]" style={{ fontSize: 'clamp(11px, 3.45cqw, 20px)' }}>{page.lead}</p>
-        <div className="mt-[6%] space-y-[4%]" style={{ fontSize: 'clamp(11px, 3.55cqw, 21px)' }}>
-          {page.bullets.slice(0, 6).map((bullet, index) => <div key={`${bullet}-${index}`} className="flex gap-3 border-b border-[#e6e7eb] pb-[3%] leading-relaxed"><span className="font-bold text-[#3b82f6]">{String(index + 1).padStart(2, '0')}</span><span>{bullet}</span></div>)}
+        <h3 className="mt-[3%] font-black leading-tight" style={{ fontSize: 'clamp(15px, 4.8cqw, 30px)' }}>{page.page_title}</h3>
+        <p className="mt-[2%] rounded-md bg-[#eef4ff] p-[2.5%] font-semibold leading-snug text-[#315b9a]" style={{ fontSize: 'clamp(9px, 2.6cqw, 16px)' }}>{page.lead}</p>
+        <div className="mt-[2%] space-y-[2%]" style={{ fontSize: 'clamp(9px, 2.55cqw, 15px)' }}>
+          {page.bullets.slice(0, 2).map((bullet, index) => <div key={`${bullet}-${index}`} className="flex gap-2 border-b border-[#e6e7eb] pb-[1%] leading-snug"><span className="font-bold text-[#3b82f6]">{String(index + 1).padStart(2, '0')}</span><span>{bullet}</span></div>)}
         </div>
       </article>
     );

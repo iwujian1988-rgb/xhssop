@@ -41,14 +41,16 @@ const riskyCaption = [
   '用22篇范文直接调取表达，效率翻倍，考前两周就能写顺。',
 ].join(' ');
 const issues = getPublicEditorialRiskIssues(riskyCaption);
-assert(issues.includes('unsupported_score_or_time_claim'));
+// 用户 2026-08-16 已拍板：提分/效率/短期效果类钩子允许出现在标题或正文中；
+// 这里只继续拦截事实谎报、官方规则误写、机械替换和库存关系句。
+assert(!issues.includes('unsupported_score_or_time_claim'));
 assert(issues.includes('unsafe_mechanical_language_replacement'));
 assert(issues.includes('overabsolute_public_rule'));
 assert(issues.includes('public_inventory_relation_claim'));
 assert(issues.includes('invented_exam_quantity_rule'));
 assert(issues.includes('overabsolute_register_rule'));
 assert(issues.includes('overmechanical_content_method'));
-assert(issues.includes('unsupported_outcome_claim'));
+assert(!issues.includes('unsupported_outcome_claim'));
 
 assert.deepEqual(
   getPublicEditorialRiskIssues('写完后按任务完成、连贯性、词汇句法和语体逐项检查。'),

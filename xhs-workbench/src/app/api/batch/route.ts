@@ -167,11 +167,11 @@ async function handlePlan(body: PlanBody) {
     for (const topic of topics) {
       if (acceptedForCard >= topicsPerCard) break;
       const topicText = `${topic.topic} ${topic.content_promise || ''}`.trim();
-      const duplicateScope = contentMode === 'product_showcase' ? cardUsedTopicTexts : batchUsedTopicTexts;
+      // 每张已选封面都是独立 job；只在同一张封面内去重。
+      // 之前普通模式使用 batchUsedTopicTexts，导致不同封面拿到相似选题时被跨卡吞掉。
+      const duplicateScope = cardUsedTopicTexts;
       if (findSimilarTopic(topicText, duplicateScope, 0.56)) continue;
-      const topicKey = contentMode === 'product_showcase'
-        ? `${cardId}:${topic.seed_id || topic.id || topic.topic}`
-        : `${topic.seed_id || topic.topic}`;
+      const topicKey = `${cardId}:${topic.seed_id || topic.id || topic.topic}`;
       if (seenTopics.has(topicKey)) continue;
       seenTopics.add(topicKey);
       if (topic.seed_id) batchUsedSeedIds.push(topic.seed_id);

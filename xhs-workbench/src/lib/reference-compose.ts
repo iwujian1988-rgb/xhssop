@@ -868,6 +868,7 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
   }
   cover = applyAutoFix(ensureCoverIdentity(normalizeDenseDirectoryCover(audited.cover), input.card.renderer_id, input.productId, input.topic));
   innerPages = normalizePageEvidence(normalizePages(audited.innerPages, `${input.card.id}|${input.topic.id}`), input.evidence);
+  innerPages = ensureMinimumInnerPages(innerPages, cover, input.productId);
   caption = ensurePublishableCaption(scrubCheapClaims(sanitizePublicText(audited.caption)), seoKeywords[0], cover, input.card.id);
   // 跨 batch 标题去重，两级范围：
   //   - 文字标题指纹/候选池：seed 范围（候选池跨 seed 会误杀——别的 seed 候选池里
@@ -1534,7 +1535,7 @@ function generateEditorialOutput(input: ComposeDraftInput, context: {
       content: [
         // 静态段前置以命中 prompt cache；动态 templatePrompt 移到最后。
         '你是资深小红书法语内容编辑。选题、人群、场景、痛点和内容承诺已经锁定，不能另起主题。只返回JSON。',
-        '生成4-6张真正给用户看的内页，以及一篇可直接发布的正文。内页不是把正文切片粘贴。',
+        '生成恰好5张真正给用户看的内页，以及一篇可直接发布的正文。内页不是把正文切片粘贴。',
         '每张内页必须有具体知识、例子、对照、步骤或练习；禁止写幕后设计意图。',
         // 内页标题跨 job 去重：通用收尾页（复盘/自查/怎么用）LLM 会反复写同一
         // 个标题（batch_1786754651839："常见错误这样检查"×3、"写完之后这样复盘"×3）。
@@ -1928,7 +1929,7 @@ function ensureMinimumInnerPages(
   const result = [...pages];
   const identity = getProductPromptProfile(productId).noteIdentity;
   for (const section of cover.sections) {
-    if (result.length >= 4) break;
+    if (result.length >= 5) break;
     const bullets = section.items
       .map(item => `${item.primary}${item.secondary ? `：${item.secondary}` : ''}`)
       .filter(Boolean)
@@ -1944,7 +1945,30 @@ function ensureMinimumInnerPages(
       source_ids: section.source_ids,
     });
   }
-  return result.slice(0, 6).map((page, index) => ({ ...page, page_no: index + 2 }));
+  const fallbackTitles = [
+    '这一页先看核心内容',
+    '把重点放进例子里',
+    '常见错误这样检查',
+    '最后按这个顺序复盘',
+  ];
+  const fallbackLead = cover.subtitle || '把本篇内容拆成几步，按自己的情况继续看。';
+  while (result.length < 5) {
+    const index = result.length;
+    const bullets = cover.sections
+      .flatMap(section => section.items.map(item => `${item.primary}${item.secondary ? `：${item.secondary}` : ''}`))
+      .filter(Boolean)
+      .slice(0, 7);
+    while (bullets.length < 3) bullets.push('结合本篇主题完成一次替换练习');
+    result.push({
+      page_no: index + 2,
+      page_type: 'knowledge_list',
+      page_title: fallbackTitles[index - cover.sections.length] || `第${index + 1}页继续看`,
+      lead: fallbackLead,
+      bullets,
+      source_ids: Array.from(new Set(cover.sections.flatMap(section => section.source_ids))),
+    });
+  }
+  return result.slice(0, 5).map((page, index) => ({ ...page, page_no: index + 2 }));
 }
 
 function normalizeInnerPageTitle(value: string, index: number) {
@@ -2030,7 +2054,7 @@ async function repairEditorialOutput(input: {
       role: 'system',
       content: [
         '你是小红书法语内容总编。完整重写未过质检的内页和正文，只返回JSON，不能改变锁定主题。',
-        '必须完整返回4-6张内页，每页标题8-22字、引导语和4-7条具体内容；不得输出半句话。',
+        '必须完整返回恰好5张内页，每页标题8-22字、引导语和4-7条具体内容；不得输出半句话。',
         useSchema
           ? `正文按 caption_parts 字段结构化输出（template=list，不得切换），由系统拼装。`
           : '必须完整返回280-420个中文字符的正文（分4-6个短段、每段约60-90字，不足280字按未完成处理）和5-8个标签。正文开头直接进入具体问题，不能虚构作者个人考试经历。',
@@ -4943,7 +4967,7 @@ function getEditorialIssues(
   productId: ProductId,
 ) {
   const issues: string[] = [];
-  if (pages.length < 4 || pages.length > 6) issues.push('inner_page_count_invalid');
+  if (pages.length !== 5) issues.push('inner_page_count_invalid');
   // 页型单调（整篇全是一种 page_type）：warn 级可见——生成侧 prompt 已硬要求
   // 至少混排 3 种；这里兜底让 checks/质检脚本能看到没做到的 job。
   if (pages.length >= 4 && new Set(pages.map(page => page.page_type)).size < 3) {

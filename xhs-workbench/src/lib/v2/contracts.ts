@@ -3,6 +3,7 @@ import type { ContentShape, CreativeCardRenderer, GeneratedInnerPage, ReferenceD
 import type { ProductId } from '@/types/data';
 
 export const V2_SCHEMA_VERSION = '2.0.0';
+export const REQUIRED_INNER_PAGE_COUNT = 5;
 
 export type PrimaryGoal = 'search' | 'save' | 'click' | 'conversion';
 export type TopicLane = 'broad_pain' | 'result_need' | 'narrow_knowledge' | 'product_value';

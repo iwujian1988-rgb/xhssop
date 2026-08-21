@@ -310,14 +310,15 @@ export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
   }
   if (!input.showcasePlan && input.endingShowcasePlan?.coverAsset) {
     const asset = input.endingShowcasePlan.coverAsset;
+    const wholeProduct = wholeProductBridge(input.productId, asset);
     const pageNo = innerPages.length + 1;
     innerPages = [...innerPages, {
       page_no: pageNo,
       page_type: 'product_bridge',
       style_variant: 'lined-notebook',
       page_title: '这套资料，具体能帮你什么',
-      lead: input.endingShowcasePlan.angle.instruction,
-      bullets: [asset.realContent, asset.userValue, '适合在备考中反复查、练、改；需要完整资料可查看商品页。'],
+      lead: wholeProduct.lead,
+      bullets: [...wholeProduct.bullets, '需要完整资料和学习路径，可查看商品页。'],
       source_ids: asset.sourceFactIds,
       showcase_asset_id: asset.id,
       showcase_asset_label: asset.label,
@@ -380,6 +381,23 @@ export function compileDraft(input: CompileInput): ReferenceDrivenDraft {
       issues: [],
       warnings: issues,
     },
+  };
+}
+
+function wholeProductBridge(productId: ProductId, asset: ProductShowcasePlan['coverAsset']) {
+  if (productId === 'delf_b2_writing') {
+    return {
+      lead: '这套资料不是只讲一个知识点，而是把DELF B2写作从看范文、搭结构、找表达，到写完自查和考前速查串成一套可反复使用的资料库。',
+      bullets: [
+        '目录从使用说明与学习路径开始，覆盖范文库、DELF B2评分对照、词汇库、句法库和主题观点库。',
+        '组合示例、错题对照、写作检查清单和考前冲刺速查，分别对应仿写、复盘、交卷前检查和最后冲刺。',
+        '按任务或主题查资料，再拿范文和表达练习，最后用检查清单复盘；这张截图只是其中一部分。',
+      ],
+    };
+  }
+  return {
+    lead: asset.userValue || '把分散的备考内容按学习顺序整理，方便你查、练和复盘。',
+    bullets: [asset.realContent || '按模块整理核心资料和练习入口。', '从目录找到对应内容，再按自己的备考阶段使用。'],
   };
 }
 

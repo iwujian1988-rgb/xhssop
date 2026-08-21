@@ -9,12 +9,13 @@ import { resolveProductEvidence } from '../src/lib/product-fact-retrieval';
 import { hasForbiddenProductIdentity } from '../src/lib/product-prompt-profiles';
 import type { ProductId } from '../src/types/data';
 
-const productIds: ProductId[] = ['delf_b2_writing', 'tef_tcf_canada'];
+const productIds: ProductId[] = ['delf_b2_writing', 'tef_tcf_canada', 'tcf_canada_writing_7day'];
 let topicCount = 0;
 let rawExcerptCount = 0;
 const perProduct: Record<ProductId, { cards: number; topics: number }> = {
   delf_b2_writing: { cards: 0, topics: 0 },
   tef_tcf_canada: { cards: 0, topics: 0 },
+  tcf_canada_writing_7day: { cards: 0, topics: 0 },
 };
 
 for (const productId of productIds) {
