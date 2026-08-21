@@ -67,6 +67,9 @@ function content(bullet: string, productBridge = '这套资料把选考和练习
 
 const correct = inspectForPublish(content('TCF Canada 听力39题35分钟。'), { productId: 'tef_tcf_canada', topic, capability, evidence });
 assert.equal(correct.hardIssues.some(item => item.code === 'risky_fact_not_registered'), false, JSON.stringify(correct.hardIssues));
+assert.equal(correct.content.innerPages.length, 5, '内页仍必须补齐到5页');
+assert.equal(correct.warnings.some(item => item.includes('本篇内页由程序从 2 页补齐到 5 页')), true, '程序补页必须留下非阻断可见提醒');
+assert.equal(correct.hardIssues.some(item => item.code === 'inner_pages_too_few'), false, '补页不得产生硬拦（inner_pages_too_few 已是死规则，应已删除）');
 
 const practiceStructure = inspectForPublish(content('练习示例：针对TEF口语B部分，可先陈述立场，再用两个论据支撑。'), { productId: 'tef_tcf_canada', topic, capability, evidence });
 assert.equal(practiceStructure.hardIssues.some(item => item.code === 'risky_fact_not_registered'), false, '练习示例中的论据数量不能被误判成官方考试数字');
@@ -154,6 +157,9 @@ const compiledCoverCandidate = inspectForPublish(oneLongCoverCandidate, { produc
 assert.equal(compiledCoverCandidate.hardIssues.some(item => item.code === 'cover_secondary_too_long'), false, '候选池中的长解释应由编译器转入内页，不能直接判整篇失败');
 assert.equal(compiledCoverCandidate.warnings.some(item => item.includes('封面长副条目将转入内页')), true, '长解释转内页必须留下可见提醒');
 
-assert.equal(wrong.hardIssues.filter(isReleaseBlockingIssue).some(item => item.code === 'unsupported_exam_fact'), true, '考试事实错误必须始终拦截');
+// 设计 6.2：未命中事实卡 → 提醒放行。商品2事实卡尚未登记TEF/TCF结构事实（重放实测10处误报），
+// 硬拦会误杀正确的对比内容；待 editorial map 补全确认考试边界后再按商品收紧。
+assert.equal(wrong.hardIssues.some(item => item.code === 'unsupported_exam_fact'), true, '考试事实错位必须作为 hardIssue 发出，保持可见');
+assert.equal(wrong.hardIssues.filter(isReleaseBlockingIssue).some(item => item.code === 'unsupported_exam_fact'), false, '未登记考试事实按设计6.2提醒放行，不硬拦');
 
-console.log(JSON.stringify({ ok: true, assertions: 31 }, null, 2));
+console.log(JSON.stringify({ ok: true, assertions: 35 }, null, 2));

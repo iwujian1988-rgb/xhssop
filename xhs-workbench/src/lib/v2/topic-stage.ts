@@ -119,6 +119,14 @@ export async function generateTopicOptions(input: TopicStageInput): Promise<Vers
   const softWarnings = topics.flatMap(topic => topicGateFailures(topic, input)
     .filter(failure => !TOPIC_HARD_FAILURES.has(failure))
     .map(failure => `${topic.topic}: ${failure}`));
+  // 可见性增强：每个被闸门淘汰的候选都要带着死因透出到 warnings，
+  // 供调用方/审计方回查“每个候选死在哪条闸”。不改变淘汰/降级/兜底逻辑。
+  const candidateFailureWarnings = normalizedTopics
+    .filter(topic => !topics.includes(topic))
+    .flatMap(topic => {
+      const failures = topicGateFailures(topic, input);
+      return failures.length ? [`选题候选被闸门淘汰“${topic.topic}”：${failures.join('、')}`] : [];
+    });
   if (topics.length < limit) {
     console.error('[v2-topic-rejected]', JSON.stringify({
       product_id: input.productId,
@@ -135,7 +143,7 @@ export async function generateTopicOptions(input: TopicStageInput): Promise<Vers
         inputHash,
         result.usage,
         result.requestId,
-        [`AI返回${topics.length}个可用选题，少于请求的${limit}个；已继续生成，不阻断任务。`, ...softWarnings],
+        [`AI返回${topics.length}个可用选题，少于请求的${limit}个；已继续生成，不阻断任务。`, ...softWarnings, ...candidateFailureWarnings],
       );
     }
     // 单卡只请求一个选题时，不要因为唯一候选的轻微封面形态偏差整卡失败。
@@ -150,7 +158,7 @@ export async function generateTopicOptions(input: TopicStageInput): Promise<Vers
         inputHash,
         result.usage,
         result.requestId,
-        [`唯一候选存在轻微匹配提醒，已继续生成：${topicGateFailures(fallback, input).join('、') || '无'}`],
+        [`唯一候选存在轻微匹配提醒，已继续生成：${topicGateFailures(fallback, input).join('、') || '无'}`, ...candidateFailureWarnings.filter(item => !item.includes(`“${fallback.topic}”`))],
       );
     }
     if (productShowcaseMode) {
@@ -182,13 +190,13 @@ export async function generateTopicOptions(input: TopicStageInput): Promise<Vers
         inputHash,
         result.usage,
         result.requestId,
-        [`本张封面选题结构化返回失败，已使用该封面的商品介绍兜底选题：${input.card.name}`],
+        [`本张封面选题结构化返回失败，已使用该封面的商品介绍兜底选题：${input.card.name}`, ...candidateFailureWarnings],
       );
     }
     throw new Error(`V2选题阶段没有得到合格选题（原始${rawTopics.length}，规则拒绝${rejected.length}）`);
   }
 
-  return artifact(topics.slice(0, limit), inputHash, result.usage, result.requestId, softWarnings);
+  return artifact(topics.slice(0, limit), inputHash, result.usage, result.requestId, [...softWarnings, ...candidateFailureWarnings]);
 }
 
 export function topicOptionToMigrated(topic: TopicOption): MigratedTopic & { v2_topic: TopicOption } {

@@ -17,7 +17,6 @@ export interface PublishInspection {
 const RELEASE_BLOCKING_ISSUES = new Set([
   'cover_density_below_contract',
   'cover_group_underfilled',
-  'inner_pages_too_few',
   'false_product_form',
   'fabricated_authority',
   'unsupported_exam_consequence',
@@ -73,7 +72,7 @@ export function inspectForPublish(
     const units = countVisibleUnits(paragraph);
     if (units < 35) hardIssues.push(issue('caption_paragraph_too_thin', `第 ${index + 1} 段只有 ${units} 字，像提纲而不是正文`, `captionParts.value[${index}]`));
   });
-  ensureInnerPageCount(content);
+  ensureInnerPageCount(content, warnings);
 
   const compact = input.capability.densityTiers[0];
   const validBlocks = content.coverBlocks.filter(block => input.capability.acceptedBlockKinds.includes(block.kind));
@@ -213,10 +212,14 @@ export function inspectForPublish(
   return { content, hardIssues: dedupeIssues(hardIssues), warnings };
 }
 
-function ensureInnerPageCount(content: ContentPackage) {
+function ensureInnerPageCount(content: ContentPackage, warnings: string[]) {
   if (content.innerPages.length > REQUIRED_INNER_PAGE_COUNT) {
     content.innerPages = content.innerPages.slice(0, REQUIRED_INNER_PAGE_COUNT);
     return;
+  }
+  // 补页本身保留，但必须可见：批量结果/审计脚本要能统计“程序凑数页”频率。
+  if (content.innerPages.length < REQUIRED_INNER_PAGE_COUNT) {
+    warnings.push(`本篇内页由程序从 ${content.innerPages.length} 页补齐到 ${REQUIRED_INNER_PAGE_COUNT} 页，补充页为固定模板页`);
   }
   const sourceIds = Array.from(new Set(content.coverBlocks.flatMap(block => block.sourceIds)));
   const bullets = content.coverBlocks

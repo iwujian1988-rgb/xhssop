@@ -129,12 +129,13 @@ export async function generateContentPackage(input: ContentStageInput): Promise<
   ], { maxTokens: 5200, temperature: 0.72, retries: 2 });
 
   let content: ContentPackage;
+  const normalizationWarnings: string[] = [];
   try {
-    content = normalizeContent(result.data, input, evidence.map(item => item.id));
+    content = normalizeContent(result.data, input, evidence.map(item => item.id), normalizationWarnings);
   } catch (cause) {
     throw attachStageContext(cause, 'content', result.usage);
   }
-  const warnings = validateContent(content, input);
+  const warnings = [...normalizationWarnings, ...validateContent(content, input)];
   return artifact(content, inputHash, result.usage, result.requestId, warnings);
 }
 
@@ -262,6 +263,7 @@ export async function repairContentPackage(
     { role: 'user', content: JSON.stringify(repairInput) },
   ], { maxTokens: 2800, temperature: 0.3, retries: 1 });
   let content: ContentPackage;
+  const normalizationWarnings: string[] = [];
   try {
     const patch = result.data as RawContentResponse;
     const hasPatchField = ['coverBlocks', 'innerPages', 'captionParts', 'tagMaterial', 'factualClaims', 'frenchSegments']
@@ -281,7 +283,7 @@ export async function repairContentPackage(
       factualClaims: Array.isArray(patch.factualClaims) ? patch.factualClaims : artifactInput.data.factualClaims,
       frenchSegments: artifactInput.data.frenchSegments,
     };
-    content = normalizeContent(merged, input, evidence.map(item => item.id));
+    content = normalizeContent(merged, input, evidence.map(item => item.id), normalizationWarnings);
   } catch (cause) {
     throw attachStageContext(cause, 'content', mergeAiUsage(artifactInput.usage, result.usage));
   }
@@ -292,7 +294,7 @@ export async function repairContentPackage(
     input_hash: stableHash({ previous: artifactInput.input_hash, issues }),
     created_at: new Date().toISOString(),
     usage: mergeAiUsage(artifactInput.usage, result.usage),
-    warnings: validateContent(content, input),
+    warnings: [...normalizationWarnings, ...validateContent(content, input)],
     request_id: result.requestId,
   };
 }
@@ -354,7 +356,7 @@ function isNoIssueStatement(value: string) {
     || /(?:未发现|无).*(?:错误|问题)/.test(value.trim());
 }
 
-function normalizeContent(raw: RawContentResponse, input: ContentStageInput, validSourceIds: string[]): ContentPackage {
+function normalizeContent(raw: RawContentResponse, input: ContentStageInput, validSourceIds: string[], normalizationWarnings: string[] = []): ContentPackage {
   const validIds = new Set(validSourceIds);
   const accepted = new Set(input.capability.acceptedBlockKinds);
   const coverBlocks = (Array.isArray(raw.coverBlocks) ? raw.coverBlocks : [])
@@ -378,6 +380,10 @@ function normalizeContent(raw: RawContentResponse, input: ContentStageInput, val
       normalized_pages: innerPages.length,
       response_preview: JSON.stringify(raw).slice(0, 5000),
     }));
+    if (innerPages.length < REQUIRED_INNER_PAGE_COUNT) {
+      // 与 publish-guard 的补页警告同口径：程序凑数页必须可见，便于统计触发频率。
+      normalizationWarnings.push(`本篇内页由程序从 ${innerPages.length} 页补齐到 ${REQUIRED_INNER_PAGE_COUNT} 页，补充页为固定模板页`);
+    }
     innerPages = ensureInnerPageCount(innerPages, coverBlocks, input);
   }
   const caption = normalizeCaptionParts(raw.captionParts);
