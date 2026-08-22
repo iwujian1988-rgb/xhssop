@@ -115,6 +115,9 @@ async function handlePlan(body: PlanBody) {
   // delf_pain_logic_jump），不同 seed 也会收敛到同一知识点。
   const batchUsedSeedIds: string[] = [];
   const batchUsedTopicTexts: string[] = [];
+  // 修复4（阶段F）：跨卡方向轮转。只在下方 useConsensusPlan 分支读写，
+  // 商品2/3 与 showcase 走不到该分支，方向挑选行为零变化。
+  const batchUsedDirections: string[] = [];
   // B2（§3.4）：仅商品1 + 普通模式走共识 3 候选池 + 程序挑选；
   // 商品2/3 与 showcase 的批量路径完全不走新逻辑。
   const useConsensusPlan = isV2PipelineEnabled()
@@ -155,7 +158,11 @@ async function handlePlan(body: PlanBody) {
           topicsPerCard,
           cardUsedTopicTexts: [],
           batchUsedTopicTexts,
+          batchUsedDirections,
         });
+        for (const topicOption of selection.selected) {
+          if (topicOption.direction) batchUsedDirections.push(topicOption.direction);
+        }
         topics = selection.selected.map(topicOptionToMigrated);
         planMeta.unselected_candidates = [
           ...(planMeta.unselected_candidates || []),

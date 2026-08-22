@@ -247,6 +247,42 @@ const missBridge = await generateTopicOptionsConsensus(baseInput, stubAi({
 }));
 assert(missBridge.data.length === 1, 'bridgeBasis 未命中候选仍放行');
 assert(missBridge.warnings.some(w => w.includes('未命中')), 'bridgeBasis 未命中有警告');
+
+// 能力编号拆分匹配（实测 batch_1787325885084/job_003：AI 把多个真实编号塞进
+// 一个字段，整串等值匹配失配 → productBridge 空 → missing_product_bridge 全灭）。
+console.log(`  能力编号多写识别：`);
+const joinedComma = await generateTopicOptionsConsensus(baseInput, stubAi({
+  选题列表: [{ ...mockNormal.选题列表[0], 商品承接依据: { 能力编号: 'cap-topic-ideas, cap-syntax-library' } }],
+}));
+const joinedCommaTopic = joinedComma.data[0];
+assert(Boolean(joinedCommaTopic) && joinedComma.deaths.length === 0, '逗号连接的真实编号候选不再被杀');
+assert(joinedCommaTopic?.bridgeBasis?.capabilityId === 'cap-topic-ideas', `canonical 编号取第一个命中项（实际 ${joinedCommaTopic?.bridgeBasis?.capabilityId}）`);
+assert((joinedCommaTopic?.productBridge || '').includes('主题观点库'), '能力描述从能力表回填（非空承接）');
+assert(!joinedComma.warnings.some(w => w.includes('未命中商品能力表')), '命中后不再报未命中警告');
+
+const joinedDunhao = await generateTopicOptionsConsensus(baseInput, stubAi({
+  选题列表: [{ ...mockNormal.选题列表[0], 商品承接依据: { 能力编号: 'cap-syntax-library、cap-score-selfcheck' } }],
+}));
+assert(joinedDunhao.data[0]?.bridgeBasis?.capabilityId === 'cap-syntax-library', '顿号连接同样识别');
+
+const asArray = await generateTopicOptionsConsensus(baseInput, stubAi({
+  选题列表: [{ ...mockNormal.选题列表[0], 商品承接依据: { 能力编号: ['cap-score-selfcheck', 'cap-error-correction'] } }],
+}));
+assert(asArray.data[0]?.bridgeBasis?.capabilityId === 'cap-score-selfcheck', '数组形式同样识别');
+
+// 全假编号且无模块 → 不回填 → 空承接仍被 missing_product_bridge 硬拦（不许为降失败率放水）
+const allFake = await generateTopicOptionsConsensus(baseInput, stubAi({
+  选题列表: [{ ...mockNormal.选题列表[0], 商品承接依据: { 能力编号: 'cap-not-exist, cap-made-up' } }],
+}));
+assert(allFake.usedFallback === true, '全假编号候选被杀走兜底');
+assert(allFake.deaths.some(d => d.code === 'missing_product_bridge'), '死因为 missing_product_bridge');
+
+// 无编号无模块 → 同样硬拦
+const noBridge = await generateTopicOptionsConsensus(baseInput, stubAi({
+  选题列表: [{ ...mockNormal.选题列表[0], 商品承接依据: {} }],
+}));
+assert(noBridge.usedFallback === true, '无编号无模块候选被杀走兜底');
+assert(noBridge.deaths.some(d => d.code === 'missing_product_bridge'), '无编号无模块死因 missing_product_bridge');
 // expandContents<3 警告
 const shortExpand = await generateTopicOptionsConsensus(baseInput, stubAi({
   选题列表: [{ ...mockNormal.选题列表[0], 准备展开的内容: ['只有一条'] }],
@@ -375,6 +411,21 @@ assert(!('collisionWarnings' in collision), '结果契约不再有独立 collisi
 // 候选池为空
 const emptyPool = selectTopicsForCard({ candidates: [], topicsPerCard: 2, cardUsedTopicTexts: [], batchUsedTopicTexts: [] });
 assert(emptyPool.selected.length === 0 && emptyPool.warnings.some(w => w.includes('候选池为空')), '空池返回警告不抛错');
+
+// 修复4（阶段F）：跨卡方向轮转。batch 路由只在商品1普通模式共识分支传 batchUsedDirections；
+// 商品2/3 与 showcase 不传该参数——纯函数层面必须证明：不传=旧行为，传了=按占用轮转。
+// 不传参数：稳定排序保持桶插入顺序，第一桶（大痛点型）第一个入选——旧行为零变化。
+const noRotation = selectTopicsForCard({ candidates: pool, topicsPerCard: 1, cardUsedTopicTexts: [], batchUsedTopicTexts: [] });
+assert(noRotation.selected.length === 1 && noRotation.selected[0]!.direction === '大痛点型', '不传方向占用：旧行为零变化（仍取第一桶第一候选）');
+// 第一张卡已用大痛点型 → 第二张卡轮到未占用方向
+const afterPain = selectTopicsForCard({ candidates: pool, topicsPerCard: 1, cardUsedTopicTexts: [], batchUsedTopicTexts: [], batchUsedDirections: ['大痛点型'] });
+assert(afterPain.selected[0]!.direction === '省时路径型', '已用大痛点型后轮转到省时路径型');
+// 前两张卡用掉两个方向 → 第三张卡轮到剩余方向：3 卡 3 方向
+const afterTwo = selectTopicsForCard({ candidates: pool, topicsPerCard: 1, cardUsedTopicTexts: [], batchUsedTopicTexts: [], batchUsedDirections: ['大痛点型', '省时路径型'] });
+assert(afterTwo.selected[0]!.direction === '具体方法型', '两方向已用后轮转到具体方法型（3卡3方向）');
+// 全方向都占用过（更大批次回绕）：回退到占用次数最少的方向，不空转
+const allUsed = selectTopicsForCard({ candidates: pool, topicsPerCard: 1, cardUsedTopicTexts: [], batchUsedTopicTexts: [], batchUsedDirections: ['大痛点型', '大痛点型', '省时路径型', '具体方法型'] });
+assert(allUsed.selected[0]!.direction === '省时路径型', '全占用后回退占用最少方向（稳定序取省时路径型）');
 
 // ---------------------------------------------------------------------------
 // 10. 接线改动范围（报告项，B2 起不再断言零改动）

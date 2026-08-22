@@ -172,7 +172,7 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
   const normalizedCandidates = (Array.isArray(result.data.candidates) ? result.data.candidates : [])
     .map(normalizePair)
     .filter((pair): pair is TitlePair => Boolean(pair))
-    .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive }));
+    .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive, consensusActive }));
   let titleUsage = result.usage;
   const consensusWarnings: string[] = [];
   let candidates = normalizedCandidates.filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles, false, consensusActive));
@@ -192,12 +192,12 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
       }, input, recent.selectedTitles, recent.coverTitles, repairMaxTokens);
       titleUsage = mergeAiUsage(titleUsage, repaired.usage);
       const repairedCandidates = repaired.candidates
-        .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive }))
+        .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive, consensusActive }))
         .filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles, false, consensusActive));
       candidates = dedupeCandidates([...candidates, ...repairedCandidates], categoryFn);
       if (!candidates.length) {
         candidates = repairable
-          .map(pair => ({ ...pair, textTitle: fitTextTitle(pair.textTitle) }))
+          .map(pair => ({ ...pair, textTitle: fitTextTitle(pair.textTitle, consensusActive) }))
           .filter(pair => passesHardGates(pair, input, recent.selectedTitles, recent.coverTitles, false, consensusActive));
       }
       // 阶段 D（设计 §4.3）：门控开时封面标题超长先返修；返修后组数仍不足，
@@ -206,8 +206,8 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
       if (consensusActive && candidates.length < effectiveCount) {
         const rescuedCover = repairable
           .map(pair => {
-            const truncated = fitCoverTitle(pair.coverTitle, input, true);
-            return { pair: { ...pair, textTitle: fitTextTitle(pair.textTitle), coverTitle: truncated }, didTruncate: truncated !== pair.coverTitle };
+            const truncated = fitCoverTitle(pair.coverTitle, input, true, true);
+            return { pair: { ...pair, textTitle: fitTextTitle(pair.textTitle, true), coverTitle: truncated }, didTruncate: truncated !== pair.coverTitle };
           })
           .filter(item => passesHardGates(item.pair, input, recent.selectedTitles, recent.coverTitles, false, true));
         const before = candidates.length;
@@ -230,7 +230,7 @@ export async function generateTitlePackage(input: TitleStageInput): Promise<Vers
     // warnings 中记录降级，便于人工换标题，而不是让整篇 job 失败。
     const salvagePool = dedupeCandidates(
       normalizedCandidates
-        .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive }))
+        .map(pair => normalizePairForInput(pair, input, { coverTruncate: !consensusActive, consensusActive }))
         .filter(pair => passesHardGates(pair, input, new Set(), new Set(), true)),
       categoryFn,
     );
@@ -300,15 +300,22 @@ function applyCoverTruncateFallback(candidates: TitlePair[], input: TitleStageIn
   const list = candidates.map(pair => {
     if (countVisibleUnits(pair.coverTitle) <= range[1]) return pair;
     warnings.push(`封面标题超长，返修后仍超${range[1]}字，已截断兜底：「${pair.coverTitle}」`);
-    return { ...pair, coverTitle: trimTitleAtNaturalBoundary(pair.coverTitle, range[1]) };
+    const trimmed = trimTitleAtNaturalBoundary(pair.coverTitle, range[1]);
+    return {
+      ...pair,
+      coverTitle: consensusActive
+        ? stripDanglingTitleTail(trimmed)
+        : trimmed,
+    };
   });
   return { list, warnings };
 }
 
-function fitTextTitle(value: string) {
+function fitTextTitle(value: string, consensusActive = false) {
   const text = compactTitleLanguage(value).replace(/DELF\s*B2/gi, 'DELF B2').replace(/TEF\s*TCF/gi, 'TEF/TCF');
-  if (countVisibleUnits(text) <= 20) return text;
-  return trimTitleAtNaturalBoundary(text, 20);
+  if (countVisibleUnits(text) <= 20) return consensusActive ? stripDanglingTitleTail(text) : text;
+  const trimmed = trimTitleAtNaturalBoundary(text, 20);
+  return consensusActive ? stripDanglingTitleTail(trimmed) : trimmed;
 }
 
 function compactTitleLanguage(value: string) {
@@ -351,7 +358,7 @@ function limitTitleCandidates(candidates: TitlePair[], classifier: TitleCategory
   return result;
 }
 
-function trimTitleAtNaturalBoundary(value: string, max: number) {
+export function trimTitleAtNaturalBoundary(value: string, max: number) {
   const units = Array.from(new Intl.Segmenter('zh-CN', { granularity: 'grapheme' }).segment(value), item => item.segment)
     .filter(unit => !/^\s+$/u.test(unit));
   let text = units.slice(0, max).join('').replace(/[A-Za-z0-9]+$/u, '').replace(/[，：、]$/u, '');
@@ -360,7 +367,28 @@ function trimTitleAtNaturalBoundary(value: string, max: number) {
   return text.replace(/[，：、]$/u, '');
 }
 
-function normalizePairForInput(pair: TitlePair, input: TitleStageInput, opts: { coverTruncate?: boolean } = {}): TitlePair {
+/**
+ * 截断点落在词中间时会留下不能自然收尾的单字虚词（实测案例：「…三分钟自查法让」，
+ * 「让你的」被切掉一半后连 isUnnatural 的「让你的$」模式都匹配不上）。
+ * 只在共识标题路径（商品1普通模式）启用；商品2/3 与 showcase 的截断行为保持原样。
+ * 「的」不在列表里：「写给零基础的」这类名词化结尾是合法的，剥了会误伤。
+ */
+const DANGLING_TITLE_TAIL = /(?:让|把|被|给|拿|靠|和|与|或|及|而|且|之|地|得|在|从|对|向|往|比|跟|替|连)$/u;
+
+export function hasDanglingTitleTail(value: string): boolean {
+  return DANGLING_TITLE_TAIL.test(value);
+}
+
+export function stripDanglingTitleTail(value: string): string {
+  let text = value;
+  for (;;) {
+    const next = text.replace(/[，：、]$/u, '').replace(DANGLING_TITLE_TAIL, '');
+    if (next === text) return text;
+    text = next;
+  }
+}
+
+function normalizePairForInput(pair: TitlePair, input: TitleStageInput, opts: { coverTruncate?: boolean; consensusActive?: boolean } = {}): TitlePair {
   let coverTitle = pair.coverTitle;
   const hasExplicitCoverIdentity = input.topic.productId === 'delf_b2_writing'
     ? /(?:DELF\s*B2|法语\s*B2)/i.test(coverTitle)
@@ -374,12 +402,12 @@ function normalizePairForInput(pair: TitlePair, input: TitleStageInput, opts: { 
   }
   return {
     ...pair,
-    textTitle: fitTextTitle(pair.textTitle),
-    coverTitle: fitCoverTitle(coverTitle, input, opts.coverTruncate !== false),
+    textTitle: fitTextTitle(pair.textTitle, opts.consensusActive === true),
+    coverTitle: fitCoverTitle(coverTitle, input, opts.coverTruncate !== false, opts.consensusActive === true),
   };
 }
 
-function fitCoverTitle(value: string, input: TitleStageInput, allowTruncate = true) {
+function fitCoverTitle(value: string, input: TitleStageInput, allowTruncate = true, consensusActive = false) {
   const range = getCoverTemplateSpec(input.capability.renderer)?.titleLengthRange || [8, 18];
   const text = compactTitleLanguage(normalizeNaturalCounters(value))
     .replace(/还在/g, '')
@@ -387,9 +415,10 @@ function fitCoverTitle(value: string, input: TitleStageInput, allowTruncate = tr
     .replace(/全解析/g, '看清')
     .replace(/\s+/g, ' ')
     .trim();
-  if (countVisibleUnits(text) <= range[1]) return text;
-  if (!allowTruncate) return text;
-  return trimTitleAtNaturalBoundary(text, range[1]);
+  if (countVisibleUnits(text) <= range[1]) return consensusActive ? stripDanglingTitleTail(text) : text;
+  if (!allowTruncate) return consensusActive ? stripDanglingTitleTail(text) : text;
+  const trimmed = trimTitleAtNaturalBoundary(text, range[1]);
+  return consensusActive ? stripDanglingTitleTail(trimmed) : trimmed;
 }
 
 function passesHardGates(
@@ -411,6 +440,8 @@ function passesHardGates(
   if (hasOversimplifiedExamChoice(`${pair.textTitle} ${pair.coverTitle} ${pair.coverSubtitle || ''}`)) return false;
   if (selected.has(fingerprintTitle(pair.textTitle)) || coverTitles.has(fingerprintTitle(pair.coverTitle))) return false;
   if (isUnnatural(pair.textTitle) || isUnnatural(pair.coverTitle)) return false;
+  // 悬空虚词收尾只在共识路径硬拦（legacy 截断与闸门行为保持原样，零变化）。
+  if (relaxMinTextTitle && (hasDanglingTitleTail(pair.textTitle) || hasDanglingTitleTail(pair.coverTitle))) return false;
   if (/[：:，、]$/u.test(pair.textTitle) || /[：:，、]$/u.test(pair.coverTitle)) return false;
   if (!titleNumbersSupported(pair, input)) return false;
   if (!numericTransformationSupported(pair, input)) return false;
@@ -519,15 +550,57 @@ function contentNumbers(input: TitleStageInput) {
     input.content.captionParts.opening,
     ...input.content.captionParts.value,
   ].join(' ');
-  return Array.from(new Set(text.match(/\d+(?:\.\d+)?/g) || [])).filter(token => token !== '2');
+  const normalized = titleNumberGateConsensusActive(input) ? normalizeCnNumeralsBeforeUnit(text) : text;
+  return Array.from(new Set(normalized.match(/\d+(?:\.\d+)?/g) || [])).filter(token => token !== '2');
+}
+
+/**
+ * 中文数字归一化（阶段F修复3）：数字来源闸门两侧共用。
+ * 实测（batch_1787325885084 / job_002 首跑 4 组标题全灭）：内容写「三分钟」、
+ * 标题写「3分钟」，抽取只认 /\d+/ 判为正文没有的数字。这里把**紧跟量词单位**
+ * 的中文数字（三分钟、十一步、二十篇、两遍…）归一成阿拉伯数字，两侧口径一致；
+ * 闸门语义不变——正文真没有的数字仍然拦截。
+ * 只归一「数字+单位」组合：全文单字替换会把「一般」这类词误变数字制造假拦截；
+ * 单位表不含独立的「分」，避免「十分有用」被改成「10分有用」。
+ * 「一步步」这类「一+单位」短语仍会被归一；两侧用同一函数、正文同步变化，常见场景对称不误拦。
+ * 仅共识标题路径（商品1普通模式）启用，legacy（商品2/3 与 showcase）零变化。
+ */
+const CN_NUMERAL_MAP: Record<string, number> = { 零: 0, 一: 1, 二: 2, 两: 2, 三: 3, 四: 4, 五: 5, 六: 6, 七: 7, 八: 8, 九: 9 };
+const CN_NUMERAL_UNIT_PATTERN = '分钟|小时|秒|步|项|点|类|组|份|篇|条|题|词|天|个|页|张|遍|次|轮|套|维|周|月|年';
+
+function cnNumeralValue(text: string): number | null {
+  const combo = /^([零一两二三四五六七八九])?十([零一两二三四五六七八九])?$/u.exec(text);
+  if (combo) {
+    const tens = combo[1] ? CN_NUMERAL_MAP[combo[1]!] : 1;
+    const ones = combo[2] ? CN_NUMERAL_MAP[combo[2]!] : 0;
+    return tens * 10 + ones;
+  }
+  if (text.length === 1 && CN_NUMERAL_MAP[text] !== undefined) return CN_NUMERAL_MAP[text]!;
+  return null;
+}
+
+export function normalizeCnNumeralsBeforeUnit(value: string): string {
+  return value.replace(new RegExp(`[零一二两三四五六七八九十]+(?=(?:${CN_NUMERAL_UNIT_PATTERN}))`, 'gu'), (match, offset: number, whole: string) => {
+    // 「几十词」「数百题」是不定概数：归一成具体数字会凭空造出正文没有的数量（gates 实测「总差几十词」被误拦）。
+    const preceding = offset > 0 ? whole[offset - 1]! : '';
+    if (preceding === '几' || preceding === '数') return match;
+    const parsed = cnNumeralValue(match);
+    return parsed === null ? match : String(parsed);
+  });
+}
+
+function titleNumberGateConsensusActive(input: TitleStageInput): boolean {
+  return resolveTitleConsensusActive(input.topic.productId, input.topic.primaryGoal === 'conversion' || input.topic.topicLane === 'product_value');
 }
 
 function titleNumbersSupported(pair: TitlePair, input: TitleStageInput) {
   const allowed = new Set(contentNumbers(input));
+  const consensusActive = titleNumberGateConsensusActive(input);
   const text = `${pair.textTitle} ${pair.coverTitle} ${pair.coverSubtitle || ''}`
     .replace(/DELF\s*B2|B2|TEF|TCF|CLB\s*7|2026/gi, '');
-  if (!(text.match(/\d+(?:\.\d+)?/g) || []).every(token => allowed.has(token))) return false;
-  const claims = quantityClaims(text);
+  const normalizedText = consensusActive ? normalizeCnNumeralsBeforeUnit(text) : text;
+  if (!(normalizedText.match(/\d+(?:\.\d+)?/g) || []).every(token => allowed.has(token))) return false;
+  const claims = quantityClaims(normalizedText);
   if (!claims.length) return true;
   const majorContent = [
     input.topic.topic,
@@ -539,7 +612,8 @@ function titleNumbersSupported(pair: TitlePair, input: TitleStageInput) {
       ...block.items.flatMap(item => [item.primary, item.secondary || '', item.note || '']),
     ]),
   ].join(' ');
-  const supportedClaims = new Set(quantityClaims(majorContent));
+  const normalizedMajor = consensusActive ? normalizeCnNumeralsBeforeUnit(majorContent) : majorContent;
+  const supportedClaims = new Set(quantityClaims(normalizedMajor));
   return claims.every(claim => supportedClaims.has(claim));
 }
 
@@ -814,6 +888,7 @@ function titleGateFailures(pair: TitlePair, input: TitleStageInput, selected: Se
   if (resolveTitleConsensusActive(input.topic.productId, input.topic.primaryGoal === 'conversion' || input.topic.topicLane === 'product_value')) {
     const beyondRange = titlePromiseBeyondRange(pair, input.topic);
     if (beyondRange) failures.push(beyondRange);
+    if (hasDanglingTitleTail(pair.textTitle) || hasDanglingTitleTail(pair.coverTitle)) failures.push('标题以悬空虚词收尾，句子不完整');
   }
   if (selected.has(fingerprintTitle(pair.textTitle)) || coverTitles.has(fingerprintTitle(pair.coverTitle))) failures.push('与近期标题重复');
   return failures;

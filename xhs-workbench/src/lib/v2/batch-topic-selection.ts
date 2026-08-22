@@ -29,6 +29,13 @@ export interface BatchTopicSelectionInput {
   cardUsedTopicTexts: string[];
   /** 整批（前面卡）已使用的选题文本：软规避，只警告。 */
   batchUsedTopicTexts: string[];
+  /**
+   * 整批（前面卡）已使用的选题方向：桶按该方向已用次数升序，实现跨卡方向轮转
+   * （阶段F修复4：batch_1787325885084 三卡全选大痛点型）。
+   * 只有商品1普通模式的共识分支传入；缺省或为空时稳定排序保持插入顺序，
+   * 商品2/3 与 showcase 的调用行为零变化。
+   */
+  batchUsedDirections?: string[];
 }
 
 export interface UnselectedCandidate {
@@ -93,7 +100,13 @@ export function selectTopicsForCard(input: BatchTopicSelectionInput): BatchTopic
   };
 
   // 第一轮：每个方向桶取一个，凑满 N 或桶用尽（保证 N 个尽量来自不同方向）。
-  for (const group of buckets.values()) {
+  // 修复4：桶访问顺序按「该方向整批已用次数」升序——前面卡用过的方向排后面，
+  // 后面的卡优先覆盖没出现过的方向。
+  const directionUsage = (direction: string) =>
+    (input.batchUsedDirections || []).filter(used => used === direction).length;
+  const orderedGroups = [...buckets.values()]
+    .sort((a, b) => directionUsage(a[0]!.direction || '(未分类)') - directionUsage(b[0]!.direction || '(未分类)'));
+  for (const group of orderedGroups) {
     if (selected.length >= desired) break;
     pick(group[0]!);
   }

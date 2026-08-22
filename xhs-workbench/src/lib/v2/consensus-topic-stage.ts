@@ -386,7 +386,7 @@ export function buildConsensusTopicSystemPrompt(productId: ProductId): string {
     '19. 本商品写作官方评分是5个维度按表现档位评分，不是按错误逐项扣分；禁止把选题设计成“考官逐条扣分、每错一项扣几分、扣分表”一类角度。',
     '20. 禁止在用户可见文本中使用内部资料编号或模块ID；支持模块名只能出现在“商品承接依据”字段里。',
     '21. “本篇说话动作”和“开头情绪起势”各写一句原创表达，不得与历史去重信息中的表达方向重复。',
-    '每个选题对象必须使用这些中文键：选题方向、选题名称、对应的用户真实状态、用户使用场景、用户真正想得到的结果、这篇内容准备解决什么、准备展开的内容（数组）、商品承接依据（对象：能力编号、支持模块）、为什么适合当前封面、用户为什么可能点击、本篇说话动作、开头情绪起势、是否可能与历史选题重复（布尔）。字段要简洁，但不能留空。',
+    '每个选题对象必须使用这些中文键：选题方向、选题名称、对应的用户真实状态、用户使用场景、用户真正想得到的结果、这篇内容准备解决什么、准备展开的内容（数组）、商品承接依据（对象：能力编号、支持模块；能力编号只填一个，逐字复制商品能力表中的编号，不要合并多个编号）、为什么适合当前封面、用户为什么可能点击、本篇说话动作、开头情绪起势、是否可能与历史选题重复（布尔）。字段要简洁，但不能留空。',
   ].join('\n');
 }
 
@@ -575,11 +575,25 @@ export function parseConsensusTopicCandidate(
   let productBridge = '';
   if (bridgeRaw && typeof bridgeRaw === 'object') {
     const record = bridgeRaw as Record<string, unknown>;
-    const capabilityId = clean(pick(record, ['能力编号', 'capabilityId']));
+    // 实测（batch_1787325885084 / job_003）：AI 会把多个真实能力编号写进一个字段
+    // （「cap-topic-ideas, cap-syntax-library」），整串等值匹配必然失配，拼出的
+    // productBridge 为空再被 missing_product_bridge 硬杀，3 候选全灭走兜底。
+    // 这里按分隔符拆 token 逐个对表匹配，任一命中即取第一个命中项做 canonical
+    // 编号并回填真实能力描述；全部不命中时不回填——空承接照旧被硬拦，
+    // 防编造商品能力的闸门不能为了降低失败率而放松。
+    const rawCapabilityValue = pick(record, ['能力编号', 'capabilityId']);
+    const rawCapabilityId = Array.isArray(rawCapabilityValue)
+      ? rawCapabilityValue.map(item => clean(item)).filter(Boolean).join(', ')
+      : clean(rawCapabilityValue);
+    const matchedCapability = rawCapabilityId
+      .split(/[,，、;；/\/\s]+/)
+      .map(token => ctx.editorialCapabilities.find(cap => cap.capabilityId === token))
+      .find((cap): cap is EditorialCapability => Boolean(cap));
+    const capabilityId = matchedCapability ? matchedCapability.capabilityId : rawCapabilityId;
     const modules = uniqueStrings(pick(record, ['支持模块', 'modules', 'supportModules']), 6);
     if (capabilityId || modules.length) {
       bridgeBasis = { capabilityId, modules };
-      const capabilityText = ctx.editorialCapabilities.find(cap => cap.capabilityId === capabilityId)?.capability
+      const capabilityText = matchedCapability?.capability
         || clean(pick(record, ['商品能力', 'capability']));
       productBridge = modules.length
         ? [capabilityText, `模块：${modules.join('、')}`].filter(Boolean).join('（') + '）'
