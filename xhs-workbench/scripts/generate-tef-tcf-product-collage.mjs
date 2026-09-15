@@ -2,22 +2,22 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { chromium } from 'playwright';
 
-const root = 'C:/Users/imwuj/AppData/Local/Temp';
+const sourceDir = path.resolve('data/product-showcase/tef-tcf-ca-clb');
 const sourceNames = [
-  'codex-clipboard-eeffc26f-0038-417b-a97e-9a427e69fb86.png',
-  'codex-clipboard-3549e779-f385-4987-a1c8-545cd4c5296e.png',
-  'codex-clipboard-bc49095b-1005-41f3-a9e5-4e6f953594f3.png',
-  'codex-clipboard-6c9ab83b-f951-44a7-8dc5-cdf2f7d7ec03.png',
-  'codex-clipboard-53e2d87e-074a-4b96-b501-489ee83efbcb.png',
-  'codex-clipboard-40920f64-294b-4db2-af05-4ba437bb2a94.png',
-  'codex-clipboard-0068c32d-3362-4529-b946-d5d4deec5a4f.png',
-  'codex-clipboard-c25ecfec-01ac-44ce-a11e-b71756c95c98.png',
+  '01-product-overview.png',
+  '02-clb7-diagnosis.png',
+  '03-writing-phrases.png',
+  '04-writing-conclusion.png',
+  '05-vocabulary.png',
+  '06-listening.png',
+  '07-speaking.png',
+  '08-writing-samples.png',
 ];
 const destination = path.resolve('public/generated-cover-backgrounds/tef-tcf-product-library-collage.png');
 const previewDestination = path.resolve('public/generated-cover-backgrounds/tef-tcf-product-bridge-preview.png');
 
 const images = await Promise.all(sourceNames.map(async (name) => {
-  const data = await fs.readFile(path.join(root, name));
+  const data = await fs.readFile(path.join(sourceDir, name));
   return `data:image/png;base64,${data.toString('base64')}`;
 }));
 

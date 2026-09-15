@@ -10,7 +10,7 @@ copy .env.example .env.local
 npm run dev
 ```
 
-打开 `http://localhost:4000`。首次运行前，在 `.env.local` 填入可用的文本模型配置；需要生图时再填写图片模型配置。不要把真实密钥提交到 GitHub。
+打开 `http://localhost:3000`。首次运行前，在 `.env.local` 填入可用的文本模型配置；需要生图时再填写图片模型配置。不要把真实密钥提交到 GitHub。
 
 生产模式：
 
@@ -22,8 +22,32 @@ npm run start
 默认事实卡位于 `data/product_facts_delf_b2.json`、`data/product_facts_tef_tcf.json` 和 `data/product_facts_tcf_canada_7day.json`。如果事实卡放在其他位置，可在 `.env.local` 中配置对应路径。
 
 - `public/reference-covers/` 是参考封面库。
+- `public/cover-style-refs/xhs-dazibao/` 是 content_note 图生图使用的小红书大字报参考图池。
 - `public/showcase/` 是商品知识库展示截图。
+- `public/generated-cover-backgrounds/` 包含三个商品正式末页直接使用的固定拼图 PNG。
+- `data/market/` 包含 TCF / DELF 的本地 Market CSV 和 DELF Reference-first Topic Seed。
+- `data/product-showcase/` 保存商品2、商品3末页拼图的原始资料截图，可在其他电脑重新生成拼图。
 - 批次 JSON、日志和临时验收页属于本机运行状态，不随仓库发布。
+
+## 同事接手检查
+
+仓库已经包含正式生产所需的本地 CSV、Topic Seed、封面参考图、商品展示截图和固定末页 PNG。克隆后只需安装依赖、复制环境变量模板并填入自己的 API Key：
+
+```bash
+npm install
+copy .env.example .env.local
+npm run build
+npm run dev
+```
+
+不填写图片 API 配置时仍可测试 Topic、Inner、Title 和现有静态页面；真实生成 AI 封面时才需要 `IMAGE_API_*`。三个商品末页均使用仓库内固定 PNG，不依赖本机临时目录，也不会触发付费生图。
+
+如需重新生成商品2或商品3末页拼图：
+
+```bash
+node scripts/generate-tef-tcf-product-collage.mjs
+node scripts/generate-tcf-writing-7day-product-collage.mjs
+```
 
 ## Next.js
 
