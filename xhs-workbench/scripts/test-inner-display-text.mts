@@ -1,0 +1,15 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import {inlineRuns,publicInnerTitle} from '../src/lib/inner-display-text';
+const text='**Objet :** [Votre Nom] *法文* <script>alert(1)</script> 2 * 3';
+const expected='Objet : [Votre Nom] 法文 <script>alert(1)</script> 2 * 3';
+assert.equal(inlineRuns(text).map(r=>r.text).join(''),expected);
+for(let i=0;i<=text.length;i++)assert.equal([...inlineRuns(text,0,i),...inlineRuns(text,i)].map(r=>r.text).join(''),expected);
+assert.equal(publicInnerTitle('改写资产：职场场景'),'改写对照：职场场景');
+assert.equal(publicInnerTitle('资产管理法语'),'资产管理法语');
+const source=await fs.readFile('src/lib/v2/content-stage.ts','utf8');
+assert.ok(source.includes('最多输出5个教学JSON页面'));
+assert.ok(source.includes('类别、场景、数量与必要案例保持不变'));
+assert.ok(source.includes('全篇普通教学内容优先控制在约900至1200个中法可见字符'));
+assert.ok(!source.includes('不设固定页数、条数或字数'));
+console.log('PASS: paired emphasis, cross-page offsets, placeholders/plain punctuation, narrow title projection, production five-page/content budget prompt. AI_CALLS=0');

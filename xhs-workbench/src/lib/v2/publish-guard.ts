@@ -1,6 +1,9 @@
 import type { ProductId } from '@/types/data';
+import { resolvePipelineFeatures } from './pipeline-features';
 import type { EvidenceSnippet } from '@/types/reference-workflow';
-import { countVisibleUnits, REQUIRED_INNER_PAGE_COUNT, type ContentPackage, type TemplateCapability, type TopicOption } from './contracts';
+import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
+import { countVisibleUnits, type ContentPackage, type TemplateCapability, type TopicOption } from './contracts';
+import { inspectFinalOutput } from './final-output-gate';
 
 export interface PublishIssue {
   code: string;
@@ -15,15 +18,47 @@ export interface PublishInspection {
 }
 
 const RELEASE_BLOCKING_ISSUES = new Set([
-  'cover_density_below_contract',
-  'cover_group_underfilled',
-  'false_product_form',
-  'fabricated_authority',
-  'unsupported_exam_consequence',
+  // 快速可用模式：Claim Gate 只阻断未经依据的官方/考试机构归因。
+  // 其他事实、经验、数字和营销判断保留为 warning，不拖垮整条 Job。
+  'false_official_attribution',
+  // 空封面或超过四成区域没有有效条目，会直接产出不可用图片，属于重大生产错误。
+  'cover_empty_after_projection',
+  'cover_severely_underfilled',
+  'raw_markup_residue',
+  'visible_dangling_fragment',
+  'root_structure_duplicate',
+  'promised_count_unfulfilled',
+  'final_teaching_qa_failed',
+  'caption_stale',
+  'bridge_internal_language',
 ]);
 
 export function isReleaseBlockingIssue(issue: PublishIssue) {
   return RELEASE_BLOCKING_ISSUES.has(issue.code);
+}
+
+const REPAIRABLE_QUALITY_ISSUES = new Set([
+  'ai_cliche_visible',
+  'caption_choppy_parallel',
+  'caption_repetitive_scene_frame',
+  'caption_numbered_scaffold',
+  'caption_decorative_metaphor',
+  'caption_generic_pain_opening',
+  'caption_generic_cta',
+  'caption_recent_cta_repeat',
+  'cover_density_below_contract',
+  'cover_group_underfilled',
+  'cover_four_part_underfilled',
+  'cover_four_part_structure_mismatch',
+  'cover_four_part_placeholder',
+  'cover_duplicate_item',
+  'cover_empty_after_projection',
+  'cover_severely_underfilled',
+]);
+
+/** 这类问题值得让内容 AI 返修，但返修失败不能烧掉整条工作流。 */
+export function isRepairableQualityIssue(issue: PublishIssue) {
+  return REPAIRABLE_QUALITY_ISSUES.has(issue.code);
 }
 
 export function issueAsWarning(issue: PublishIssue) {
@@ -36,59 +71,156 @@ const UNSUPPORTED_EXAM_CONSEQUENCE = /(?:少于|不够|没到).{0,12}\d+.{0,8}(?
 const RISKY_PRODUCT_FACT = /(?:知识库|资料包|资料|范文|句型|词汇|观点|清单).{0,24}(?:共|包含|涵盖|收录|整理|有).{0,10}\d+|\d+.{0,10}(?:篇|条|份|套|个).{0,10}(?:范文|句型|词汇|观点|表达|资料|模板|清单)|\d+\s*(?:expressions?|mod[eè]les?)/i;
 const FALSE_PRODUCT_FORM = /(?:课程|网课|一对一|老师批改|直播课|无限答疑)/i;
 const FAKE_AUTHORITY = /(?:一项|有项|相关)?研究表明|数据显示|调查显示|考官(?:透露|表示|说)/i;
+const FALSE_OFFICIAL_ATTRIBUTION = /(?:\b(?:DELF|TEF|TCF)\b|France\s*[ÉE]ducation\s+international|官方|考试官方|官方评分标准|考官).{0,32}(?:规定|要求|明确|必须|只能|一定|建议|指出|说明|表明|认为|按照官方|评分标准(?:中)?(?:规定|要求)?)/iu;
 const UNSUPPORTED_LEARNING_NUMBER = /(?:每(?:一)?段|一段).{0,24}(?:80|100|120|150|200)\s*词|(?:很多|多数|大部分)考生.{0,20}\d+\s*词/i;
 const INTERNAL_SOURCE_ID = /\b(?:OFF-[A-Z-]+-\d{2,4}|[A-Z]{2,5}-\d{2,4})(?:\s*[~～—–]\s*(?:[A-Z]{2,5}-)?\d{2,4})?\b/i;
-const AI_CLICHE = /不是.{0,24}而是|真正的(?:原因|问题)|建议收藏|这一页最值得/i;
-const EXAM_FACT_DISCLAIMER = /(?:(?:不代表|不等于|并非|不是).{0,8}(?:官方)?评分标准|非(?:官方)?评分标准)/i;
+const AI_CLICHE = /不是.{0,24}而是|真正的(?:原因|问题)|建议收藏|这一页最值得|别让.{0,12}拖后腿|(?:又|总是)?卡(?:了|主了|住了)|守住(?:这|那)?一分|替换就守住/i;
+const DECORATIVE_METAPHOR = /(?:承重墙|脚手架|填充血肉|像钉子一样|给观点施肥|展示语言实力的舞台|冲刺的利器|组合拳|隐形杀手)/i;
+const GENERIC_CTA = /(?:把今天这套方法用到下一篇|现在挑一个相近题目|先用其中一个表达改写自己的句子|保存后立刻做一次限时练习|再看哪一步最容易卡住|按本篇顺序逐项检查)/i;
+const GENERIC_PAIN_OPENING = /^(?:[^。！？]{0,28}[：:]\s*)?(?:你是不是|还在为|离考试|别再|总是)/u;
+const EXAM_FACT_DISCLAIMER = /(?:(?:不代表|不等于|并非|不是).{0,8}(?:官方)?评分标准|非(?:官方)?评分标准|(?:并非|不是|不).{0,8}(?:按|逐项).{0,5}扣分)/i;
 const WORD_COUNT_TRANSFORMATION = /从\s*(\d+)\s*词?.{0,8}(?:到|扩到|写到)\s*(\d+)\s*词?/i;
 const PADDING_BY_PARAPHRASE = /用不同表达方式展开同一观点|反复(?:阐述|表达).{0,10}(?:同一|一个)观点|(?:换用|改用).{0,18}(?:再谈一次|再说一次)/i;
 const OVERSIMPLIFIED_EXAM_CHOICE = /(?:擅长|喜欢|偏好|不擅长|害怕|长篇论证|短小精悍|反应快|不怕即兴).{0,32}(?:TEF|TCF).{0,18}(?:更适合|就选|更合拍|发挥空间)|(?:TEF|TCF).{0,32}(?:更适合你|直接选|更合拍|发挥空间)/i;
+const FABRICATED_PERSONAL_EXPERIENCE = /(?:还记得.{0,8}我|我(?:当时|考前|上岸|亲测|后来发现|曾经).{0,28}|焦虑得睡不着|我靠.{0,12}(?:通过|拿到|提分))/i;
+const PLACEHOLDER_SUPPORT = /^(?:[A-D][)）.]?\s*)?(?:选项|示例|内容|答案|要点|维度|步骤|词语)[一二三四1234]$|待补充|占位/iu;
+
+function getCaptionGuardContract(input: { productId: string; topic: TopicOption; capability: TemplateCapability }) {
+  // 三个商品的普通教育内容都与共识内容 prompt 共用同一篇幅契约；
+  // showcase 仍保留独立规则，避免模板形态被“固定三段”反向污染。
+  const consensus = resolvePipelineFeatures(input.productId as ProductId).consensusContentBrief
+    && input.topic.primaryGoal !== 'conversion'
+    && input.topic.topicLane !== 'product_value';
+  if (!consensus) return { minValueParagraphs: 3, maxValueParagraphs: 3, minParagraphUnits: 35 };
+  switch (input.capability.family) {
+    case 'experience':
+    case 'pain':
+      return { minValueParagraphs: 2, maxValueParagraphs: 4, minParagraphUnits: 35 };
+    case 'phrase':
+    case 'flashcard':
+    case 'table':
+      return { minValueParagraphs: 2, maxValueParagraphs: 4, minParagraphUnits: 28 };
+    case 'offer':
+    case 'roadmap':
+    case 'book':
+      return { minValueParagraphs: 2, maxValueParagraphs: 4, minParagraphUnits: 40 };
+    case 'directory':
+    case 'document':
+    default:
+      return { minValueParagraphs: 3, maxValueParagraphs: 5, minParagraphUnits: 38 };
+  }
+}
 
 export function inspectForPublish(
   original: ContentPackage,
-  input: { productId: ProductId; topic: TopicOption; capability: TemplateCapability; evidence: EvidenceSnippet[] },
+  input: { productId: ProductId; topic: TopicOption; capability: TemplateCapability; evidence: EvidenceSnippet[]; recentCaptionEndings?: string[] },
 ): PublishInspection {
   const content = structuredClone(original);
   const hardIssues: PublishIssue[] = [];
   const warnings: string[] = [];
-  applyPaidProductBridge(content, input.productId);
-  fitCaptionLength(content);
+  const captionContract = getCaptionGuardContract(input);
+  const editorialOnly = input.topic.knowledgeMode === 'educational_original';
+  const isProductShowcase = input.topic.primaryGoal === 'conversion' || input.topic.topicLane === 'product_value';
+  if (editorialOnly) {
+    content.captionParts.productBridge = '';
+    content.captionParts.opening = stripEditorialProductReferences(content.captionParts.opening);
+    content.captionParts.value = content.captionParts.value.map(stripEditorialProductReferences).filter(Boolean);
+    content.captionParts.cta = stripEditorialProductReferences(content.captionParts.cta);
+    if (!content.captionParts.cta || /(?:知识库|资料包|商品|购买|小黄车|配套资料|评论区链接|下方链接)/i.test(content.captionParts.cta)) {
+      content.captionParts.cta = educationalOriginalCta(input.topic, input.capability.renderer, input.recentCaptionEndings || []);
+    }
+    content.bridgePlan = undefined;
+    content.factualClaims = content.factualClaims.filter(claim => claim.type !== 'product');
+  } else {
+    applyPaidProductBridge(content, input.productId);
+  }
+  fitCaptionLength(content, captionContract.maxValueParagraphs);
   removeKnownAiCliches(content);
   ensureSeoOpening(content, input.topic);
   normalizeIncompleteEnumerations(content, warnings);
-  fitDirectoryCoverItems(content, input.capability, warnings);
+  fitCoverItemsToVisualContract(content, input.capability, warnings, isProductShowcase);
+  if (input.capability.renderer === 'french_a1_practice_sheet') {
+    const totalItems = content.coverBlocks.reduce((sum, block) => sum + block.items.length, 0);
+    if (content.coverBlocks.length !== 1 || totalItems < 7 || totalItems > 8) {
+      hardIssues.push(issue('cover_four_part_structure_mismatch', '四项拆解页必须是1个分组、7到8个主项，不能把支项拆成多个分组或普通条目', 'coverBlocks'));
+    }
+    for (const [blockIndex, block] of content.coverBlocks.entries()) {
+      for (const [itemIndex, item] of block.items.entries()) {
+        const parts = (item.note || '').split(/[·｜|]/).map(value => value.trim()).filter(Boolean);
+        if (parts.length !== 4) hardIssues.push(issue('cover_four_part_underfilled', '四项拆解页的每个主项必须正好有4个并列支项', `coverBlocks[${blockIndex}].items[${itemIndex}]`));
+        if (parts.some(part => PLACEHOLDER_SUPPORT.test(part))) hardIssues.push(issue('cover_four_part_placeholder', '四项拆解页出现“选项二/待补充”等占位内容，必须改成真实支项', `coverBlocks[${blockIndex}].items[${itemIndex}].note`));
+      }
+    }
+  }
   removeVisibleSourceIds(content, warnings);
 
   const caption = captionText(content);
   const captionUnits = countVisibleUnits(caption);
-  if (captionUnits < 280) hardIssues.push(issue('caption_too_short', `正文只有 ${captionUnits} 字，至少需要 280 字`, 'captionParts'));
+  // 密集词表/短语表的主要价值已在封面给足；正文 200 个可见单位并配合分段下限，已能形成完整小红书说明。
+  if (captionUnits < 200) hardIssues.push(issue('caption_too_short', `正文只有 ${captionUnits} 字，至少需要 200 字`, 'captionParts'));
   if (captionUnits > 850) hardIssues.push(issue('caption_too_long', `正文有 ${captionUnits} 字，超过 850 字`, 'captionParts'));
   if (!normalize(caption.slice(0, 100)).includes(normalize(input.topic.seo.primary))) {
     hardIssues.push(issue('seo_missing_from_opening', '正文前 100 字没有自然出现主搜索词', 'captionParts.opening'));
   }
   if (FREE_CTA.test(caption)) hardIssues.push(issue('free_cta_conflicts_with_paid_product', '付费商品笔记仍在引导免费领取或私信领取', 'captionParts'));
-  if (content.captionParts.value.length < 3) hardIssues.push(issue('caption_value_too_thin', '正文干货段少于 3 段', 'captionParts.value'));
+  if (content.captionParts.value.length < captionContract.minValueParagraphs) {
+    hardIssues.push(issue('caption_value_too_thin', `正文干货段少于 ${captionContract.minValueParagraphs} 段`, 'captionParts.value'));
+  }
   content.captionParts.value.forEach((paragraph, index) => {
     const units = countVisibleUnits(paragraph);
-    if (units < 35) hardIssues.push(issue('caption_paragraph_too_thin', `第 ${index + 1} 段只有 ${units} 字，像提纲而不是正文`, `captionParts.value[${index}]`));
+    if (units < captionContract.minParagraphUnits) hardIssues.push(issue('caption_paragraph_too_thin', `第 ${index + 1} 段只有 ${units} 字，像提纲而不是正文`, `captionParts.value[${index}]`));
+    const sentences = paragraph.split(/[。！？!?；;]+/u).map(value => value.trim()).filter(Boolean);
+    const shortSentences = sentences.filter(value => countVisibleUnits(value) <= 18);
+    if (sentences.length >= 3 && shortSentences.length >= 3 && shortSentences.length / sentences.length >= 0.7) {
+      hardIssues.push(issue('caption_choppy_parallel', `第 ${index + 1} 段连续使用过多短句，读起来像AI排比提纲`, `captionParts.value[${index}]`));
+    }
   });
+  const sceneFrames = [content.captionParts.opening, ...content.captionParts.value]
+    .filter(value => /(?:场景|时候|情况下|阶段)[^。！？]{0,16}[，,:：]?\s*你/u.test(value));
+  if (sceneFrames.length >= 2) {
+    hardIssues.push(issue('caption_repetitive_scene_frame', '正文反复使用“某某场景，你……”的同一种句式', 'captionParts'));
+  }
+  const numberedScaffold = content.captionParts.value.join('\n').match(/(?:首先|其次|最后|第一(?:步|点)|第二(?:步|点)|第三(?:步|点)|第四(?:步|点))/gu) || [];
+  if (numberedScaffold.length >= 3) {
+    hardIssues.push(issue('caption_numbered_scaffold', '正文连续使用编号推进，读起来像固定的123提纲', 'captionParts.value'));
+  }
+  if (DECORATIVE_METAPHOR.test(caption)) {
+    hardIssues.push(issue('caption_decorative_metaphor', '正文用装饰性比喻替代了具体解释，需换成可核对的信息或例子', 'captionParts'));
+  }
+  if (GENERIC_PAIN_OPENING.test(content.captionParts.opening.trim())) {
+    hardIssues.push(issue('caption_generic_pain_opening', '正文开头仍是泛痛点提问，需改为具体写作动作、句子或结果', 'captionParts.opening'));
+  }
+  if (GENERIC_CTA.test(content.captionParts.cta)) {
+    hardIssues.push(issue('caption_generic_cta', 'CTA 是跨选题复用的泛练习模板，需接住本篇具体内容', 'captionParts.cta'));
+  }
+  if (repeatsRecentCaptionEnding(content.captionParts.cta, input.recentCaptionEndings || [])) {
+    hardIssues.push(issue('caption_recent_cta_repeat', 'CTA 与近期已发布内容的收尾重复，需换一个本篇专属动作', 'captionParts.cta'));
+  }
   ensureInnerPageCount(content, warnings);
 
   const compact = input.capability.densityTiers[0];
   const validBlocks = content.coverBlocks.filter(block => input.capability.acceptedBlockKinds.includes(block.kind));
+  const acceptsEllipsizedRows = input.capability.renderer === 'french_oral_question_bank';
   const fittingBlocks = validBlocks
     .map(block => ({
       block,
-      items: block.items.filter(item => (
+      items: block.items.filter(item => acceptsEllipsizedRows || (
         countVisibleUnits(item.primary) <= compact.primaryVisualLength[1]
         && countVisibleUnits(item.secondary || '') <= compact.secondaryVisualLength[1]
       )),
     }))
     .filter(entry => entry.items.length > 0);
   const totalItems = fittingBlocks.reduce((sum, entry) => sum + entry.items.length, 0);
-  const minimumItems = compact.sectionRange[0] * compact.itemRange[0];
+  const templateSpec = getCoverTemplateSpec(input.capability.renderer);
+  const minimumItems = templateSpec?.minTotalItems
+    ?? compact.sectionRange[0] * compact.itemRange[0];
   if (fittingBlocks.length < compact.sectionRange[0] || totalItems < minimumItems) {
     hardIssues.push(issue('cover_density_below_contract', `封面编译后只有 ${fittingBlocks.length} 组 ${totalItems} 条完整短条目，模板至少需要 ${compact.sectionRange[0]} 组 ${minimumItems} 条`, 'coverBlocks'));
+  }
+  if (totalItems === 0) {
+    hardIssues.push(issue('cover_empty_after_projection', '封面没有任何可排版条目，属于不可发布的空封面', 'coverBlocks'));
+  } else if (totalItems < Math.ceil(minimumItems * 0.6)) {
+    hardIssues.push(issue('cover_severely_underfilled', `封面只有 ${totalItems}/${minimumItems} 条，空白超过可接受范围`, 'coverBlocks'));
   }
   const underfilledBlocks = fittingBlocks.filter(entry => entry.items.length < compact.itemRange[0]);
   if (underfilledBlocks.length > Math.floor(fittingBlocks.length / 2)) {
@@ -96,15 +228,33 @@ export function inspectForPublish(
   }
   for (const [blockIndex, block] of validBlocks.entries()) {
     for (const [itemIndex, item] of block.items.entries()) {
-      if (countVisibleUnits(item.primary) > compact.primaryVisualLength[1]) warnings.push(`封面长主条目将转入内页：coverBlocks[${blockIndex}].items[${itemIndex}].primary`);
-      if (item.secondary && countVisibleUnits(item.secondary) > compact.secondaryVisualLength[1]) warnings.push(`封面长副条目将转入内页：coverBlocks[${blockIndex}].items[${itemIndex}].secondary`);
+      if (!acceptsEllipsizedRows && countVisibleUnits(item.primary) > compact.primaryVisualLength[1]) warnings.push(`封面长主条目将转入内页：coverBlocks[${blockIndex}].items[${itemIndex}].primary`);
+      if (!acceptsEllipsizedRows && item.secondary && countVisibleUnits(item.secondary) > compact.secondaryVisualLength[1]) warnings.push(`封面长副条目将转入内页：coverBlocks[${blockIndex}].items[${itemIndex}].secondary`);
     }
+  }
+  if (input.capability.languagePolicy === 'primary_french') {
+    const seenPrimary = new Set<string>();
+    content.coverBlocks.forEach((block, blockIndex) => block.items.forEach((item, itemIndex) => {
+      const path = `coverBlocks[${blockIndex}].items[${itemIndex}]`;
+      const key = normalizeCoverItem(item.primary);
+      if (typeof item.secondary !== 'string' || !item.secondary.trim()) {
+        hardIssues.push(issue('cover_translation_missing', `法语条目缺少对应中文释义：${item.primary}`, path));
+      }
+      if (key && seenPrimary.has(key)) {
+        hardIssues.push(issue('cover_duplicate_item', `封面存在重复法语条目：${item.primary}`, path));
+      }
+      if (key) seenPrimary.add(key);
+    }));
   }
 
   const evidenceById = new Map(input.evidence.map(item => [item.id, item]));
+  // 先清理没有证据的练习时长/数量，再判断 factualClaims 是否仍有“无证据事实”
+  // 留在用户可见内容中；否则先判错会让后续的安全降级永远来不及生效。
+  sanitizeUnsupportedPracticeFacts(content, evidenceById);
   const invalidClaimIndexes = new Set<number>();
   for (const [index, claim] of content.factualClaims.entries()) {
     if (claim.type !== 'product' && claim.type !== 'exam') continue;
+    if (editorialOnly && claim.type === 'exam') continue;
     const sources = claim.sourceIds.map(id => evidenceById.get(id)).filter((item): item is EvidenceSnippet => Boolean(item));
     if (!sources.length) {
       invalidClaimIndexes.add(index);
@@ -122,16 +272,35 @@ export function inspectForPublish(
       warnings.push(`已丢弃数字无证据的内部事实声明：${claim.text.slice(0, 40)}`);
     }
   }
-  if (invalidClaimIndexes.size) content.factualClaims = content.factualClaims.filter((_, index) => !invalidClaimIndexes.has(index));
+  if (invalidClaimIndexes.size) {
+    const invalidClaims = content.factualClaims.filter((_, index) => invalidClaimIndexes.has(index));
+    for (const claim of invalidClaims) {
+      for (const entry of publicTextEntries(content)) {
+        // 没有数字、考试结果或官方后果的普通选考说明（例如“先判断考TEF还是TCF”）
+        // 不是事实声明本身；不要因为它与一个被丢弃的内部 planning claim 共享考试名，
+        // 就把整篇正文判成 invalid_claim_still_public。
+        if (claim.type === 'exam' && !numericTokens(claim.text).length
+          && !numericTokens(entry.text).length
+          && !UNSUPPORTED_EXAM_CONSEQUENCE.test(entry.text)) continue;
+        if (textOverlaps(entry.text, claim.text)) {
+          const claimIssueCode = FALSE_OFFICIAL_ATTRIBUTION.test(entry.text)
+            ? 'false_official_attribution'
+            : 'invalid_claim_still_public';
+          hardIssues.push(issue(claimIssueCode, `内部事实声明已因无证据丢弃，但同一说法仍在用户可见内容中：${entry.text.slice(0, 80)}`, entry.path));
+        }
+      }
+    }
+    content.factualClaims = content.factualClaims.filter((_, index) => !invalidClaimIndexes.has(index));
+  }
 
-  sanitizeUnsupportedPracticeFacts(content, evidenceById);
-
+  if (!editorialOnly) {
   const productBridge = content.captionParts.productBridge;
   const productEvidence = input.evidence.filter(item => item.category !== 'official_exam_fact');
   const fallbackAsset = productEvidence
     .slice()
-    .sort((left, right) => conversionAssetRank(left.category) - conversionAssetRank(right.category))[0];
-  if (fallbackAsset && /这套(?:资料库|知识库|资料包)里的[“\"]/.test(content.captionParts.productBridge)) {
+    .sort((left, right) => productAssetRelevance(right, input.topic) - productAssetRelevance(left, input.topic)
+      || conversionAssetRank(left.category) - conversionAssetRank(right.category))[0];
+  if (fallbackAsset && (/(?:这套(?:资料库|知识库|资料包)里的[“"]|模块\s*[A-ZＡ-Ｚ0-9一二三四五六七八九十]+\s*[-·:：]|\bv\d+(?:\.\d+)*\b)/iu.test(content.captionParts.productBridge))) {
     content.captionParts.productBridge = fitCompleteText(naturalProductBridge(fallbackAsset.text, input.productId), 105);
     warnings.push('商品承接已从内部证据引语改成面向用户的自然说明');
   }
@@ -161,10 +330,23 @@ export function inspectForPublish(
     }
     warnings.push('商品承接中的武断选考建议已自动改成中性决策动作');
   }
+  }
 
   for (const entry of publicTextEntries(content)) {
+    if (FABRICATED_PERSONAL_EXPERIENCE.test(entry.text)) hardIssues.push(issue('fabricated_personal_experience', `内容伪造了输入中没有的个人经历：${entry.text.slice(0, 80)}`, entry.path));
     if (claimsUnavailableProductForm(entry.text, entry.path)) hardIssues.push(issue('false_product_form', `知识库/资料包被写成了不存在的课程或服务：${entry.text.slice(0, 80)}`, entry.path));
-    if (FAKE_AUTHORITY.test(entry.text)) hardIssues.push(issue('fabricated_authority', `内容引用了未提供证据的研究、数据或考官说法：${entry.text.slice(0, 80)}`, entry.path));
+    if (FALSE_OFFICIAL_ATTRIBUTION.test(entry.text)) {
+      const officialClaims = content.factualClaims.filter(claim => claim.type === 'exam');
+      const officialClaimText = extractExamFactText(entry.text);
+      const supported = factSupportedByPathSources(officialClaimText, entry.sourceIds || [], evidenceById, true)
+        || factRegisteredByPathClaim(officialClaimText, entry.sourceIds || [], content.factualClaims, evidenceById, true)
+        || isFactSupportedByCombinedSources(officialClaimText, officialClaims, evidenceById, true);
+      if (!supported) hardIssues.push(issue('false_official_attribution', `内容把未经官方事实卡支持的判断归因于官方/考官：${entry.text.slice(0, 80)}`, entry.path));
+    }
+    if (FAKE_AUTHORITY.test(entry.text)) {
+      const code = FALSE_OFFICIAL_ATTRIBUTION.test(entry.text) ? 'false_official_attribution' : 'fabricated_authority';
+      hardIssues.push(issue(code, `内容引用了未提供证据的研究、数据或考官说法：${entry.text.slice(0, 80)}`, entry.path));
+    }
     if (UNSUPPORTED_LEARNING_NUMBER.test(entry.text)) {
       const officialClaims = content.factualClaims.filter(claim => claim.type === 'exam');
       const supported = isFactSupportedByCombinedSources(entry.text, officialClaims, evidenceById, true);
@@ -181,7 +363,7 @@ export function inspectForPublish(
       const hasCompleteExample = content.innerPages.some(page => countFrenchWords([page.lead, ...page.bullets].join(' ')) >= target);
       if (!hasCompleteExample) hardIssues.push(issue('word_count_transformation_without_full_example', `承诺扩写到${target}词，但内页没有一篇达到该词数的完整法语示例`, entry.path));
     }
-    if (UNSUPPORTED_EXAM_CONSEQUENCE.test(entry.text)) {
+    if (UNSUPPORTED_EXAM_CONSEQUENCE.test(entry.text) && !EXAM_FACT_DISCLAIMER.test(entry.text)) {
       const support = normalize(input.evidence.filter(item => item.category === 'official_exam_fact').map(item => `${item.text} ${item.evidence}`).join(' '));
       if (!/(扣分|影响得分|0分)/.test(support)) hardIssues.push(issue('unsupported_exam_consequence', `把最低要求外推成扣分结果：${entry.text.slice(0, 80)}`, entry.path));
     }
@@ -189,16 +371,19 @@ export function inspectForPublish(
     const isProductRisk = RISKY_PRODUCT_FACT.test(entry.text);
     const isExamRisk = !isProductRisk && isExamFactRisk(entry.text);
     if (!isExamRisk && !isProductRisk) continue;
+    if (editorialOnly && isProductRisk) continue;
+    if (editorialOnly && isExamRisk) continue;
     if (!numericTokens(entry.text).length && EXAM_FACT_DISCLAIMER.test(entry.text)) continue;
     const relevantClaims = content.factualClaims.filter(claim => claim.type === (isExamRisk ? 'exam' : 'product'));
     if (!isExamRisk && sourceBoundProductFactSupported(entry.text, entry.sourceIds || [], relevantClaims, evidenceById)) continue;
-    const pathSourcesSupport = factSupportedByPathSources(entry.text, entry.sourceIds || [], evidenceById, isExamRisk);
+    const factText = isExamRisk ? extractExamFactText(entry.text) : entry.text;
+    const pathSourcesSupport = factSupportedByPathSources(factText, entry.sourceIds || [], evidenceById, isExamRisk);
     // A sentence may combine an official exam fact with a product checklist
     // fact. Explicit path sources are strong enough to validate both claim
     // types together without weakening checks for unbound public text.
-    const pathClaimSupport = factRegisteredByPathClaim(entry.text, entry.sourceIds || [], content.factualClaims, evidenceById, isExamRisk);
+    const pathClaimSupport = factRegisteredByPathClaim(factText, entry.sourceIds || [], content.factualClaims, evidenceById, isExamRisk);
     const registered = pathSourcesSupport || pathClaimSupport || (isExamRisk
-      ? isFactSupportedByCombinedSources(entry.text, relevantClaims, evidenceById, true)
+      ? isFactSupportedByCombinedSources(factText, relevantClaims, evidenceById, true)
       : relevantClaims.some(claim => textOverlaps(entry.text, claim.text))
         || isFactSupportedByCombinedSources(entry.text, relevantClaims, evidenceById, false));
     if (!registered) {
@@ -209,34 +394,26 @@ export function inspectForPublish(
   }
 
   if (/[，。！？；：]{2,}/u.test(caption)) hardIssues.push(issue('broken_punctuation', '正文存在连续标点', 'captionParts'));
+  if (content.finalTeachingQa || content.captionContentSnapshotHash) {
+    for (const failure of inspectFinalOutput(content)) hardIssues.push(issue(failure.code, failure.message, failure.path));
+  }
   return { content, hardIssues: dedupeIssues(hardIssues), warnings };
 }
 
 function ensureInnerPageCount(content: ContentPackage, warnings: string[]) {
-  if (content.innerPages.length > REQUIRED_INNER_PAGE_COUNT) {
-    content.innerPages = content.innerPages.slice(0, REQUIRED_INNER_PAGE_COUNT);
-    return;
+  if (content.innerPages.length < 3 || content.innerPages.length > 6) {
+    warnings.push(`本篇有 ${content.innerPages.length} 个内容页；商用V1建议3到6页，禁止程序用空话补页`);
   }
-  // 补页本身保留，但必须可见：批量结果/审计脚本要能统计“程序凑数页”频率。
-  if (content.innerPages.length < REQUIRED_INNER_PAGE_COUNT) {
-    warnings.push(`本篇内页由程序从 ${content.innerPages.length} 页补齐到 ${REQUIRED_INNER_PAGE_COUNT} 页，补充 ${REQUIRED_INNER_PAGE_COUNT - content.innerPages.length} 页为固定模板页（非AI生成），建议人工复核`);
-  }
-  const sourceIds = Array.from(new Set(content.coverBlocks.flatMap(block => block.sourceIds)));
-  const bullets = content.coverBlocks
-    .flatMap(block => block.items.map(item => [block.heading, item.primary, item.secondary, item.note].filter(Boolean).join('：')))
-    .filter(Boolean);
-  const titles = ['这一页先看核心内容', '把重点放进例子里', '常见错误这样检查', '最后按这个顺序复盘'];
-  while (content.innerPages.length < REQUIRED_INNER_PAGE_COUNT) {
-    const index = content.innerPages.length;
-    content.innerPages.push({
-      page_no: index + 2,
-      page_type: index === REQUIRED_INNER_PAGE_COUNT - 1 ? 'product_bridge' : 'knowledge_list',
-      page_title: titles[index] || `第${index + 1}页继续看`,
-      lead: '把这一页和自己的情况对照，再继续往下练。',
-      bullets: Array.from(new Set([...bullets.slice(0, 6), '结合本篇主题完成一次替换练习'])).slice(0, 7),
-      source_ids: sourceIds,
-    });
-  }
+}
+
+function extractExamFactText(value: string) {
+  const clauses = value.split(/(?<=[。！？!?；;])/u).map(item => item.trim()).filter(Boolean);
+  const factual = clauses.filter(clause => {
+    if (/(?:官方|DELF|TEF|TCF|France\s*[ÉE]ducation|考试).{0,32}(?:规定|要求|时长|时间|包含|至少)/iu.test(clause)) return true;
+    if (/(?:留出|安排|建议|优先|自查|复习|练习).{0,20}\d+(?:\.\d+)?(?:\s*[-–—至到]\s*\d+(?:\.\d+)?)?\s*分钟/u.test(clause)) return false;
+    return isExamFactRisk(clause);
+  });
+  return factual.join(' ') || value;
 }
 
 function sourceBoundProductFactSupported(
@@ -259,35 +436,77 @@ function conversionAssetRank(category: EvidenceSnippet['category']) {
   return rank === -1 ? order.length : rank;
 }
 
-function applyPaidProductBridge(content: ContentPackage, productId: ProductId) {
-  const raw = content.captionParts.productBridge.replace(FREE_CTA, '').trim();
-  const existing = FALSE_PRODUCT_FORM.test(raw) ? '' : raw;
-  content.captionParts.productBridge = existing || (productId === 'delf_b2_writing'
-    ? '我把写作里反复要查的范文、词汇句型、观点和自查项整理成了一套 DELF B2 写作知识库，练习时可以按自己的问题直接查。'
-    : '我把选考、自测、四科练习、句型词汇和备考安排整理成了一套 TEF/TCF Canada 资料库，复习时可以按当前阶段直接查。');
-  content.captionParts.cta = '完整内容已经放在商品里，需要的话可以点小黄车看详情。';
+function productAssetRelevance(item: EvidenceSnippet, topic: TopicOption) {
+  const topicText = normalize([
+    topic.topic,
+    topic.promise,
+    topic.contentAngle,
+    ...(topic.expandContents || []),
+    ...(topic.bridgeBasis?.modules || []),
+  ].join(' '));
+  const assetText = normalize(`${item.text} ${item.evidence} ${item.source_section}`);
+  return sharedBigrams(topicText, assetText) + (topic.bridgeBasis?.modules.some(module => normalize(assetText).includes(normalize(module))) ? 12 : 0);
 }
 
-function fitCaptionLength(content: ContentPackage) {
+function applyPaidProductBridge(content: ContentPackage, productId: ProductId) {
+  const raw = content.captionParts.productBridge.replace(FREE_CTA, '').trim();
+  const malformedLegacyBridge = /^这套知识库里的(?:按|法语水平|距离考试)/u.test(raw);
+  const existing = FALSE_PRODUCT_FORM.test(raw) || malformedLegacyBridge ? '' : raw;
+  content.captionParts.productBridge = existing || (productId === 'delf_b2_writing'
+    ? '我把写作里反复要查的范文、词汇句型、观点和自查项整理成了一套 DELF B2 写作知识库，练习时可以按自己的问题直接查。'
+    : productId === 'tcf_canada_writing_7day'
+      ? '我把 TCF Canada 写作 T1、T2、T3 的任务速查、考前纠错和7天练习整理在一起，复习时可以按自己卡住的环节直接查。'
+      : '我把选考、自测、四科练习、句型词汇和备考安排整理成了一套 TEF/TCF Canada 资料库，复习时可以按当前阶段直接查。');
+  // 不再无条件覆盖模型生成的自然 CTA。旧逻辑会把每篇正文的最后一句
+  // 抹成同一条“点小黄车看详情”，这正是带货段落模板化的确定根因。
+  const rawCta = content.captionParts.cta.trim();
+  const genericCta = /^(?:完整内容|详细内容).{0,20}(?:放在商品里|在商品详情里).{0,20}(?:小黄车|看详情)/u.test(rawCta);
+  if (!rawCta || genericCta) {
+    content.captionParts.cta = productId === 'delf_b2_writing'
+      ? '想按自己的问题继续查范文、句型或自查项，可以直接看商品详情里的目录。'
+      : productId === 'tcf_canada_writing_7day'
+        ? '想按T1、T2、T3或考前纠错继续练，可以直接看商品详情里的目录。'
+        : '想按自己的备考阶段继续查资料，可以直接看商品详情里的目录。';
+  }
+}
+
+function fitCaptionLength(content: ContentPackage, maxValueParagraphs = 3) {
   content.captionParts.opening = fitCompleteText(content.captionParts.opening, 85);
-  content.captionParts.value = content.captionParts.value.map(item => fitCompleteText(item, 115)).filter(Boolean);
+  // 中法混排例句常在同一段的第二句；过早截段会只留下“开头别只写……”这类空壳判断。
+  // 先允许完整保留一组示例，再由整篇 850 上限统一收束。
+  content.captionParts.value = content.captionParts.value.map(item => fitCompleteText(item, 260)).filter(Boolean);
   const nonSellingValue = content.captionParts.value.filter(item => !/(?:资料包|知识库|资料库|小黄车|商品)/i.test(item));
   if (nonSellingValue.length >= 3) content.captionParts.value = nonSellingValue;
   const substantial = content.captionParts.value.filter(item => countVisibleUnits(item) >= 35);
   if (substantial.length >= 3) content.captionParts.value = substantial;
   content.captionParts.productBridge = fitCompleteText(content.captionParts.productBridge, 105);
-  while (content.captionParts.value.length > 3 && countVisibleUnits(captionText(content)) > 850) content.captionParts.value.pop();
+  while (content.captionParts.value.length > maxValueParagraphs && countVisibleUnits(captionText(content)) > 850) content.captionParts.value.pop();
   if (countVisibleUnits(captionText(content)) > 850) {
     content.captionParts.value = content.captionParts.value.map(item => fitCompleteText(item, 95));
   }
 }
 
 function naturalProductBridge(assetText: string, productId: ProductId) {
-  const cleanAsset = cleanVisibleSourceReferences(assetText).replace(/[。！？!?]+$/u, '').trim();
+  const cleanAsset = cleanVisibleSourceReferences(assetText)
+    .replace(/^模块\s*[A-ZＡ-Ｚ0-9一二三四五六七八九十]+\s*[·:：\-]\s*/iu, '')
+    .replace(/\s*v\d+(?:\.\d+)*\b/giu, '')
+    .replace(/[：:]/u, '共')
+    .replace(/\s+/gu, ' ')
+    .replace(/[。！？!?]+$/u, '')
+    .trim();
   if (productId === 'tef_tcf_canada' && /TEF\s*\/?\s*TCF|选考|考试选择/i.test(cleanAsset)) {
     return '这套 TEF/TCF Canada 资料库先整理了选考决策，确定考试后还可以按当前阶段继续查自测、练习和备考安排。';
   }
-  return `这套知识库整理了“${cleanAsset}”，练习到相关问题时可以直接按这一项继续查。`;
+  if (/^(?:按|围绕)/u.test(cleanAsset)) {
+    return `完整写作资料${cleanAsset}，并把对应观点、表达和例子放在一起，练到相关题目时可以直接查用。`;
+  }
+  if (/(?:法语水平|距离考试|适合|考生|用户)/u.test(cleanAsset)) {
+    return '完整写作资料把题型范文、功能表达、主题观点和自查工具按问题整理，练习时可以直接找到当前需要的内容。';
+  }
+  if (/(?:词汇库\s*[-—]\s*功能表达|B1\s*表达观点|对应观点)/u.test(cleanAsset)) {
+    return '完整写作资料把功能表达、主题观点、范文结构和自查工具按问题整理，练习时可以直接找到当前需要的内容。';
+  }
+  return `完整写作资料把${cleanAsset}与对应观点、表达和例子放在一起，练到相关题目时可以直接查用。`;
 }
 
 function removeKnownAiCliches(content: ContentPackage) {
@@ -310,10 +529,10 @@ function removeKnownAiCliches(content: ContentPackage) {
 function ensureSeoOpening(content: ContentPackage, topic: TopicOption) {
   const primary = topic.seo.primary.trim();
   if (normalize(content.captionParts.opening.slice(0, 100)).includes(normalize(primary))) return;
-  const topicSentence = topic.topic.trim().replace(/[。！？!?]+$/u, '');
-  const replacement = topicSentence.includes(primary)
-    ? `${topicSentence}？`
-    : `${primary}：${topicSentence}。`;
+  const opening = content.captionParts.opening.trim().replace(/^[：:｜|\s]+/u, '');
+  const replacement = opening
+    ? `${primary}：${opening}`
+    : `${primary}：${topic.topic.trim().replace(/[。！？!?]+$/u, '')}。`;
   content.captionParts.opening = fitCompleteText(replacement, 85);
 }
 
@@ -467,6 +686,8 @@ function removeVisibleSourceIds(content: ContentPackage, warnings: string[]) {
 function cleanVisibleSourceReferences(value: string) {
   return value
     .replace(new RegExp(INTERNAL_SOURCE_ID.source, 'gi'), '')
+    .replace(/[（(]\s*(?:对应|参考|依据|证据)\s*(?:资料|证据|来源)?\s*[:：]?[^）)]{0,40}[）)]/gu, '')
+    .replace(/[（(]\s*(?:官方评分表|官方题型与功能表达|内部资料|资料证据)[^）)]{0,30}[）)]/gu, '')
     .replace(/[（(]\s*来自\s*(?:和|、|及|与|\s)*[）)]/gu, '')
     .replace(/[（(]\s*[）)]/gu, '')
     .replace(/\s*[~～—–]\s*(?=[，。；;）)])/gu, '')
@@ -475,8 +696,38 @@ function cleanVisibleSourceReferences(value: string) {
     .trim();
 }
 
-function fitDirectoryCoverItems(content: ContentPackage, capability: TemplateCapability, warnings: string[]) {
-  if (capability.compiler !== 'directory') return;
+function stripEditorialProductReferences(value: string) {
+  const productSentence = /[^。！？!?；;\n]*(?:配套资料|这套资料|资料里(?:的|已经)|资料中的|资料库|知识库|错题库|表达库|观点库|模板库|商品卡片?|小黄车|购买|下方链接|评论区链接)[^。！？!?；;\n]*[。！？!?；;]?/giu;
+  return value.replace(productSentence, '').replace(/\s{2,}/g, ' ').trim();
+}
+
+function educationalOriginalCta(topic: TopicOption, renderer: TemplateCapability['renderer'], recentEndings: string[] = []) {
+  const subject = topic.seo.primary || topic.topic;
+  const variants = [
+    `下次写${subject}时，先只核对本篇讲到的这一处句子选择，再继续往下写。`,
+    `从自己最近的一段${subject}里找出同类表达，按本篇的对比方式改一处即可。`,
+    `做${subject}练习前，把本篇的检查点写在草稿旁，写完只回看这一项。`,
+    `翻出一篇旧${subject}，圈出和本篇有关的一句，先判断它该保留还是替换。`,
+  ];
+  const seed = Array.from(`${renderer}|${topic.noveltyFingerprint}|${topic.topic}`).reduce((sum, char) => sum + char.codePointAt(0)!, 0);
+  const ordered = variants.map((_, index) => variants[(seed + index) % variants.length]);
+  return ordered.find(item => !repeatsRecentCaptionEnding(item, recentEndings)) || ordered[0];
+}
+
+function repeatsRecentCaptionEnding(cta: string, recentEndings: string[]) {
+  const current = normalizeCaptionEnding(cta);
+  if (current.length < 8) return false;
+  return recentEndings.some(ending => {
+    const recent = normalizeCaptionEnding(ending);
+    return recent.length >= 8 && (current === recent || current.endsWith(recent) || recent.endsWith(current));
+  });
+}
+
+function normalizeCaptionEnding(value: string) {
+  return value.toLowerCase().replace(/[\s，。；：、！？!?·“”'"（）()【】\[\]{}]/gu, '').trim();
+}
+
+function fitCoverItemsToVisualContract(content: ContentPackage, capability: TemplateCapability, warnings: string[], allowSpillPage: boolean) {
   const compact = capability.densityTiers[0];
   const moved: string[] = [];
   content.coverBlocks = content.coverBlocks.map(block => ({
@@ -484,8 +735,20 @@ function fitDirectoryCoverItems(content: ContentPackage, capability: TemplateCap
     items: block.items.map(item => {
       const primaryTooLong = countVisibleUnits(item.primary) > compact.primaryVisualLength[1];
       const secondaryFits = Boolean(item.secondary)
-        && countVisibleUnits(item.secondary || '') <= compact.primaryVisualLength[1];
-      if (!primaryTooLong || !secondaryFits) return item;
+        && countVisibleUnits(item.secondary || '') <= compact.secondaryVisualLength[1];
+      // 主词已经适合封面、只有解释偏长时，不要把整条内容判成密度不足。
+      // 保留主词，解释移入内页；否则资料型模板会把一条有效资料误算成
+      // “不完整短条目”，最终把白绿/紫色目录卡错误地打回。
+      if (!primaryTooLong && item.secondary && !secondaryFits && capability.languagePolicy !== 'primary_french') {
+        moved.push([block.heading, item.primary, item.secondary, item.note].filter(Boolean).join('：'));
+        return {
+          primary: item.primary,
+          secondary: item.note && countVisibleUnits(item.note) <= compact.secondaryVisualLength[1]
+            ? item.note
+            : undefined,
+        };
+      }
+      if (!primaryTooLong || !secondaryFits || capability.languagePolicy === 'primary_french') return item;
       moved.push([block.heading, item.primary, item.secondary, item.note].filter(Boolean).join('：'));
       return {
         primary: item.secondary!,
@@ -496,6 +759,10 @@ function fitDirectoryCoverItems(content: ContentPackage, capability: TemplateCap
     }),
   }));
   if (!moved.length) return;
+  if (!allowSpillPage) {
+    warnings.push(`封面有${moved.length}条解释超过视觉容量；STANDARD KNOWLEDGE不再把封面溢出自动生成“完整表达”内页`);
+    return;
+  }
   content.innerPages.push({
     page_no: content.innerPages.length + 2,
     page_type: 'knowledge_list',
@@ -569,7 +836,8 @@ function examClausesSupported(text: string, sources: EvidenceSnippet[]) {
       ? sources.filter(source => effectiveSubjects.some(subject => normalize(`${source.source_section} ${source.text}`).includes(subject)))
       : sources;
     if (!matchingSources.length) return false;
-    const sourceText = normalize(matchingSources.map(item => `${item.text} ${item.evidence}`).join(' '))
+    const rawSourceText = matchingSources.map(item => `${item.text} ${item.evidence}`).join(' ');
+    const sourceText = normalize(`${rawSourceText} ${examDurationAliases(rawSourceText)}`)
       .replace(/(\d+(?:\.\d+)?)道题/gu, '$1题');
     const normalizedClause = normalize(clause);
     const numbers = numericTokens(clause.replace(/\d+(?:\.\d+)?\s*(?:个)?(?:论据|理由|例子|步骤|层次|角度)/g, ''));
@@ -626,18 +894,32 @@ function sanitizeUnsupportedPracticeFacts(
   content: ContentPackage,
   evidenceById: Map<string, EvidenceSnippet>,
 ) {
-  const claims = content.factualClaims.filter(claim => claim.type === 'exam');
+  const claims = content.factualClaims;
   const clean = (value: string) => {
-    if (!/(?:练习示例|模拟|练习)/i.test(value) || !isExamFactRisk(value)) return value;
-    if (isFactSupportedByCombinedSources(value, claims, evidenceById, true)) return value;
+    const isExamRisk = isExamFactRisk(value);
+    const isProductRisk = RISKY_PRODUCT_FACT.test(value);
+    const hasPracticeContext = /(?:练习示例|模拟|练习|每天|每日|建议|复习|备考|选一个主题|列出|大声读|输出)/i.test(value);
+    const hasPracticeQuantity = /\d+(?:\s*[-至到]\s*\d+)?\s*个(?:核心)?词|\d+(?:\s*[-至到]\s*\d+)?\s*个(?:常用)?句型|\d+(?:\s*[-至到]\s*\d+)?\s*个句子/iu.test(value);
+    const hasUnverifiedPracticeLength = /(?:每(?:一)?段|一段).{0,24}(?:80|100|120|150|200)\s*词/iu.test(value);
+    const forcedPracticeQuantity = /(?:每天|练习|用|写|整理|准备|选一个主题|列出|大声读|输出).{0,25}\d+(?:\s*[-至到]\s*\d+)?\s*个(?:核心)?词|(?:每天|练习|用|写|整理|准备|选一个主题|列出|大声读|输出).{0,25}\d+(?:\s*[-至到]\s*\d+)?\s*个(?:常用)?句型|(?:每天|练习|用|写|整理|准备|选一个主题|列出|大声读|输出).{0,25}\d+(?:\s*[-至到]\s*\d+)?\s*个句子/iu.test(value);
+    if (!hasPracticeContext || (!isExamRisk && !isProductRisk && !hasPracticeQuantity && !hasUnverifiedPracticeLength)) return value;
+    if (!forcedPracticeQuantity && isFactSupportedByCombinedSources(value, claims, evidenceById, isExamRisk)) return value;
     let next = value
+      .replace(/每天\s*(?:抽|用|花|留)\s*\d+(?:\.\d+)?\s*(?:分钟|小时)/giu, '每天抽一点时间')
+      .replace(/用\s*\d+\s*个词和\s*\d+\s*个句型/giu, '用若干词和句型')
+      .replace(/\d+\s*个词和\s*\d+\s*个句型/giu, '若干词和句型')
+      .replace(/\d+(?:\s*[-至到]\s*\d+)?\s*个(?:核心)?词/giu, '若干词')
+      .replace(/\d+(?:\s*[-至到]\s*\d+)?\s*个(?:常用)?句型/giu, '若干句型')
+      .replace(/\d+(?:\s*[-至到]\s*\d+)?\s*个句子/giu, '若干句子')
+      .replace(/(?:每(?:一)?段|一段)\s*(?:80|100|120|150|200)\s*词(?:左右)?/giu, '一段合适长度的短文')
       .replace(/[，,；;]?\s*(?:限时|持续|用时|时长(?:为|是)?|共)?\s*\d+(?:\.\d+)?\s*(?:分钟|小时)/giu, '')
       .replace(/第\s*\d+\s*(?:道)?(?:题|部分)/giu, '对应任务')
       .replace(/\d+\s*(?:道)?(?:题|部分|科|项)/giu, '对应任务')
       .replace(/[，,；;]{2,}/gu, '，')
       .replace(/\s{2,}/g, ' ')
       .trim();
-    if (isExamFactRisk(next) && !isFactSupportedByCombinedSources(next, claims, evidenceById, true)) {
+    if ((isExamFactRisk(next) || RISKY_PRODUCT_FACT.test(next))
+      && !isFactSupportedByCombinedSources(next, claims, evidenceById, isExamFactRisk(next))) {
       next = next.replace(/(?:TEF|TCF|DELF)\s*/giu, '').trim();
     }
     return finishSentence(next);
@@ -666,6 +948,17 @@ function sharedBigrams(a: string, b: string) {
 
 function normalize(value: string) {
   return value.toLowerCase().normalize('NFC').replace(/[\s\p{P}\p{S}]/gu, '');
+}
+
+function examDurationAliases(value: string) {
+  const aliases: string[] = [];
+  if (/1\s*(?:个)?小时|一\s*(?:个)?小时/u.test(value)) aliases.push('60分钟');
+  if (/60\s*分钟/u.test(value)) aliases.push('1小时');
+  return aliases.join(' ');
+}
+
+function normalizeCoverItem(value: string) {
+  return value.toLocaleLowerCase('fr-FR').normalize('NFKC').replace(/[\s\p{P}\p{S}]/gu, '');
 }
 
 function issue(code: string, message: string, path?: string): PublishIssue {

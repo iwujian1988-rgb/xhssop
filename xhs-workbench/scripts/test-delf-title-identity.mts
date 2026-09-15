@@ -1,0 +1,57 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import { hasRequiredProductIdentity } from '../src/lib/product-prompt-profiles';
+import { generateTitlePackage, buildStandardKnowledgeTitlePromptForTest } from '../src/lib/v2/title-stage';
+import { getCompetitorCreativeCard } from '../src/lib/creative-card-library';
+import { getCapabilityFallback } from '../src/lib/v2/topic-stage';
+
+const root = process.cwd();
+const tracePath = path.join(root, 'data/final-content-traces/f418585a-3402-9a77-8ceb-4a56a01bf1eb/30_TITLE_CANDIDATES.json');
+const traceBytes = await fs.readFile(tracePath, 'utf8');
+const trace = JSON.parse(traceBytes);
+const jobPath = path.join(root, 'data/batches/batch_human_review_1788691220835/jobs/job_001.json');
+const jobBytes = await fs.readFile(jobPath, 'utf8');
+const job = JSON.parse(jobBytes);
+const card = getCompetitorCreativeCard(job.artifacts.content.data.selectedCoverTemplateId)!;
+const input = { topic: job.artifacts.selectedTopic.data, content: job.artifacts.content.data, capability: getCapabilityFallback(card) };
+for (const s of ['B2写作','B2作文','B2正式信','B2正式信函','B2信函','B2写信','DELF B2','DELFB2']) assert.equal(hasRequiredProductIdentity('delf_b2_writing', s), true, s);
+for (const s of ['B2','B2随手记','B2日常','B2生活记录','B2好物分享']) assert.equal(hasRequiredProductIdentity('delf_b2_writing', s), false, s);
+for (const p of ['tef_tcf_canada','tcf_canada_writing_7day'] as const) assert.equal(hasRequiredProductIdentity(p, 'B2信函'), false);
+// Replay the real production function using an in-memory provider response, never a network request.
+process.env.OPENAI_API_KEY = 'offline-test-only';
+delete process.env.AI_BRIDGE_DIR;
+let answer = trace.raw;
+let replays = 0;
+globalThis.fetch = async () => new Response(JSON.stringify({ id: `offline-${++replays}`, choices: [{ message: { content: JSON.stringify(answer) } }], usage: { prompt_tokens: 0, completion_tokens: 0, total_tokens: 0 } }), { status: 200 });
+const sandbox = await fs.mkdtemp(path.join(root, '.tmp-title-identity-'));
+process.chdir(sandbox);
+try {
+  const result = await generateTitlePackage(input);
+  const texts = (p: {textTitle:string;coverTitle:string;coverSubtitle?:string}) => [p.textTitle,p.coverTitle,p.coverSubtitle];
+  assert.equal(result.data.candidates.length, 3);
+  assert.deepEqual(result.data.candidates.map(texts), trace.raw.candidates.filter((p: {textTitle?:string}) => p.textTitle).map(texts));
+  const valid = trace.raw.candidates[0];
+  answer = { candidates: [trace.raw.candidates[2]] };
+  await assert.rejects(generateTitlePackage(input), /TITLE_UNRECOVERABLE/);
+  answer = { candidates: [valid, valid] };
+  assert.equal((await generateTitlePackage(input)).data.candidates.length, 1);
+  answer = { candidates: [{ ...valid, textTitle: '超'.repeat(21) }] };
+  await assert.rejects(generateTitlePackage(input), /TITLE_UNRECOVERABLE/);
+  answer = { candidates: [{ ...valid, coverTitle: 'TCF Canada写作' }] };
+  await assert.rejects(generateTitlePackage(input), /COVER_ONLY_FAILURE/);
+  const nuanced = structuredClone(input);
+  nuanced.content.innerPages[0].lead += ' mais并非一律错误，不必机械替换。';
+  delete nuanced.content.manualInnerReview;
+  answer = { candidates: [{ ...valid, textTitle: 'mais不能用', coverTitle: 'B2写信别用mais' }] };
+  await assert.rejects(generateTitlePackage(nuanced), /TITLE_UNRECOVERABLE/);
+  const prompt = buildStandardKnowledgeTitlePromptForTest(input);
+  assert.equal('allowedNumbersFromFinalContent' in prompt.titleCoreInput, false);
+  assert.equal('finalContentSnapshot' in prompt.titleCoreInput,false);
+  assert.ok(prompt.systemPrompt.includes('拥有最高范围权威'));
+  assert.equal(await fs.readFile(tracePath, 'utf8'), traceBytes);
+  assert.equal(await fs.readFile(jobPath, 'utf8'), jobBytes);
+  const report = { realCandidatesAccepted: 3, malformedRejected: true, displayUnchanged: true, irrelevantB2Blocked: true, duplicateLengthCrossExamAndTeachingConflictChecks: 'PASS', inputRestrictedToInner: true, aiCalls: 0 };
+  await fs.writeFile(path.join(sandbox, 'acceptance.json'), JSON.stringify(report, null, 2));
+  console.log(JSON.stringify({ ...report, sandbox }, null, 2));
+} finally { process.chdir(root); }

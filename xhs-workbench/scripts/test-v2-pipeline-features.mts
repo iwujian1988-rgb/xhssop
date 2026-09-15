@@ -1,10 +1,10 @@
 /* eslint-disable no-console */
 /**
- * 阶段 A 离线测试：pipeline-features + product-editorial-map（纯新增模块，零接线）。
+ * 多商品共识链离线测试：pipeline-features + product-editorial-map。
  * 运行：npx tsx scripts/test-v2-pipeline-features.mts
  */
 import { execSync } from 'node:child_process';
-import { resolvePipelineFeatures } from '../src/lib/v2/pipeline-features';
+import { resolvePipelineFeatures, usesStandardEducationalAutoPlan } from '../src/lib/v2/pipeline-features';
 import { getProductEditorialMap } from '../src/lib/v2/product-editorial-map';
 import { buildProductShowcaseAssets } from '../src/lib/product-showcase-library';
 import { hasForbiddenProductIdentity } from '../src/lib/product-prompt-profiles';
@@ -27,10 +27,16 @@ check('商品1 = consensus-v1 + 三开关全开',
 
 for (const id of ['tef_tcf_canada', 'tcf_canada_writing_7day'] as const) {
   const f = resolvePipelineFeatures(id);
-  check(`${id} = legacy-v2 + 三开关全关`,
-    f.pipelineVersion === 'legacy-v2' && !f.consensusTopicStage && !f.consensusContentBrief && !f.consensusTitleStage
+  check(`${id} = consensus-v1 + 三开关全开`,
+    f.pipelineVersion === 'consensus-v1' && f.consensusTopicStage && f.consensusContentBrief && f.consensusTitleStage
       && f.productId === id);
 }
+
+check('商品1原有自动封面入口保持开启', usesStandardEducationalAutoPlan('delf_b2_writing', 'standard', 'mixed'));
+check('商品2 AI原创普通内容进入自动封面入口', usesStandardEducationalAutoPlan('tef_tcf_canada', 'standard', 'educational_original'));
+check('商品3 AI原创普通内容进入自动封面入口', usesStandardEducationalAutoPlan('tcf_canada_writing_7day', 'standard', 'educational_original'));
+check('商品2混合模式也进入统一普通内容入口', usesStandardEducationalAutoPlan('tef_tcf_canada', 'standard', 'mixed'));
+check('商品3介绍模式不误切到本轮新入口', !usesStandardEducationalAutoPlan('tcf_canada_writing_7day', 'product_showcase', 'educational_original'));
 
 // 2. 未知 id throw（绕过类型，模拟脏数据）
 let threw = false;
@@ -89,9 +95,21 @@ if (map) {
     !('examFacts' in map) && !('verifiedExamFacts' in map) && !JSON.stringify(map).includes('已确认考试边界'));
 }
 
-// 4. 商品2/3 返回 undefined
-check('商品2 map = undefined', getProductEditorialMap('tef_tcf_canada') === undefined);
-check('商品3 map = undefined', getProductEditorialMap('tcf_canada_writing_7day') === undefined);
+// 4. 商品2/3也必须具备标题节点的同结构人群/能力输入。
+for (const id of ['tef_tcf_canada', 'tcf_canada_writing_7day'] as const) {
+  const productMap = getProductEditorialMap(id);
+  check(`${id} map 存在`, Boolean(productMap));
+  check(`${id} capabilities 非空`, Boolean(productMap?.capabilities.length));
+  check(`${id} buyerMap 三组均至少4条`, Boolean(productMap
+    && productMap.buyerMap.userStages.length >= 4
+    && productMap.buyerMap.realStates.length >= 4
+    && productMap.buyerMap.motivations.length >= 4));
+  const allText = productMap ? [
+    ...productMap.capabilities.flatMap(c => [c.capabilityId, c.capability, ...c.modules]),
+    ...productMap.buyerMap.userStages, ...productMap.buyerMap.realStates, ...productMap.buyerMap.motivations,
+  ].join('\n') : '';
+  check(`${id} map 不混入禁用考试身份`, !hasForbiddenProductIdentity(id, allText));
+}
 
 // 5. git 状态（报告项）：阶段 A 的"新文件未跟踪 + 零已跟踪改动"两条提交前卫生检查
 //    在 A 提交（6309237）后即完成使命；B2 起接线合法修改已跟踪文件，

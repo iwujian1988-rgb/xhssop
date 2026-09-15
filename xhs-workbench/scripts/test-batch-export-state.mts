@@ -1,0 +1,65 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs/promises';
+import path from 'node:path';
+import {createRequire} from 'node:module';
+import JSZip from 'jszip';
+const root=process.cwd();
+const source=path.resolve('data/batches/batch_1788792510292/jobs/job_002.json');
+const original=await fs.readFile(source);
+const fixture=JSON.parse(original.toString());
+const temp=await fs.mkdtemp(path.resolve('.tmp-export-state-'));
+process.env.INNER_REVIEW_TEST_DATA_DIR=path.join(temp,'batches');
+const require=createRequire(import.meta.url);
+const store=require('../src/lib/batch-store');
+const {assertDraftTitleReadyForExport,buildBatchTxt}=require('../src/lib/batch-export');
+const {NextRequest}=require('next/server');
+process.chdir(temp);
+const api=require(path.join(root,'src/app/api/batch-export/route'));
+globalThis.fetch=async()=>{throw new Error('NETWORK_FORBIDDEN');};
+const batchId='batch_export_offline';
+try {
+  assert.equal(fixture.commercial.pageManifest.pages.P1.frenchQaStatus,'needs_repair');
+  assert.equal(fixture.artifacts.content.data.finalTeachingQa.status,'PASS');
+  await store.createPlannedBatchAtomic({id:batchId,product_id:fixture.product_id,created_at:new Date().toISOString(),status:'done',jobs:[]},[fixture]);
+  // Restore a stale historical file to test read-time derivation, not merely save-time correction.
+  await fs.writeFile(path.join(temp,'batches',batchId,'jobs',fixture.id+'.json'),JSON.stringify(fixture));
+  const current=await store.loadJob(batchId,fixture.id);
+  assert.equal(current.commercial.pageManifest.pages.P1.frenchQaStatus,'pass');
+  assert.equal(current.commercial.pageManifest.pages.P1.exportStatus,'pending');
+  assert.notEqual(current.commercial.status,'READY');
+  assert.doesNotThrow(()=>assertDraftTitleReadyForExport(current.draft));
+  const exportText=buildBatchTxt(current);
+  for(const heading of ['标题','封面标题','正文'])assert.match(exportText,new RegExp(`={10,}\\n${heading}\\n={10,}`));
+  for(const internal of ['Title Bundle 候选','封面人工编辑状态','封面可编辑文字块 JSON','搜索关键词','代码渲染封面'])assert.ok(!exportText.includes(internal),`TXT不得包含内部信息：${internal}`);
+  const unselected=structuredClone(current.draft);unselected.titlePackage.humanSelectedTextTitleId=null;
+  assert.throws(()=>assertDraftTitleReadyForExport(unselected),/AWAITING_HUMAN_CHOICE/);
+  const badQa=structuredClone(current);badQa.artifacts.content.data.finalTeachingQa.status='FAIL';
+  await store.saveJob(batchId,badQa);
+  assert.equal((await store.loadJob(batchId,fixture.id)).commercial.pageManifest.pages.P1.frenchQaStatus,'needs_repair');
+  await store.saveJob(batchId,current);
+  const post=(body:object)=>api.POST(new NextRequest('http://offline/api/batch-export',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)}));
+  const init=await post({action:'init',batch_id:batchId});assert.equal(init.status,200);
+  const {session_id}=await init.json();
+  const notReady=await post({action:'finalize',session_id,ready_job_ids:[fixture.id],expected_files:[]});assert.equal(notReady.status,409);
+  const manifest=current.commercial.pageManifest;
+  const names=manifest.expectedPageIds.map((id:string)=>`01-救命😭中文测试/${id}.png`).concat('01-救命😭中文测试/内容.txt');
+  for(const relative_path of names){
+    const form=new FormData();form.set('session_id',session_id);form.set('relative_path',relative_path);
+    form.set('file',new Blob(['OFFLINE FILE TRANSPORT FIXTURE']),path.basename(relative_path));
+    assert.equal((await api.POST(new NextRequest('http://offline/api/batch-export',{method:'POST',body:form}))).status,200);
+  }
+  await store.updateCommercialPageDelivery(batchId,fixture.id,manifest.expectedPageIds,Object.fromEntries(manifest.expectedPageIds.map((id:string,i:number)=>[id,names[i]])));
+  const emptyManifest=await post({action:'finalize',session_id,ready_job_ids:[fixture.id],expected_files:[]});
+  assert.equal(emptyManifest.status,409);assert.match((await emptyManifest.json()).error,/导出清单为空/);
+  const final=await post({action:'finalize',session_id,ready_job_ids:[fixture.id],expected_files:names});
+  assert.equal(final.status,200,await final.clone().text());
+  const finalJson=await final.clone().json();assert.equal(finalJson.file_count,names.length);assert.ok(finalJson.zip_size>0);
+  const zipPath=path.join(temp,'data/batch-exports',session_id,'batch-export.zip');
+  const archive=await JSZip.loadAsync(await fs.readFile(zipPath));
+  for(const name of names)assert.ok(archive.file(name),name);
+  assert.ok(!Object.keys(archive.files).some(name=>name==='/'||name==='./'||name.startsWith('./')),'Windows ZIP不得包含tar风格根目录项');
+  const download=await api.GET(new NextRequest('http://offline/api/batch-export?session_id='+session_id));
+  assert.equal(download.status,200);assert.equal(download.headers.get('Content-Type'),'application/zip');
+  assert.ok((await download.arrayBuffer()).byteLength>0);
+  console.log('PASS: stale P1 refreshed from real QA; failed QA/unselected title/unfinished export remain blocked; Chinese/emoji JSZip manifest and GET stream verified. Dummy transport files are NOT content/render acceptance. REAL_AI_CALLS=0; PRODUCTION_WRITES=0; '+temp);
+}finally{process.chdir(root);assert.deepEqual(await fs.readFile(source),original);}

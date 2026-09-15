@@ -1,7 +1,7 @@
 import type { ProductId } from '@/types/data';
 
-// 小红书搜索下拉词信号。它只用于标题生成时提醒 LLM 贴近真实搜索入口，
-// 不是 SEO 标签池，也不是要求每个标题都硬塞关键词。
+// 小红书搜索下拉词信号。标题只把它当软参考；标签会从中挑与正文匹配的真实搜索词，
+// 不是要求每个标题或每组标签把整池关键词全部硬塞进去。
 export interface XhsSearchKeywordGroup {
   primary: string[];
   secondary: string[];
@@ -11,10 +11,8 @@ export interface XhsSearchKeywordGroup {
 
 const KEYWORDS: Record<ProductId, XhsSearchKeywordGroup> = {
   delf_b2_writing: {
-    primary: ['模板', '范文', '题型', '格式', '评分标准', '批改', '备考资料', '备考攻略'],
+    primary: ['模板', '范文', '真题', '题型', '技巧', '信件', '格式', '多少词', '高分范文', '主题'],
     secondary: [
-      '真题',
-      '高分范文',
       '万能模板',
       '建议信',
       '论坛讨论',
@@ -31,9 +29,11 @@ const KEYWORDS: Record<ProductId, XhsSearchKeywordGroup> = {
       '用什么书',
       '备考多久',
       'AI批改',
+      '写几篇',
+      '招聘会',
     ],
     avoid: ['14分', '一个月', '时间分配', '时间不够'],
-    validated_at: '2026-07-27',
+    validated_at: '2026-08-23-xhs-related-search-screenshot',
   },
   tef_tcf_canada: {
     // 商品2暂未拿到小红书下拉词截图。这里先用资料包内真实需求词兜底，

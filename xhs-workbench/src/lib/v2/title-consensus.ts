@@ -7,7 +7,7 @@ import { deriveTitlePromiseRange } from './content-brief';
  * 阶段 D（设计 §4 / 共识 16.3）：标题方向池与输出数量分离。
  *
  * 纪律：
- * - 只有商品1（delf_b2_writing）普通模式开启；showcase 与商品2/3 完全不走这里。
+ * - 商品1普通模式与商品2/3的普通+AI原创模式开启；showcase 不走这里。
  * - 方向按 noveltyFingerprint 稳定哈希采样：同一指纹永远同一子集（含顺序），
  *   不同指纹采样不同；不建小 N 固定模板，只定义 6 个方向的结构描述。
  * - prompt 文本不塞固定标题示例，只给方向的结构说明（历史教训：AI 会抄示例）。
@@ -25,7 +25,7 @@ export const TITLE_DIRECTIONS: Array<{ id: TitleDirection; label: string; brief:
   { id: 'voice', label: '真人陈述型', brief: '像过来人一样第一人称陈述经验与判断' },
 ];
 
-/** 标题共识新路径门控：商品1 且非知识库介绍模式（productShowcase 判定沿用 title-stage 现状）。 */
+/** 标题 Skill 新路径门控：商品1普通内容与商品2/3普通+AI原创开启；介绍模式保持旧展示链。 */
 export function resolveTitleConsensusActive(productId: ProductId, isProductShowcase: boolean): boolean {
   return resolvePipelineFeatures(productId).consensusTitleStage && !isProductShowcase;
 }
@@ -44,11 +44,24 @@ export function clampTitleCandidateCount(value?: number): number {
  */
 export function sampleDirectionsForNote(fingerprint: string, directionCount: number): TitleDirection[] {
   const count = Math.max(1, Math.min(directionCount, TITLE_DIRECTIONS.length));
-  return TITLE_DIRECTIONS
+  const sampled = TITLE_DIRECTIONS
     .map(direction => ({ id: direction.id, key: stableHash(`${fingerprint}|${direction.id}`) }))
     .sort((a, b) => (a.key < b.key ? -1 : a.key > b.key ? 1 : 0))
     .slice(0, count)
     .map(item => item.id);
+  // 用户明确要求标题不能被稳定性规则洗成纯工具腔。正常候选池始终留一个
+  // 情绪方向；它仍然只是一条创作配额，不是质量硬闸门，也不会导致 job 失败。
+  if (!sampled.includes('emotion')) sampled[sampled.length - 1] = 'emotion';
+  return sampled;
+}
+
+/**
+ * 约三分之一选题把“有具体原因的情绪标题”放在默认首位。这里只决定给最终
+ * 编辑的排序建议，不改候选、不打硬分，也不影响其他商品路径。
+ */
+export function shouldPreferGroundedEmotionDefault(fingerprint: string): boolean {
+  const bucket = Number.parseInt(stableHash(`${fingerprint}|grounded-emotion-default`), 36);
+  return Number.isFinite(bucket) && bucket % 3 === 0;
 }
 
 /** 门控开的 required_candidate_mix：每个采样方向恰好 1 组。 */

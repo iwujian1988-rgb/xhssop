@@ -42,8 +42,10 @@ const FLEXIBLE_CAPACITY_FAMILIES = new Set<CoverTemplateSpec['family']>([
 
 export function autoFixCoverCapacity(cover: NormalizedCover, spec: CoverTemplateSpec): { cover: NormalizedCover; events: string[] } {
   const flexible = FLEXIBLE_CAPACITY_FAMILIES.has(spec.family);
-  const maxSections = flexible ? spec.sectionCount + 1 : spec.sectionCount;
-  const maxItems = flexible ? spec.itemsPerSection + 2 : spec.itemsPerSection;
+  const sectionRange = spec.sectionRange || [spec.sectionCount, spec.sectionCount];
+  const itemRange = spec.itemRange || [spec.itemsPerSection, spec.itemsPerSection];
+  const maxSections = sectionRange[1];
+  const maxItems = itemRange[1];
   const events: string[] = [];
   const sections = cover.sections.map(section => ({ ...section, items: section.items.map(item => ({ ...item })) }));
 
@@ -118,29 +120,11 @@ export function autoFixCoverCapacity(cover: NormalizedCover, spec: CoverTemplate
       events.push(`分组「${section.heading}」${beforeCount}条→截断为${maxItems}条`);
     }
   }
+  // 不再用通用“格式检查/考前复盘”条目填空。资料页的密度必须来自正文真实内容，
+  // 不足时交返修/人工复核，避免看似满版却与本篇无关的假条目。
   for (const section of sections) {
-    if (spec.family !== 'directory' || section.items.length >= spec.itemsPerSection) continue;
-    const beforeCount = section.items.length;
-    const padWords = [
-      ['\u683c\u5f0f\u68c0\u67e5', '\u5199\u524d\u5148\u770b'],
-      ['\u79f0\u547c\u4e00\u81f4', '\u5199\u5b8c\u518d\u52fe'],
-      ['\u7ed3\u6784\u5bf9\u7167', '\u907f\u514d\u6f0f\u9879'],
-      ['\u4f8b\u5b50\u843d\u5730', '\u653e\u5185\u9875\u5c55\u5f00'],
-      ['\u8003\u524d\u590d\u76d8', '\u6700\u540e\u901f\u67e5'],
-      ['\u8868\u8fbe\u66ff\u6362', '\u6309\u573a\u666f\u7528'],
-      ['\u903b\u8f91\u8854\u63a5', '\u8fde\u63a5\u66f4\u987a'],
-      ['\u5b57\u6570\u63a7\u5236', '\u522b\u5199\u8d85\u65f6'],
-    ];
-    const existing = new Set(section.items.map(item => `${item.primary}|${item.secondary || ''}`));
-    for (const [primary, secondary] of padWords) {
-      if (section.items.length >= spec.itemsPerSection) break;
-      const key = `${primary}|${secondary}`;
-      if (existing.has(key)) continue;
-      section.items.push({ primary, secondary });
-      existing.add(key);
-    }
-    if (section.items.length > beforeCount) {
-      events.push(`\u5206\u7ec4\u300a${section.heading}\u300b${beforeCount}\u6761\u2192\u8865\u9f50\u5230${section.items.length}\u6761`);
+    if (spec.family === 'directory' && section.items.length < itemRange[0]) {
+      events.push(`分组「${section.heading}」仅${section.items.length}条，低于参考图密度下限${itemRange[0]}条，保留原内容转返修`);
     }
   }
   while (sections.length > maxSections) {
@@ -374,7 +358,10 @@ export async function refineSeededTopics(input: RefineSeededTopicsInput): Promis
         `当前参考封面：${input.card.name}；内容机制：${input.card.content_mechanism}；点击机制：${input.card.click_mechanism}。`,
         (() => {
           const spec = getCoverTemplateSpec(input.card.renderer_id);
-          return spec ? `该封面模板容量：${spec.sectionCount}组×约${spec.itemsPerSection}条，最少${spec.minTotalItems}条有效条目。` : '';
+          if (!spec) return '';
+          const sections = spec.sectionRange || [spec.sectionCount, spec.sectionCount];
+          const items = spec.itemRange || [spec.itemsPerSection, spec.itemsPerSection];
+          return `该封面模板容量：${sections[0]}到${sections[1]}组、每组${items[0]}到${items[1]}个资料单元，整张至少${spec.minTotalItems}条${spec.maxTotalItems ? `、最多${spec.maxTotalItems}条` : ''}；各组不必等量。`;
         })(),
       ].join('\n'),
     },
@@ -771,7 +758,9 @@ export async function composeDraft(input: ComposeDraftInput): Promise<ReferenceD
       if (offenders.length) diagnostic += ` | non_french_hits: ${offenders.slice(0, 5).join(' | ')}`;
     }
     if (blockingCoreIssues.includes('cover_section_severely_low') || blockingCoreIssues.includes('cover_density_severely_low')) {
-      diagnostic += ` | section_counts: [${cover.sections.map(s => s.items.length).join(',')}] (需${spec ? `${spec.sectionCount}组×${spec.itemsPerSection}条` : '?'})`;
+      const sectionRange = spec?.sectionRange || [spec?.sectionCount || 0, spec?.sectionCount || 0];
+      const itemRange = spec?.itemRange || [spec?.itemsPerSection || 0, spec?.itemsPerSection || 0];
+      diagnostic += ` | section_counts: [${cover.sections.map(s => s.items.length).join(',')}] (需${spec ? `${sectionRange[0]}-${sectionRange[1]}组、每组${itemRange[0]}-${itemRange[1]}条` : '?'})`;
     }
     throw new Error(`标题或封面返修后仍未达标：${blockingCoreIssues.join(', ')}${diagnostic}`);
   }
@@ -2129,10 +2118,12 @@ async function repairCoreOutput(input: {
   if (!spec) throw new Error('封面模板规格不存在');
   const currentCounts = input.cover.sections.map(section => section.items.length);
   const currentTotal = currentCounts.reduce((sum, count) => sum + count, 0);
+  const sectionRange = spec.sectionRange || [spec.sectionCount, spec.sectionCount];
+  const itemRange = spec.itemRange || [spec.itemsPerSection, spec.itemsPerSection];
   const capacityHint = (input.issues.includes('cover_section_severely_low')
     || input.issues.includes('cover_density_severely_low')
     || input.issues.includes('cover_section_count_invalid'))
-    ? `当前每组条目数为[${currentCounts.join(',')}]，共${input.cover.sections.length}组、${currentTotal}条，这不符合要求。请严格输出恰好${spec.sectionCount}组，每组恰好${spec.itemsPerSection}条（允许±1条误差），总条目不少于${spec.minTotalItems}条；宁可每组多写1-2条平淡但真实的短条目，也不能少于下限。`
+    ? `当前每组资料单元数为[${currentCounts.join(',')}]，共${input.cover.sections.length}组、${currentTotal}条。请按参考图补足到${sectionRange[0]}-${sectionRange[1]}组、每组${itemRange[0]}-${itemRange[1]}条、总数${spec.minTotalItems}-${spec.maxTotalItems || '不设上限'}条；各组允许不等量，但只能补正文真实支持的词、短语、对照或规则，不能用通用空话填充。`
     : '';
   const frenchOnlyHint = spec.primaryFrenchOnly
     ? '本模板每条 primary 只能是纯法语词、搭配或短表达，primary 里禁止出现任何汉字。"让备考者一眼看懂"由 secondary 承担：中文释义全部写进 secondary。返修时把 primary 里的中文（含"1. 名词阴阳性"这类编号知识点）改成纯法语条目或移到 secondary。'
@@ -2394,6 +2385,16 @@ function callTitleEditor(input: {
     'vocab_table',
     'course_roadmap',
     'collocation_dense',
+    'ielts_speaking_toc',
+    'criminal_law_formula',
+    'english_grammar_grid',
+    'french_gender_vocab',
+    'mao_article_notes',
+    'english_grammar_notebook',
+    'french_oral_question_bank',
+    'french_a1_practice_sheet',
+    'sat_vocab_dictionary',
+    'ielts_task1_four_part',
   ];
   const alternateTemplates = allTemplateIds
     .filter(id => id !== input.card.renderer_id)
@@ -3074,6 +3075,7 @@ export function titleLanguageIssue(value: string) {
   if (/\u51b2\u4e0a\u53bb|\u60f3\u51b2\u4e0a\u53bb/.test(title)) return 'ad_style_result_phrase';
   if (/资料太散|资料很散|资料太乱|资料乱/.test(title)) return 'ai_phrase_scattered_materials';
   if (/正在拖后腿|拖后腿|拖分/.test(title)) return 'ai_phrase_dragging_score';
+  if (/卡主(?:了)?|卡了|守住(?:这|那)?一分|替换就守住/.test(title)) return 'ai_phrase_sloganized_problem';
   if (/正在白背|白背|白学/.test(title)) return 'ai_phrase_wasted_memory';
   if (/资料包，一次看懂|资料包一次看懂|先看哪份资料|资料包怎么用|备考先查这张表|备考这次具体练什么/.test(title)) return 'product_manual_title';
   if (/合笔|论坛稿别混着套|正式信.*论坛稿/.test(title)) return 'stiff_or_mismatched_exam_phrase';
@@ -4454,7 +4456,7 @@ function ensureCoverIdentity(
   const family = spec?.family;
   const flexibleCapacity = Boolean(spec) && ['directory', 'document', 'offer', 'experience', 'pain', 'roadmap', 'book', 'table'].includes(spec!.family);
   const rawSections = flexibleCapacity && spec
-    ? cover.sections.slice(0, spec.sectionCount + 1)
+    ? cover.sections.slice(0, (spec.sectionRange || [spec.sectionCount, spec.sectionCount])[1])
     : cover.sections;
   const explainShorthand = (value: string) => value
     .replace(/vocabulaire\s*B2/gi, 'B2词汇')
@@ -4622,9 +4624,11 @@ function getCoreIssues(
   }
   const flexibleCapacity = spec && ['directory', 'document', 'offer', 'experience', 'pain', 'roadmap', 'phrase', 'table', 'book'].includes(spec.family);
   const lowDensityStoryCover = spec && ['experience', 'pain'].includes(spec.family);
+  const sectionRange = spec?.sectionRange || [spec?.sectionCount || 0, spec?.sectionCount || 0];
+  const itemRange = spec?.itemRange || [spec?.itemsPerSection || 0, spec?.itemsPerSection || 0];
   const sectionCountInvalid = !spec || (flexibleCapacity
-    ? cover.sections.length < (lowDensityStoryCover ? 1 : Math.max(2, spec.sectionCount - 1)) || cover.sections.length > spec.sectionCount + 1
-    : cover.sections.length !== spec.sectionCount);
+    ? cover.sections.length < (lowDensityStoryCover ? 1 : sectionRange[0]) || cover.sections.length > sectionRange[1]
+    : cover.sections.length < sectionRange[0] || cover.sections.length > sectionRange[1]);
   if (sectionCountInvalid) issues.push('cover_section_count_invalid');
   // 单组容量校验拆两挡（跟 cover_density 一致的思路）：
   // - 单组少于 50%（cover_section_severely_low）→ block，LLM 偷懒必须返修
@@ -4633,16 +4637,16 @@ function getCoreIssues(
   // 之前 hard fail 让"建议信三步"这种小切口选题在 clean_purple_directory
   // （每组 9 条）上必挂——LLM 拆不出 7 条/组 × 4 组就被整 job 干掉。
   if (spec) {
-    const severePerSection = Math.max(1, Math.ceil(spec.itemsPerSection * 0.5));
+    const severePerSection = Math.max(1, Math.ceil(itemRange[0] * 0.5));
     if (flexibleCapacity) {
-      const hasSevere = cover.sections.some(section => section.items.length < severePerSection || section.items.length > spec.itemsPerSection + 2);
+      const hasSevere = cover.sections.some(section => section.items.length < severePerSection || section.items.length > itemRange[1]);
       if (hasSevere) issues.push('cover_section_severely_low');
       else {
-        const hasSlight = cover.sections.some(section => section.items.length < Math.max(1, spec.itemsPerSection - 2) || section.items.length > spec.itemsPerSection + 2);
+        const hasSlight = cover.sections.some(section => section.items.length < Math.max(1, itemRange[0]) || section.items.length > itemRange[1]);
         if (hasSlight) issues.push('cover_section_capacity_invalid');
       }
     } else {
-      const hasMismatch = cover.sections.some(section => section.items.length !== spec.itemsPerSection);
+      const hasMismatch = cover.sections.some(section => section.items.length < itemRange[0] || section.items.length > itemRange[1]);
       if (hasMismatch) {
         // 非灵活模板（flashcard 等）：偏离就是 block
         issues.push('cover_section_severely_low');

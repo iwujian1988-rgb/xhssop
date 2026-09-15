@@ -1,4 +1,6 @@
 import type { BatchJob } from '@/lib/batch-store';
+import type { ReferenceDrivenDraft } from '@/types/reference-workflow';
+import { resolveCanonicalTitlePackage, isTextTitleDeliveryReady } from '@/lib/canonical-title-package';
 
 const INVALID_FOLDER_CHARS = /[\\/:*?"<>|]/g;
 const TITLE_LIMIT = 30;
@@ -32,53 +34,31 @@ export function buildBatchTxt(job: BatchJob, options: { coverStatus?: CoverStatu
   const draft = job.draft;
   if (!draft) return '（无 draft 数据）';
 
-  const sections: string[] = [];
+  return buildDraftTxt(draft, options.coverStatus ?? inferCoverStatus(job));
+}
 
-  sections.push(divider('选中标题'));
-  sections.push(draft.selected_title || '（空）');
-
-  if (draft.title_candidates?.length) {
-    sections.push(divider(`候选标题（共 ${draft.title_candidates.length} 条）`));
-    sections.push(
-      draft.title_candidates
-        .map(tc => {
-          const head = `[${tc.trigger_type || tc.title_type || '未分类'}] ${tc.title}`;
-          const meta = `  公式 #${tc.formula_id}${tc.reason ? ` · ${tc.reason}` : ''}`;
-          return `${head}\n${meta}`;
-        })
-        .join('\n'),
-    );
+/** 用户发布时真正需要复制的完整文字包。批量与单篇导出共用，避免生图任务漏字段。 */
+export function assertDraftTitleReadyForExport(draft:ReferenceDrivenDraft, options: { allowStale?: boolean } = {}):void {
+  if ((draft.downstreamStale && !options.allowStale) || draft.manualInnerReview?.status === 'needs_review') throw new Error('REVIEWED_DOWNSTREAM_STALE');
+  const titlePackage = resolveCanonicalTitlePackage(draft);
+  if(titlePackage.mode==='text_only') {
+    if(!titlePackage.humanSelectedTextTitleId)throw new Error('TEXT_TITLE_AWAITING_HUMAN_CHOICE');
+    if(!isTextTitleDeliveryReady(draft)) throw new Error('TEXT_TITLE_COVER_COPY_PENDING:请先在封面区确认模板并生成封面');
+    return;
   }
+  if (titlePackage.humanSelectedCandidateId === null) throw new Error('TITLE_AWAITING_HUMAN_CHOICE:请先人工选择标题');
+}
 
-  if (draft.cover_title_candidates?.length) {
-    sections.push(divider(`备用封面标题（共 ${draft.cover_title_candidates.length} 条）`));
-    sections.push(
-      draft.cover_title_candidates
-        .map(c => {
-          const lines = [`${c.template_id} · ${c.title_type || '封面'}`, `  ${c.title}`];
-          if (c.subtitle) lines.push(`  副标题：${c.subtitle}`);
-          if (c.reason) lines.push(`  理由：${c.reason}`);
-          return lines.join('\n');
-        })
-        .join('\n'),
-    );
-  }
-
-  sections.push(divider(`正文（${draft.caption.length} 字）`));
-  sections.push(draft.caption);
-
-  sections.push(divider('Tag（直接粘贴到小红书）'));
-  sections.push(draft.tags.map(t => (t.startsWith('#') ? t : `#${t}`)).join(' '));
-
-  if (draft.seo_keywords?.length) {
-    sections.push(divider('搜索关键词'));
-    sections.push(draft.seo_keywords.join(', '));
-  }
-
-  sections.push(divider('封面'));
-  sections.push(formatCoverStatus(options.coverStatus ?? inferCoverStatus(job)));
-
-  return sections.join('\n\n');
+export function buildDraftTxt(draft: ReferenceDrivenDraft, _coverStatus?: CoverStatus, options: { allowStale?: boolean } = {}): string {
+  assertDraftTitleReadyForExport(draft, options);
+  return [
+    divider('标题'),
+    draft.selected_title || '（空）',
+    divider('封面标题'),
+    [draft.cover.title || '（空）', draft.cover.subtitle ? `副标题：${draft.cover.subtitle}` : ''].filter(Boolean).join('\n'),
+    divider('正文'),
+    draft.caption,
+  ].join('\n\n');
 }
 
 export type CoverStatus =
@@ -90,19 +70,4 @@ export type CoverStatus =
 function inferCoverStatus(job: BatchJob): CoverStatus {
   if (job.cover_image_url) return { kind: 'image', url: job.cover_image_url, downloaded: true };
   return { kind: 'dom' };
-}
-
-function formatCoverStatus(status: CoverStatus): string {
-  switch (status.kind) {
-    case 'dom':
-      return '代码渲染封面（已随包导出 PNG）';
-    case 'image':
-      return status.downloaded
-        ? `AI 文生图（已随包导出）\n原 URL：${status.url}`
-        : `AI 文生图跨域下载失败，封面未入包。\n请手动打开以下 URL 保存：\n${status.url}`;
-    case 'image_missing':
-      return 'AI 文生图模板，但封面未生成（cover_image_url 为空）。';
-    case 'unknown':
-      return '封面状态未知。';
-  }
 }

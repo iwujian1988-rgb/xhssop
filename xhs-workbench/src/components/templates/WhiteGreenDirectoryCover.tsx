@@ -9,9 +9,10 @@ interface WhiteGreenDirectoryCoverProps {
 }
 
 export default function WhiteGreenDirectoryCover({ payload, className = '' }: WhiteGreenDirectoryCoverProps) {
-  const titleScale = payload.title.length > 18 ? '7.05cqw' : payload.title.length > 14 ? '8cqw' : '8.85cqw';
+  const titleScale = payload.title.length > 18 ? '5.8cqw' : payload.title.length > 14 ? '6.4cqw' : '7.3cqw';
   const sectionsKey = payload.sections.map(s => `${s.heading}:${s.items.length}:${s.items.map(i => `${i.primary}${i.secondary || ''}`).join(',')}`).join('|');
-  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey], { min: 0.58, max: 1, step: 0.025 });
+  // 参考图是清晰的密集清单，不是把所有条目压成小字；列数承担密度，字号保留最低可读比例。
+  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey], { min: 0.68, max: 1, step: 0.025 });
   return (
     <article
       className={`white-green-directory ${className}`}
@@ -47,20 +48,24 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
 
       <style>{`
         .white-green-directory {
+          --paper-base: #fafcf9;
+          --paper-mid: #edf3ee;
           position: relative;
+          display: flex;
           width: 100%;
           aspect-ratio: 3 / 4;
+          flex-direction: column;
           overflow: hidden;
           border: 1px solid #dfe8df;
           border-radius: 2px;
           background:
             radial-gradient(circle at 24% 18%, rgba(255,255,255,.9), transparent 28%),
             repeating-radial-gradient(circle at 30% 20%, rgba(20,90,45,.045) 0 1px, transparent 1px 4px),
-            linear-gradient(180deg, #fafcf9 0%, #edf3ee 48%, #f7faf6 100%);
+            linear-gradient(180deg, var(--paper-base) 0%, var(--paper-mid) 48%, var(--paper-base) 100%);
           box-shadow: 0 22px 50px rgba(20,32,22,.22);
           color: #087a2d;
           container-type: inline-size;
-          font-family: "Noto Serif SC", "STSong", serif;
+          font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
         }
         .white-green-directory::after {
           content: "";
@@ -75,18 +80,21 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
         .white-green-header {
           position: relative;
           z-index: 1;
+          flex: 0 0 auto;
           padding: 3.2cqw 4.5cqw 1.35cqw;
           text-align: center;
         }
         .white-green-header h1 {
           margin: 0;
           color: #07852e;
-          font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
-          font-size: clamp(34px, var(--title-scale), 74px);
+          font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
+          font-size: clamp(25px, var(--title-scale), 74px);
           font-weight: 900;
           line-height: 1.02;
           letter-spacing: 0;
           text-shadow: 0 1px 0 rgba(255,255,255,.75), 0 .16cqw .12cqw rgba(9,89,37,.1);
+          overflow-wrap: anywhere;
+          word-break: normal;
         }
         .white-green-header p {
           margin: .9cqw 0 0;
@@ -100,16 +108,19 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           position: relative;
           z-index: 1;
           display: flex;
+          flex: 1 1 auto;
           flex-direction: column;
-          justify-content: space-between;
-          height: 87.6%;
+          justify-content: stretch;
+          gap: 1.8cqw;
+          min-height: 0;
           padding: 0 4.5cqw 3cqw 2.3cqw;
-          overflow: hidden;
+          overflow: visible;
         }
         .white-green-section {
           display: grid;
-          flex-shrink: 0;
+          flex: 1 1 0;
           grid-template-columns: 10.7cqw minmax(0, 1fr);
+          min-height: 0;
         }
         .white-green-label {
           position: relative;
@@ -147,13 +158,13 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           margin: 0 0 calc(.65cqw * var(--fit-scale, 1));
           overflow: hidden;
           color: #0b7731;
-          font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
+          font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
           font-size: clamp(15px, calc(3.3cqw * var(--fit-scale, 1)), 29px);
           font-weight: 900;
           line-height: 1.05;
           text-align: center;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
         .white-green-grid {
           display: grid;
@@ -167,23 +178,13 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
           grid-template-columns: .85cqw minmax(0, 1fr);
           align-items: start;
           min-width: 0;
-          overflow: hidden;
+          overflow: visible;
           font-size: clamp(12px, calc(2.34cqw * var(--fit-scale, 1)), 21px);
           font-weight: 700;
           line-height: 1.08;
         }
-        .white-green-copy strong {
-          overflow: hidden;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
-        }
-        .white-green-copy span {
-          overflow: hidden;
-          display: -webkit-box;
-          -webkit-line-clamp: 1;
-          -webkit-box-orient: vertical;
-        }
+        .white-green-copy strong,
+        .white-green-copy span { display: block; overflow: visible; }
         .white-green-dot {
           width: .52cqw;
           height: .52cqw;
@@ -200,8 +201,8 @@ export default function WhiteGreenDirectoryCover({ payload, className = '' }: Wh
         .white-green-copy strong,
         .white-green-copy span {
           min-width: 0;
-          overflow-wrap: normal;
-          word-break: keep-all;
+          overflow-wrap: anywhere;
+          word-break: normal;
           hyphens: none;
         }
         .white-green-copy strong {

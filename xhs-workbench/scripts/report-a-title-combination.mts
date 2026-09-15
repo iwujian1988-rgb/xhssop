@@ -1,0 +1,16 @@
+import fs from 'node:fs/promises';
+const dir='data/a-title-combination-fix-test';
+const data=JSON.parse(await fs.readFile(`${dir}/live/summary.json`,'utf8')),r=data.results[0];
+const flags={A_TITLE_PASS:'NO',A_BLOCKER_RESOLVED:'NO',TOTAL_AI_CALLS:data.calls.factBrief+data.calls.title,FACT_BRIEF_CALLS:data.calls.factBrief,TITLE_CALLS:data.calls.title,COVER_CALLS:0};
+let md='# A_TITLE_COMBINATION_FIX_TEST\n\n';
+md+='仅A hash=149d2z1。组合改动：通用userUseCase、事实范围scopeNotes指令、approved规范化完全相等去重、Title窄承诺约束。无A参考答案硬编码。实验脚本修改，未修改生产src或Job。\n\n';
+md+='## 自动中间输出（原文）\n\n```json\n'+JSON.stringify(r.brief,null,2)+'\n```\n\n';
+md+='Brief主要模块保留；userUseCase提供按目的查语气/格式的真实用途，但没有明确收件人关系。scopeNotes复述Cordialement适用性判断，没有提供本轮期望的素材组织/场景边界；这段有Inner来源，但不应当作独立核验后的教学规则。中间结果未经人工修改直接送Title。\n\n';
+md+='## 8条raw\n\n| # | 标题 | units | reference | 过滤结果 |\n|---|---|---:|---|---|\n';
+r.candidates.forEach((c:any,i:number)=>md+=`| ${i+1} | ${c.textTitle} | ${c.visibleUnits} | ${c.referenceApprovedId} | ${c.filterReasons.join(' / ')||'通过'} |\n`);
+md+='\n## 最终4条（未选择）\n\n';r.humanSelectableTextTitles.forEach((c:any,i:number)=>md+=`${i+1}. ${c.textTitle}\n`);
+md+='\n## 人工验收\n\n- 7/8条<=20；一条22 units已被拒绝。\n- 现有过滤加approved原句去重后剩6条，按顺序取前4，没有人工重新挑选。\n- normalized exact equality复制数=0。NFKC、转小写、去标点空白，与现有重复规范化一致，无模糊相似匹配。\n- 未出现三段式、直接套用、16句就够、才有效、固定句式、比X更有用。窄承诺约束加在Title指令中，未新建语义分类器或全局关键词黑名单。\n- 最终第1条偏目录；第2条虽自然，但只覆盖开场一页；第3条把投诉与衔接局部放大，而且正文并非提供多组投诉衔接；第4条又收窄为开场合集。严格按整篇正式信素材的可选标准，原样值得选=0。\n- 8条raw中1/6/7/8仍偏整理、合集或功能参考，组合未解决目录化与范围漂移。\n- 第5条把Cordialement局部教学说明转为否定祈使标题并超长，反映输入局部仍能抢走整篇。它已因长度被淘汰，不能把淘汰当作该语义风险解决。\n\n';
+md+='```text\n'+Object.entries(flags).map(([k,v])=>`${k} = ${v}`).join('\n')+'\n```\n\n';
+md+='结论仅针对A组合测试失败，不单独归因userUseCase。没有运行B/C/D/E、Cover或重试，未宣布生产READY或全链路PASS。停止等待用户决定。\n';
+await fs.writeFile(`${dir}/REPORT.md`,md);await fs.writeFile(`${dir}/acceptance.json`,JSON.stringify({flags,le20:r.le20,programSurvival:r.survival,publishReadyFinalCount:0,humanSelectedTextTitleId:null},null,2));
+const p=JSON.parse(await fs.readFile(`${dir}/live/preservation.json`,'utf8'));console.log(JSON.stringify({flags,protectedUnchanged:p.unchanged}));

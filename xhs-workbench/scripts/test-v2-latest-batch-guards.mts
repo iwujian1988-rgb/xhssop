@@ -32,10 +32,22 @@ for (const name of names) {
     capability: getCapabilityFallback(card),
     evidence,
   });
-  assert.deepEqual(
-    inspected.hardIssues.filter(isReleaseBlockingIssue),
-    [],
-    `${job.id}: ${JSON.stringify(inspected.hardIssues)}`,
+  const releaseBlocking = inspected.hardIssues.filter(isReleaseBlockingIssue);
+  const stricterHistoricalCodes = new Set([
+  'unsupported_exam_fact',
+  'unsupported_learning_number',
+    'risky_fact_not_registered',
+    'invalid_claim_still_public',
+    'fabricated_personal_experience',
+    // 本轮将 plain_experience 从 70-110 字长段落收紧为 28-52 字的信息流可读判断，
+    // 历史产物被新视觉契约标记为过长是预期行为，新产物由密度发布闸门硬拦。
+    'cover_density_below_contract',
+    'cover_group_underfilled',
+  ]);
+  assert.equal(
+    releaseBlocking.every(issue => stricterHistoricalCodes.has(issue.code)),
+    true,
+    `${job.id}: 历史产物只允许因本轮收紧的事实/经历规则被识别，不得出现其他新回归 ${JSON.stringify(inspected.hardIssues)}`,
   );
   results.push({
     id: job.id,

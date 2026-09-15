@@ -90,6 +90,8 @@ missingSeoContent.captionParts.opening = '选考试前先查目标项目，再�
 const missingSeo = inspectForPublish(missingSeoContent, { productId: 'tef_tcf_canada', topic, capability, evidence });
 assert.equal(missingSeo.hardIssues.some(item => item.code === 'seo_missing_from_opening'), false, '正文开头漏SEO词时应复用已审核选题自然补齐，不得只提醒');
 assert.match(missingSeo.content.captionParts.opening, /TEF还是TCF/, '修复后的开头必须包含主搜索词');
+assert.match(missingSeo.content.captionParts.opening, /选考试前先查目标项目/, '补SEO时保留模型原本的自然开头，不再用选题标题覆盖正文');
+assert.doesNotMatch(missingSeo.content.captionParts.opening, /[？?]{2}|[？?]——.*[？?]$/u, '补SEO不得制造标题式重复问号');
 
 const incompleteEnumerationContent = content('TCF Canada 听力39题35分钟。');
 incompleteEnumerationContent.innerPages[0].page_title = '9类常见错误自查';
@@ -157,9 +159,19 @@ const compiledCoverCandidate = inspectForPublish(oneLongCoverCandidate, { produc
 assert.equal(compiledCoverCandidate.hardIssues.some(item => item.code === 'cover_secondary_too_long'), false, '候选池中的长解释应由编译器转入内页，不能直接判整篇失败');
 assert.equal(compiledCoverCandidate.warnings.some(item => item.includes('封面长副条目将转入内页')), true, '长解释转内页必须留下可见提醒');
 
-// 设计 6.2：未命中事实卡 → 提醒放行。商品2事实卡尚未登记TEF/TCF结构事实（重放实测10处误报），
-// 硬拦会误杀正确的对比内容；待 editorial map 补全确认考试边界后再按商品收紧。
+// 发布口径：未命中事实卡的确定性考试事实必须先返修，不得带着 warning 直接上线。
 assert.equal(wrong.hardIssues.some(item => item.code === 'unsupported_exam_fact'), true, '考试事实错位必须作为 hardIssue 发出，保持可见');
-assert.equal(wrong.hardIssues.filter(isReleaseBlockingIssue).some(item => item.code === 'unsupported_exam_fact'), false, '未登记考试事实按设计6.2提醒放行，不硬拦');
+assert.equal(wrong.hardIssues.filter(isReleaseBlockingIssue).some(item => item.code === 'unsupported_exam_fact'), true, '未登记考试事实进发布阻断，触发既有的内容返修');
 
-console.log(JSON.stringify({ ok: true, assertions: 35 }, null, 2));
+const fabricatedExperience = content('TCF Canada 听力39题35分钟。');
+fabricatedExperience.captionParts.opening = 'TEF还是TCF？还记得我考前焦虑得睡不着，后来发现先做样题就行。';
+const fabricatedInspection = inspectForPublish(fabricatedExperience, { productId: 'tef_tcf_canada', topic, capability, evidence });
+assert.equal(fabricatedInspection.hardIssues.filter(isReleaseBlockingIssue).some(item => item.code === 'fabricated_personal_experience'), true, '输入没有的个人经历不得写进公开正文');
+
+const invalidPublicClaim = content('TCF Canada 听力39题35分钟。');
+invalidPublicClaim.factualClaims = [{ text: 'TCF Canada 听力39题40分钟', type: 'exam', sourceIds: ['OFF-TCF-CANADA-001'] }];
+invalidPublicClaim.innerPages[0].bullets = ['TCF Canada 听力39题40分钟。'];
+const invalidPublicInspection = inspectForPublish(invalidPublicClaim, { productId: 'tef_tcf_canada', topic, capability, evidence });
+assert.equal(invalidPublicInspection.hardIssues.filter(isReleaseBlockingIssue).some(item => item.code === 'invalid_claim_still_public'), true, '内部事实声明被丢弃时，同一错误不得留在封面/内页/正文');
+
+console.log(JSON.stringify({ ok: true, assertions: 37 }, null, 2));

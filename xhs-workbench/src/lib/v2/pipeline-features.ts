@@ -11,7 +11,7 @@ export type PipelineVersion = 'consensus-v1' | 'legacy-v2';
 
 export interface PipelineFeatures {
   productId: ProductId;
-  /** 商品1 用 consensus-v1（共识对齐新流程）；商品2/3 用 legacy-v2（现有 v2 行为，零变化）。 */
+  /** 所有普通教育内容共用同一共识流程；商品差异只来自各自配置与事实数据。 */
   pipelineVersion: PipelineVersion;
   /** 选题阶段走共识 5 块契约 + 3 方向候选池（设计 §3）。 */
   consensusTopicStage: boolean;
@@ -29,27 +29,41 @@ const CONSENSUS_V1_FEATURES: PipelineFeatures = {
   consensusTitleStage: true,
 };
 
-const LEGACY_V2_FEATURES: Record<'tef_tcf_canada' | 'tcf_canada_writing_7day', PipelineFeatures> = {
+const STANDARD_EDUCATIONAL_FEATURES: Record<'tef_tcf_canada' | 'tcf_canada_writing_7day', PipelineFeatures> = {
   tef_tcf_canada: {
     productId: 'tef_tcf_canada',
-    pipelineVersion: 'legacy-v2',
-    consensusTopicStage: false,
-    consensusContentBrief: false,
-    consensusTitleStage: false,
+    pipelineVersion: 'consensus-v1',
+    consensusTopicStage: true,
+    consensusContentBrief: true,
+    consensusTitleStage: true,
   },
   tcf_canada_writing_7day: {
     productId: 'tcf_canada_writing_7day',
-    pipelineVersion: 'legacy-v2',
-    consensusTopicStage: false,
-    consensusContentBrief: false,
-    consensusTitleStage: false,
+    pipelineVersion: 'consensus-v1',
+    consensusTopicStage: true,
+    consensusContentBrief: true,
+    consensusTitleStage: true,
   },
 };
 
 export function resolvePipelineFeatures(productId: ProductId): PipelineFeatures {
   if (productId === 'delf_b2_writing') return CONSENSUS_V1_FEATURES;
-  const legacy = LEGACY_V2_FEATURES[productId];
+  const legacy = STANDARD_EDUCATIONAL_FEATURES[productId];
   if (legacy) return legacy;
   // 宁可响亮失败也不要静默当 legacy 处理。
   throw new Error(`resolvePipelineFeatures: unknown productId "${productId}"`);
+}
+
+/**
+ * 标准普通内容的整批入口：三个商品均使用同一批量规划；showcase 仍独立。
+ */
+export function usesStandardEducationalAutoPlan(
+  productId: ProductId,
+  contentMode: 'standard' | 'product_showcase' | undefined,
+  knowledgeMode?: string,
+) {
+  if (contentMode !== 'standard') return false;
+  void productId;
+  void knowledgeMode;
+  return true;
 }

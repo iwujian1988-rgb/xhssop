@@ -11,7 +11,8 @@ import type { ProductId } from '@/types/data';
  * - 考试边界不放这里：阶段 B 直接调 listVerifiedExamFacts(productId)（设计 §3.1）。
  *
  * 字段名内部用英文；阶段 B 转 5 块契约中文键时再映射。
- * 商品2/3 返回 undefined——完成商品1验收后才迁移，undefined 是阶段 B 回退现状行为的信号。
+ * 三个商品均提供同一结构。内容取自各自 product facts；不会把商品1能力
+ * 作为商品2/3的标题输入。
  */
 
 export interface EditorialCapability {
@@ -105,7 +106,43 @@ const DELF_B2_EDITORIAL_MAP: ProductEditorialMap = {
   },
 };
 
+const TEF_TCF_EDITORIAL_MAP: ProductEditorialMap = {
+  productId: 'tef_tcf_canada',
+  capabilities: [
+    { capabilityId: 'cap-exam-choice', capability: 'TEF Canada 与 TCF Canada 的选择、考试差异和准备判断', modules: ['01_我要考TEF还是TCF'] },
+    { capabilityId: 'cap-goal-diagnosis', capability: '围绕 CLB/NCLC 目标的四科差距诊断与训练优先级', modules: ['02_先测一下你离CLB7有多远'] },
+    { capabilityId: 'cap-output-training', capability: '写作句型、段落表达和口语观点/过渡句训练', modules: ['03_写作提分捷径', '08_开口说没那么可怕'] },
+    { capabilityId: 'cap-vocabulary', capability: '按主题整理的词汇与输出调用训练', modules: ['04_背词不迷路'] },
+    { capabilityId: 'cap-exam-prep', capability: '真题主题、听力训练、30天计划与模考后的调整', modules: ['05_写作练什么', '06_30天怎么安排', '07_听力这件事急不来'] },
+    { capabilityId: 'cap-process', capability: '报名、考试当天与查分流程准备', modules: ['12_上考场那天从报名到查分全流程'] },
+  ],
+  buyerMap: {
+    userStages: ['准备以法语成绩支持加拿大移民规划、尚未选定TEF或TCF的人', '目标明确但四科基础不均衡、需要安排训练的人', '每天只能留出有限备考时间的上班族或学生', '临近考试、需要同时理清流程和训练的人'],
+    realStates: ['不知道先考TEF还是TCF，担心选错后重来', '不知道自己离目标差在哪一科，容易平均用力', '背过表达但在写作或口语输出时调不出来', '听力被语速和连续语流带跑，做完题只会看分数'],
+    motivations: ['想先确认考试选择和训练优先级，再投入时间', '想把零散资料变成四科可执行的计划', '想让词汇和句型真正服务写作、口语输出', '想在考前把流程与复盘安排清楚'],
+  },
+};
+
+const TCF7_EDITORIAL_MAP: ProductEditorialMap = {
+  productId: 'tcf_canada_writing_7day',
+  capabilities: [
+    { capabilityId: 'cap-task-map', capability: 'TCF Canada 写作 T1/T2/T3 的任务格式、完成动作和字数核对', modules: ['任务格式速查'] },
+    { capabilityId: 'cap-seven-day', capability: '考前7天每天一个写作纠错动作与限时训练路径', modules: ['7天路径'] },
+    { capabilityId: 'cap-t1', capability: 'T1 信息完整、对象意识与称呼/请求/结尾调整', modules: ['Day 3 信息完整度', 'Day 6 对象和语体'] },
+    { capabilityId: 'cap-t2t3', capability: 'T2 评论补写、T3 材料比较与观点展开', modules: ['Day 1 材料比较', 'Day 2 评论补写', 'Day 4 把立场展开'] },
+    { capabilityId: 'cap-revision', capability: '完整作答后定位一个问题、局部重写并保存前后稿', modules: ['写后：先定位，再重写', '留存两个版本'] },
+    { capabilityId: 'cap-final-check', capability: '考前90秒检查与三项任务复盘', modules: ['先做90秒检查'] },
+  ],
+  buyerMap: {
+    userStages: ['距离TCF Canada考试约一到三周、能写基础句子但输出不稳定的人', '考前最后一周需要集中查漏补缺的写作考生', '已经练过多篇作文、但不知道下一篇该具体改哪里的人', '看得懂题干却常漏掉任务动作、对象或信息要求的人'],
+    realStates: ['T1 容易漏掉题干动作、时间地点或请求', 'T2 只会叙述经历，缺评价和理由', 'T3 把两份材料并列摘要，或观点只有一句', '写完总想整篇重来，却没有留下可比较的修改结果'],
+    motivations: ['想分清T1/T2/T3各自的完成要求', '想把空泛判断展开成理由、结果或例子', '想用有限时间做一次真正有顺序的改稿', '想在考前保住任务完成度而不是盲背模板'],
+  },
+};
+
 export function getProductEditorialMap(productId: ProductId): ProductEditorialMap | undefined {
   if (productId === 'delf_b2_writing') return DELF_B2_EDITORIAL_MAP;
+  if (productId === 'tef_tcf_canada') return TEF_TCF_EDITORIAL_MAP;
+  if (productId === 'tcf_canada_writing_7day') return TCF7_EDITORIAL_MAP;
   return undefined;
 }

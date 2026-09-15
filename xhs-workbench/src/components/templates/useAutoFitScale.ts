@@ -32,12 +32,14 @@ export function useAutoFitScale<T extends HTMLElement>(deps: unknown[], options?
     const el = ref.current;
     if (!el) return;
 
+    const coverHost=el.closest('.cover-display-policy');
+    const floor=coverHost ? Math.max(min,parseFloat(getComputedStyle(coverHost).getPropertyValue('--cover-min-scale'))||0.8) : min;
     let scale = max;
     el.style.setProperty('--fit-scale', String(scale));
 
     let guard = 0;
-    while (el.scrollHeight > el.clientHeight + tolerance && scale > min && guard < 60) {
-      scale = Math.max(min, Number((scale - step).toFixed(3)));
+    while (el.scrollHeight > el.clientHeight + tolerance && scale > floor && guard < 60) {
+      scale = Math.max(floor, Number((scale - step).toFixed(3)));
       el.style.setProperty('--fit-scale', String(scale));
       guard += 1;
     }

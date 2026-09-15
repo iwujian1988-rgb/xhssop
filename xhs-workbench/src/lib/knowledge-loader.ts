@@ -4,13 +4,20 @@ import { ProductId } from '@/types/data';
 
 const DELF_ROOT = 'D:\\claude_work\\xunixiangmu\\deliverables\\feishu_pages';
 const TEF_ROOT = 'D:\\claude_work\\taolun\\法语付费资料';
+const KNOWLEDGE_ROOTS: Partial<Record<ProductId, string>> = {
+  delf_b2_writing: DELF_ROOT,
+  tef_tcf_canada: TEF_ROOT,
+  // 商品3的原始 Markdown 尚未进入本仓库；明确为空，禁止误读商品2目录。
+  tcf_canada_writing_7day: undefined,
+};
 
 export async function loadKnowledgeSnippets(productId: ProductId, query: string, maxChars = 9000): Promise<string> {
-  const files = productId === 'delf_b2_writing'
-    ? await listMarkdownFiles(DELF_ROOT, 80)
-    : await listTefFiles();
+  const root = KNOWLEDGE_ROOTS[productId];
+  const files = productId === 'tef_tcf_canada'
+    ? await listTefFiles(root)
+    : root ? await listMarkdownFiles(root, 80) : [];
 
-  const keywords = extractKeywords(query);
+  const keywords = extractKeywords(query, productId);
   const scored: Array<{ file: string; text: string; score: number }> = [];
 
   for (const file of files) {
@@ -43,12 +50,13 @@ async function listMarkdownFiles(root: string, limit: number): Promise<string[]>
       if (out.length >= limit) return;
     }
   }
-  await walk(root);
+  try { await walk(root); } catch { return []; }
   return out;
 }
 
-async function listTefFiles(): Promise<string[]> {
-  const entries = await fs.readdir(TEF_ROOT, { withFileTypes: true });
+async function listTefFiles(root = TEF_ROOT): Promise<string[]> {
+  let entries;
+  try { entries = await fs.readdir(root, { withFileTypes: true }); } catch { return []; }
   return entries
     .filter(entry => entry.isFile() && /^\d+_.+_v1\.md$/i.test(entry.name))
     .map(entry => path.join(TEF_ROOT, entry.name));
@@ -63,8 +71,12 @@ function compactMarkdown(text: string): string {
     .trim();
 }
 
-function extractKeywords(text: string): string[] {
-  const base = ['DELF', 'B2', 'TEF', 'TCF', 'CLB7', '写作', '范文', '句型', '词汇', '计划', '错题', '考前'];
+function extractKeywords(text: string, productId: ProductId): string[] {
+  const base = productId === 'delf_b2_writing'
+    ? ['DELF', 'B2', '写作', '范文', '句型', '词汇', '评分', '考前']
+    : productId === 'tcf_canada_writing_7day'
+      ? ['TCF', 'Canada', '写作', 'Tâche', '句型', '词汇', '7天', '考前']
+      : ['TEF', 'TCF', 'Canada', 'CLB7', 'NCLC7', '选考', '写作', '四科', '计划', '考前'];
   const custom = text
     .split(/[\s,，。；;、：:\n\r]+/)
     .map(word => word.trim())

@@ -1,5 +1,6 @@
 import type { CompetitorCreativeCard, DenseDirectoryCoverPayload, CreativeCardRenderer } from '@/types/reference-workflow';
 import type { ProductId } from '@/types/data';
+import type { ExamScope } from '@/types/data';
 
 /** 锁定不变：构图骨架、配色、标题处理方式。 */
 const TEMPLATE_CORE: Partial<Record<CreativeCardRenderer, string>> = {
@@ -159,20 +160,63 @@ export function buildReferenceImagePrompt(
   cover: DenseDirectoryCoverPayload,
   hasReference: boolean,
   productId?: ProductId,
+  examScope?: ExamScope,
+  referenceKind: 'dazibao_pool' | 'market_reference' = 'dazibao_pool',
 ) {
+  if (referenceKind === 'market_reference') {
+    return `${buildMarketReferencePrompt(cover)}\n\n${productIdentityGuard(productId, examScope)}`;
+  }
+  if (card.id === 'content_note_dazibao') {
+    return `${buildNativeDazibaoPrompt(cover)}\n\n${productIdentityGuard(productId, examScope)}`;
+  }
   const prompt = hasReference
     ? buildReferenceFirstPrompt(card, cover)
     : buildTextOnlyPrompt(card, cover);
-  return `${scopeReferencePrompt(prompt, productId)}\n\n${productIdentityGuard(productId)}`;
+  return `${scopeReferencePrompt(prompt, productId, examScope)}\n\n${productIdentityGuard(productId, examScope)}`;
 }
 
-function scopeReferencePrompt(prompt: string, productId?: ProductId) {
+function buildMarketReferencePrompt(cover: DenseDirectoryCoverPayload) {
+  const title = posterTitleLines(cover.title);
+  return [
+    '这是图生图任务，已附带一张真实小红书市场原笔记封面。',
+    '参考图只借鉴原笔记的封面构图、标题节奏、留白、配色和真人做图感；不要复制原图文字、考试名称、人物、账号、水印、二维码、页码或界面元素。',
+    '输出 3:4 竖版小红书内容封面。用当前文案替换原图全部文字，标题是唯一视觉中心，保持自然分行、清晰大字和充足留白；不要做成 PPT、网页 Hero、商务海报或复杂模板。',
+    `本篇封面文案（只写这些字，按自然的 2-3 行排版）：\n${title.join('\n')}`,
+    '参考图中任何旧文案都必须擦除，不能混入当前封面；不要新增与本篇无关的小字、卖点、资料数量或个人经历。',
+  ].join('\n\n');
+}
+
+/** content_note 的最小图生图适配：参考图负责“像真人做的”，文案负责本篇信息。 */
+function buildNativeDazibaoPrompt(cover: DenseDirectoryCoverPayload) {
+  const title = posterTitleLines(cover.title);
+  return [
+    '这是图生图任务，已附带一张真实小红书原生大字报参考图。',
+    '参考图只学习：中文粗黑字体的手感、自然分行、标题留白、局部高亮、轻手绘标记和真人博主做图的松弛感；不要复制参考图的具体文案、人物、图标或页面内容。',
+    '输出 3:4 竖版小红书内容封面，标题是唯一视觉中心；大字、短句、留白充足，排版简单但有层次。避免商务海报、PPT、网页 Hero、手机界面、复杂几何模板和明显 AI 插画感。',
+    `本篇封面短标题（只写这些字，按 2-3 行排版）：\n${title.join('\n')}`,
+    '不要把完整发布标题或长段落塞进封面；不要重复考试名。若第一行已经出现考试名，后续只保留核心短语。',
+    '可借鉴参考图的配色氛围、一个高亮色块或一两个轻量手写符号，但不要加入黑边、页码、X、水印、账号、二维码或任何调试信息。',
+    '中文必须清晰可读，字体厚实但不变形；不同字号和行距要有节奏，不能每行平均、拥挤或孤零零地漂在画面中。',
+  ].join('\n\n');
+}
+
+function posterTitleLines(value: string) {
+  const clean = value.replace(/[📌🤔✨💡✅❗！]+/gu, '').replace(/\s+/gu, ' ').trim();
+  const parts = clean.split(/[｜|：:，,。！？?!]/u).map(item => item.trim()).filter(Boolean);
+  if (parts.length >= 2) return parts.slice(0, 3).map(item => item.replace(/^零基础\s*[｜|]?\s*/u, '零基础')).filter(Boolean);
+  if (clean.length <= 9) return [clean];
+  const cut = Math.ceil(clean.length / 2);
+  return [clean.slice(0, cut), clean.slice(cut)];
+}
+
+function scopeReferencePrompt(prompt: string, productId?: ProductId, examScope?: ExamScope) {
   // official_notice 的通用视觉说明里有历史示例词。按商品替换后再发送，
   // 避免模型把示例里的 DELF 当成本篇内容；参考图本身仍由身份校验明确要求擦除旧词。
   if (productId === 'tef_tcf_canada') {
+    const identity = examScope === 'tef_canada' ? 'TEF Canada' : examScope === 'tcf_canada' ? 'TCF Canada' : 'TEF/TCF Canada';
     return prompt
-      .replace(/DELF\s*B2/gi, 'TEF/TCF Canada')
-      .replace(/DELF/gi, 'TEF/TCF');
+      .replace(/DELF\s*B2/gi, identity)
+      .replace(/DELF/gi, identity);
   }
   if (productId === 'tcf_canada_writing_7day') {
     return prompt
@@ -183,8 +227,18 @@ function scopeReferencePrompt(prompt: string, productId?: ProductId) {
   return prompt;
 }
 
-function productIdentityGuard(productId?: ProductId) {
+function productIdentityGuard(productId?: ProductId, examScope?: ExamScope) {
   if (productId === 'tef_tcf_canada') {
+    if (examScope === 'tef_canada') return [
+      '【商品身份最终校验】本图只属于 TEF Canada 备考资料。',
+      '画面不得出现另一场加拿大法语考试、混合考试身份、DELF、DALF、B2、法国文凭考试等身份词；参考图旧文字必须擦除。',
+      '只允许出现 TEF Canada、Canada、CLB、NCLC 及本次提供的文案。',
+    ].join('\n');
+    if (examScope === 'tcf_canada') return [
+      '【商品身份最终校验】本图只属于 TCF Canada 备考资料。',
+      '画面不得出现另一场加拿大法语考试、混合考试身份、DELF、DALF、B2、法国文凭考试等身份词；参考图旧文字必须擦除。',
+      '只允许出现 TCF Canada、Canada、CLB、NCLC 及本次提供的文案。',
+    ].join('\n');
     return [
       '【商品身份最终校验】本图只属于 TEF/TCF Canada 备考资料。',
       '参考图中的 DELF、DALF、DELF B2、法国文凭考试等文字属于参考图旧内容，必须全部擦除并替换，绝对不能出现在成图任何位置。',

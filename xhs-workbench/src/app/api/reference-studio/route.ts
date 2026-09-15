@@ -15,6 +15,8 @@ import type { ReferenceWorkflowRequest } from '@/types/reference-workflow';
 import { composeV2, isV2PipelineEnabled, planTopicsV2 } from '@/lib/v2/pipeline';
 import { resolvePipelineFeatures } from '@/lib/v2/pipeline-features';
 import { pickProductShowcasePlan } from '@/lib/product-showcase-library';
+import { prepareJobForHumanReview } from '@/lib/manual-inner-review';
+import type { PipelineArtifacts, PipelineResult } from '@/lib/v2/contracts';
 
 const productIds: ProductId[] = ['delf_b2_writing', 'tef_tcf_canada', 'tcf_canada_writing_7day'];
 
@@ -43,6 +45,9 @@ export async function POST(request: Request) {
           contentMode,
           limit: consensusSingle ? 3 : 4,
           topicMode: 'single',
+          knowledgeModeOverride: body.content_mode === 'product_showcase'
+            ? 'product_grounded'
+            : body.knowledge_mode,
         });
         return NextResponse.json({
           card,
@@ -78,9 +83,12 @@ export async function POST(request: Request) {
     }
 
     if (!body.topic) return error('请先选择内容任务', 400);
-    const evidence = await resolveProductEvidence(body.product_id, facts, body.topic);
+    const editorialOnly = (body.topic as typeof body.topic & { v2_topic?: { knowledgeMode?: string } }).v2_topic?.knowledgeMode === 'educational_original';
+    const evidence = editorialOnly ? [] : await resolveProductEvidence(body.product_id, facts, body.topic);
     if (isV2PipelineEnabled()) {
-      const result = await composeV2({
+      let result: PipelineResult;
+      try {
+        result = await composeV2({
         productId: body.product_id,
         card,
         topic: body.topic,
@@ -89,10 +97,24 @@ export async function POST(request: Request) {
         showcasePlan: body.content_mode === 'product_showcase'
           ? pickProductShowcasePlan(body.product_id, facts, `${card.id}|${body.topic.id}`)
           : undefined,
-        endingShowcasePlan: body.content_mode !== 'product_showcase'
+        endingShowcasePlan: body.content_mode !== 'product_showcase' && !editorialOnly
           ? pickProductShowcasePlan(body.product_id, facts, `ending|${card.id}|${body.topic.id}`)
           : undefined,
-      });
+        });
+      } catch (cause) {
+        const paused = cause as Error & { partialArtifacts?: PipelineArtifacts };
+        if (paused.message !== 'INNER_AWAITING_HUMAN_REVIEW' || !paused.partialArtifacts?.content) throw cause;
+        const savedBatchId = `single_${Date.now()}`;
+        const now = new Date().toISOString();
+        const job = prepareJobForHumanReview({ id: formatJobId(1), seq: 1, product_id: body.product_id,
+          reference_card_id: card.id, topic: body.topic, status: 'awaiting_review', attempts: 1,
+          pipeline_version: 'v2', artifacts: paused.partialArtifacts, started_at: now, usage: getRecentAiUsage() });
+        await createBatch({ id: savedBatchId, product_id: body.product_id, direction: body.direction || '', created_at: now, status: 'done', pipeline_version: 'v2', jobs: [] });
+        await saveJob(savedBatchId, job);
+        return NextResponse.json({ card, draft: job.draft, usage: job.usage, artifacts: job.artifacts,
+          pipeline_version: 'v2', saved_batch_id: savedBatchId, needs_manual_review: true,
+          warnings: ['正文已生成，请在人工审核页通过并锁定后再继续。'] });
+      }
       const savedBatchId = `single_${Date.now()}`;
       const now = new Date().toISOString();
       await createBatch({

@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from 'react';
 import Link from 'next/link';
-import { productShowcaseCreativeCards, standardCreativeCards } from '@/lib/creative-card-library';
+import { standardCreativeCards } from '@/lib/creative-card-library';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import { resolvePipelineFeatures } from '@/lib/v2/pipeline-features';
 import { DraftReview } from '@/components/draft/DraftReview';
@@ -17,7 +17,8 @@ export default function StudioPage() {
   const [productId, setProductId] = useState<ProductId>('delf_b2_writing');
   const [cardId, setCardId] = useState(supportedCards[0]?.id || '');
   const [direction, setDirection] = useState('');
-  const [contentMode, setContentMode] = useState<'standard' | 'product_showcase'>('standard');
+  const contentMode = 'standard' as const;
+  const knowledgeMode = 'educational_original' as const;
   const [topics, setTopics] = useState<MigratedTopic[]>([]);
   const [selectedTopicId, setSelectedTopicId] = useState('');
   const [draft, setDraft] = useState<ReferenceDrivenDraft | null>(null);
@@ -28,7 +29,7 @@ export default function StudioPage() {
   // 生成提醒：单条 topics/compose 响应里的 warnings + 兜底标记（补页警告/候选死因/需人工复核）。
   const [reminders, setReminders] = useState<string[]>([]);
   const [needsManualReview, setNeedsManualReview] = useState(false);
-  const cardsForMode = contentMode === 'product_showcase' ? productShowcaseCreativeCards : supportedCards;
+  const cardsForMode = supportedCards;
   const card = useMemo(() => cardsForMode.find(item => item.id === cardId) || cardsForMode[0], [cardId, cardsForMode]);
   const selectedTopic = topics.find(topic => topic.id === selectedTopicId) || topics[0];
   // B2（§3.4）：商品1普通模式单条候选池=3；showcase 与商品2/3 维持 4。
@@ -58,18 +59,6 @@ export default function StudioPage() {
     setNeedsManualReview(false);
   }
 
-  function selectContentMode(nextMode: 'standard' | 'product_showcase') {
-    setContentMode(nextMode);
-    const nextCards = nextMode === 'product_showcase' ? productShowcaseCreativeCards : supportedCards;
-    setCardId(nextCards[0]?.id || '');
-    setTopics([]);
-    setSelectedTopicId('');
-    setDraft(null);
-    setError('');
-    setReminders([]);
-    setNeedsManualReview(false);
-  }
-
   async function requestWorkflow(action: 'topics' | 'compose') {
     if (!card || (action === 'compose' && !selectedTopic)) return;
     setLoading(action);
@@ -85,6 +74,7 @@ export default function StudioPage() {
           reference_card_id: card.id,
           direction,
           content_mode: contentMode,
+          knowledge_mode: knowledgeMode,
           topic: action === 'compose' ? selectedTopic : undefined,
         }),
       });
@@ -135,13 +125,8 @@ export default function StudioPage() {
               <option value="tcf_canada_writing_7day">商品3：TCF Canada写作7天急救</option>
             </select>
             <div className="mt-4 space-y-2">{cardsForMode.map(item => <ReferenceChoice key={item.id} card={item} active={item.id === cardId} onClick={() => selectCard(item.id)} />)}</div>
-            <label className="mt-4 block text-xs font-bold text-neutral-500">可选方向</label>
-            <label className="mt-4 block text-xs font-bold text-neutral-500">内容模式</label>
-            <select className="field mt-1" value={contentMode} onChange={event => selectContentMode(event.target.value as 'standard' | 'product_showcase')}>
-              <option value="standard">普通内容：痛点 / 买点 / 干货</option>
-              <option value="product_showcase">介绍知识库：整篇就是商品展示</option>
-            </select>
-            <textarea className="field mt-1 min-h-20 resize-y" placeholder={contentMode === 'product_showcase' ? '例如：重点展示范文库怎么用；留空由AI结合商品展示角度选择切口' : '例如：更偏考前急救；留空由AI结合种子和封面选择切口'} value={direction} onChange={event => setDirection(event.target.value)} />
+            <div className="mt-4 border border-neutral-200 bg-neutral-50 px-3 py-2 text-xs leading-5 text-neutral-600">普通内容笔记 · AI原创</div>
+            <textarea className="field mt-1 min-h-20 resize-y" placeholder="例如：更偏考前急救；留空由AI结合种子和封面选择切口" value={direction} onChange={event => setDirection(event.target.value)} />
             <button className="mt-3 w-full bg-neutral-950 px-4 py-2.5 text-sm font-bold text-white disabled:bg-neutral-400" disabled={!!loading} onClick={() => requestWorkflow('topics')}>
               {loading === 'topics' ? `AI正在创作${topicCount}个适配选题...` : `生成${topicCount}个新选题`}
             </button>
@@ -170,7 +155,7 @@ export default function StudioPage() {
           {!topics.length ? <EmptyState card={card} /> : (
             <section className="border border-neutral-200 bg-white p-5">
               <div className="flex items-end justify-between gap-3">
-                <div><h2 className="font-black">2. 选择内容任务</h2><p className="mt-1 text-sm text-neutral-500">默认生成搜索痛点、买点承接、细分干货、知识库宣传4类任务，种子负责防错配。</p></div>
+                <div><h2 className="font-black">2. 选择内容任务</h2><p className="mt-1 text-sm text-neutral-500">由 AI 围绕当前考试范围生成原创内容入口，普通内容不读取商品知识库。</p></div>
                 <button className="bg-[#c82d3e] px-4 py-2.5 text-sm font-bold text-white disabled:bg-neutral-400" disabled={!selectedTopic || !!loading} onClick={() => requestWorkflow('compose')}>
                   {loading === 'compose' ? '正在检索并生成完整笔记...' : '用这个选题生成完整笔记'}
                 </button>

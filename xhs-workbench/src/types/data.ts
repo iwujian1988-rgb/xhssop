@@ -1,6 +1,9 @@
 // ---- 商品 ----
 export type ProductId = 'delf_b2_writing' | 'tef_tcf_canada' | 'tcf_canada_writing_7day';
 
+/** 商品2内容范围：写作专题必须选定一个考试，比较/政策类内容才使用 common。 */
+export type ExamScope = 'tef_canada' | 'tcf_canada' | 'common';
+
 export interface PresetSellingPoint {
   id: string;
   name: string;

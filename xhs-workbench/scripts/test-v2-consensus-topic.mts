@@ -24,6 +24,7 @@ import {
   type ConsensusTopicStageInput,
 } from '../src/lib/v2/consensus-topic-stage';
 import { selectTopicsForCard } from '../src/lib/v2/batch-topic-selection';
+import { findHistoricalTopicMatch, selectRecentTopicRepresentatives } from '../src/lib/v2/topic-history-dedup';
 import { listVerifiedExamFacts } from '../src/lib/v2/verified-exam-facts';
 import { getProductEditorialMap } from '../src/lib/v2/product-editorial-map';
 import type { CompetitorCreativeCard } from '../src/types/reference-workflow';
@@ -108,6 +109,9 @@ assert(prompt.contract.本次生成要求.选题数量 === 3, `候选池数量�
 assert(prompt.user.includes('"选题数量":3'), 'prompt 用户块出现的是候选池=3');
 assert(!prompt.user.includes('topicsPerCard') && !prompt.system.includes('topicsPerCard'), 'prompt 中不出现挑选参数 topicsPerCard（数量与挑选分离）');
 assert(prompt.contract.商品身份.商品能力.length === getProductEditorialMap('delf_b2_writing')!.capabilities.length, '商品能力来自 editorial map');
+assert(prompt.system.includes('250词写不够、某个连接词'), 'system 明确限制细痛点在批量中的占比');
+assert(prompt.system.includes('考场攻略、冲刺排雷、反常规但可解释的“邪修”技巧'), 'system 允许可解释的邪修/攻略方向');
+assert(prompt.system.includes('攻略、汇总、速查、题型总整理'), 'system 优先生成攻略与汇总型内容');
 
 // ---------------------------------------------------------------------------
 // 2. 考试边界筛选规则
@@ -389,6 +393,39 @@ const hardDedup = selectTopicsForCard({ candidates: pool, topicsPerCard: 2, card
 assert(!hardDedup.selected.some(t => t.id === 'c1'), '卡内重复候选被硬去重落选');
 assert(hardDedup.unselected.some(u => u.topic.id === 'c1' && u.reason.includes('与历史重复')), '落选原因归类为与历史重复');
 
+// 跨天旁路查重：比较“痛点+解决机制”，不能把同一痛点的不同方法误杀。
+const yesterdayArgument = '写不够250词？用原因、例子和因果链展开观点';
+const sameCausalPair = '论证卡壳写不满250词，用因果链和例子扩写';
+const differentSolution = '写不够250词？补一组主题高级词和固定搭配';
+assert(Boolean(findHistoricalTopicMatch(sameCausalPair, [yesterdayArgument])), '同一痛点+同一解决机制判为跨天重复');
+assert(!findHistoricalTopicMatch(differentSolution, [yesterdayArgument]), '同一痛点但解决机制不同允许使用');
+const historyPool = [
+  poolCandidate('h1', '大痛点型', sameCausalPair),
+  poolCandidate('h2', '省时路径型', '考前先按题型整理一小时写作流程'),
+  poolCandidate('h3', '具体方法型', '正式信称呼与结尾怎么对应收件人'),
+];
+const historyEnforced = selectTopicsForCard({
+  candidates: historyPool,
+  topicsPerCard: 2,
+  cardUsedTopicTexts: [],
+  batchUsedTopicTexts: [],
+  historicalTopicTexts: [yesterdayArgument],
+  historyDedupMode: 'enforce',
+});
+assert(!historyEnforced.selected.some(t => t.id === 'h1'), 'enforce 模式淘汰跨天重复候选');
+assert(historyEnforced.historyCollisions.length === 1, '跨天碰撞返回独立审计记录');
+const historyShadow = selectTopicsForCard({
+  candidates: historyPool,
+  topicsPerCard: 1,
+  cardUsedTopicTexts: [],
+  batchUsedTopicTexts: [],
+  historicalTopicTexts: [yesterdayArgument],
+  historyDedupMode: 'shadow',
+});
+assert(historyShadow.selected.some(t => t.id === 'h1'), 'shadow 模式保持原选择行为');
+assert(historyShadow.warnings.some(w => w.includes('跨天查重影子命中')), 'shadow 模式只写提醒');
+assert(selectRecentTopicRepresentatives(Array.from({ length: 50 }, (_, i) => `${yesterdayArgument}${i}`), 10).length <= 10, '传给AI的历史代表固定不超过10条');
+
 // §8.1-9 候选间相似度互查：方向不同但文本雷同 → 后者落选且只记一次死因，名额由其余候选补
 const similarPool = [
   poolCandidate('s1', '大痛点型', 'DELF B2写作总写不够250词怎么办'),
@@ -402,10 +439,10 @@ assert(interCandidate.selected.some(t => t.id === 's1') && interCandidate.select
 assert(interCandidate.unselected.filter(u => u.topic.id === 's2').length === 1, '雷同落选只记一次死因');
 assert(interCandidate.unselected.some(u => u.topic.id === 's2' && u.reason.includes('与其他候选内容重复')), '落选原因归类为与其他候选内容重复');
 
-// 跨卡撞题：只进统一 warnings（前缀"跨卡撞题"），照常选中，不吞（N=3 保证撞题候选真的被选中）
+// 跨卡撞题：同一痛点+解决机制直接淘汰，避免继续浪费标题、正文和封面成本。
 const collision = selectTopicsForCard({ candidates: pool, topicsPerCard: 3, cardUsedTopicTexts: [], batchUsedTopicTexts: [pool[2].topic] });
-assert(collision.selected.some(t => t.id === 'c3'), '跨卡撞题候选照常选中（只警告不吞）');
-assert(collision.warnings.some(w => w.startsWith('跨卡撞题') && w.includes(pool[2].topic.slice(0, 8))), '撞题警告进统一 warnings 且带前缀和原题信息');
+assert(!collision.selected.some(t => t.id === 'c3'), '跨卡同因果组合候选被淘汰');
+assert(collision.crossCardCollisions.some(item => item.topic.id === 'c3'), '跨卡撞题进入独立审计记录');
 assert(!('collisionWarnings' in collision), '结果契约不再有独立 collisionWarnings 字段');
 
 // 候选池为空

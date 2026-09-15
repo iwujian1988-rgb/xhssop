@@ -1,7 +1,8 @@
-import { getImageTask, loadReferenceImage, submitImageTask, type ImageTaskResult } from '@/lib/image-client';
+import { buildImageRequestHash, getImageTask, loadReferenceImage, submitImageTask, type ImageTaskResult } from '@/lib/image-client';
 import { buildReferenceImagePrompt, referenceImageNegativePrompt } from '@/lib/reference-image-prompt';
 import type { CompetitorCreativeCard, DenseDirectoryCoverPayload } from '@/types/reference-workflow';
-import type { ProductId } from '@/types/data';
+import type { ExamScope, ProductId } from '@/types/data';
+import { pickXhsDazibaoReference } from '@/lib/xhs-dazibao-reference-pool';
 
 // 生图 API 是异步任务制：submit 拿到 task_id 的那一刻就已经扣款。
 // 所以这里刻意把"提交"和"等待"拆成两个函数——调用方必须先把 task_id 持久化
@@ -12,26 +13,39 @@ import type { ProductId } from '@/types/data';
 
 export interface CoverImageTaskHandle {
   taskId: string;
+  requestHash: string;
 }
 
 export async function submitCoverImageTask(
   card: CompetitorCreativeCard,
   cover: DenseDirectoryCoverPayload,
   productId: ProductId,
+  examScope?: ExamScope,
 ): Promise<CoverImageTaskHandle> {
   // 先把参考图真正读出来（缺文件会得到 null），再决定用哪种 prompt——
   // 图生图 prompt 声称"已附带参考图"，图没传上去时模型会被命令追随一张
   // 不存在的图（resource_16 缺文件时就是这个坑）。
-  const referenceImage = card.reference_image ? await loadReferenceImage(card.reference_image) : null;
-  const prompt = buildReferenceImagePrompt(card, cover, Boolean(referenceImage), productId);
+  const selectedCard = card.id === 'content_note_dazibao'
+    ? { ...card, reference_image: pickXhsDazibaoReference() }
+    : card;
+  const referenceImage = selectedCard.reference_image ? await loadReferenceImage(selectedCard.reference_image) : null;
+  if (!referenceImage) throw new Error(`IMAGE_REFERENCE_MISSING:${card.id}`);
+  const prompt = buildReferenceImagePrompt(selectedCard, cover, Boolean(referenceImage), productId, examScope);
+  const requestHash = buildImageRequestHash({
+    productId,
+    posterTitle: cover.title,
+    prompt,
+    referenceImageIds: [selectedCard.reference_image || ''],
+  });
   const task = await submitImageTask({
     prompt,
     negativePrompt: referenceImageNegativePrompt,
     aspectRatio: '3:4',
     referenceImages: referenceImage ? [referenceImage] : [],
+    idempotencyKey: requestHash,
   });
   if (!task.id) throw new Error('生图任务提交成功但接口没有返回 task_id');
-  return { taskId: task.id };
+  return { taskId: task.id, requestHash };
 }
 
 export type CoverImageWaitResult =
@@ -43,10 +57,8 @@ export type CoverImageWaitResult =
   | { ok: false; terminal: false; error: string };
 
 const POLL_INTERVAL_MS = 4000;
-// 生图模型是异步的：实测图生图任务可跑 5.5 分钟，预算留到 8 分钟。
-const MAX_POLL_MS = 8 * 60 * 1000;
-// 连续 8 次查询失败（约 32 秒完全不可达）才放弃；零星抖动只重试不判死。
-const MAX_CONSECUTIVE_ERRORS = 8;
+// 生图模型是异步的：实测图生图任务可跑 5.5 分钟，统一给前后台 10 分钟预算。
+const MAX_POLL_MS = 10 * 60 * 1000;
 
 export async function waitForCoverImageTask(
   taskId: string,
@@ -57,7 +69,7 @@ export async function waitForCoverImageTask(
   for (;;) {
     await sleep(POLL_INTERVAL_MS);
     if (Date.now() >= deadline) {
-      return { ok: false, terminal: false, error: `生图任务 ${taskId} 超过8分钟未完成（任务可能仍在处理，凭 task_id 可恢复查询，不要重新提交）` };
+      return { ok: false, terminal: false, error: `生图任务 ${taskId} 超过10分钟未完成（任务可能仍在处理，凭 task_id 可恢复查询，不要重新提交）` };
     }
     let task: ImageTaskResult;
     try {
@@ -65,10 +77,8 @@ export async function waitForCoverImageTask(
       consecutiveErrors = 0;
     } catch (cause) {
       consecutiveErrors += 1;
-      if (consecutiveErrors >= MAX_CONSECUTIVE_ERRORS) {
-        const detail = cause instanceof Error ? cause.message : String(cause);
-        return { ok: false, terminal: false, error: `生图任务 ${taskId} 连续${MAX_CONSECUTIVE_ERRORS}次查询失败：${detail}（任务可能仍在处理，凭 task_id 可恢复查询）` };
-      }
+      // 查询服务短暂不可达不等于任务失败。继续等待到统一的10分钟截止时间，
+      // 避免几十秒网络抖动就把仍可能成功的任务误判为失败。
       continue;
     }
     if (task.status === 'completed') {

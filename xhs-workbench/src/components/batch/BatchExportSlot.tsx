@@ -1,11 +1,13 @@
 'use client';
 
 import { useEffect, useRef } from 'react';
-import ReferenceCoverRenderer from '@/components/templates/ReferenceCoverRenderer';
 import { InnerPageRenderer } from '@/components/templates/inner-pages/InnerPageRenderer';
 import { getCoverTemplateSpec } from '@/lib/cover-template-specs';
 import type { BatchJob } from '@/lib/batch-store';
 import type { CompetitorCreativeCard } from '@/types/reference-workflow';
+import { CoverTextEditor } from '@/components/draft/CoverTextEditor';
+import { resolveCanonicalTitlePackage } from '@/lib/canonical-title-package';
+import {displayInnerPages} from '@/lib/readable-inner-layout';
 
 export interface ExportNodes {
   coverNode: HTMLElement | null;
@@ -55,12 +57,14 @@ export function BatchExportSlot({ job, card, skinId, onReady }: Props) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [job.id]);
 
-  if (!job.draft) return null;
+  if (!job.draft || job.draft.downstreamStale || job.draft.manualInnerReview?.status === 'needs_review') return null;
 
   const spec = card ? getCoverTemplateSpec(card.renderer_id) : undefined;
   const isImageCover = !!card && spec?.renderMode === 'image_to_image';
   const hasImageUrl = !!job.cover_image_url;
   const renderCoverNode = !isImageCover || hasImageUrl;
+  const titlePackage = resolveCanonicalTitlePackage(job.draft);
+  const selectedBundleId = titlePackage.selectedBundleId || 'default';
 
   return (
     <div style={SLOT_STYLE} aria-hidden>
@@ -74,18 +78,25 @@ export function BatchExportSlot({ job, card, skinId, onReady }: Props) {
               crossOrigin="anonymous"
             />
           ) : (
-            <ReferenceCoverRenderer
+            <CoverTextEditor
+              key={`${job.draft.id}:${selectedBundleId}:${skinId || 'default'}`}
+              draftId={job.draft.id}
+              bundleId={selectedBundleId}
               renderer={card?.renderer_id || 'parchment_dense_directory'}
               payload={job.draft.cover}
+              kicker={titlePackage.bundles.find(bundle => bundle.id === selectedBundleId)?.coverKicker}
               referenceImage={card?.reference_image}
               skinId={skinId}
+              initialBlocks={job.draft.coverEditStates?.[selectedBundleId]?.blocks as never[] | undefined}
+              registerCanvas={node => { coverRef.current = node; }}
+              onStateChange={() => undefined}
             />
           )}
         </div>
       ) : null}
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 540px)', gap: '16px', marginTop: '16px' }}>
-        {job.draft.inner_pages.map(page => (
+        {displayInnerPages(job.draft).map(page => (
           <InnerPageRenderer
             key={page.page_no}
             page={page}

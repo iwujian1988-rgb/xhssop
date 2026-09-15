@@ -13,6 +13,8 @@ export interface ProductPromptProfile {
   editorialScopePrompt: string;
   auditScopePrompt: string;
   examFactRules: string;
+  titleExamIdentity: string;
+  titleAudience: string;
   seoKeywords: string[];
   tagIdentity: string;
   coverFallbackTitles: Partial<Record<ContentShape, string>>;
@@ -24,13 +26,15 @@ const profiles: Record<ProductId, ProductPromptProfile> = {
     adminName: '商品1：DELF B2写作知识库',
     noteIdentity: 'DELF B2写作',
     shortIdentity: 'DELF B2',
-    requiredIdentityPattern: /DELF\s*B2|\u6cd5\u8bed\s*B2(?:\u5199\u4f5c|\u4f5c\u6587)|B2\s*(?:\u5199\u4f5c|\u4f5c\u6587)|\u6cd5\u8bed\u5199\u4f5c/i,
+    requiredIdentityPattern: /DELF\s*B2|\u6cd5\u8bed\s*B2(?:\u5199\u4f5c|\u4f5c\u6587)|B2\s*(?:\u5199\u4f5c|\u4f5c\u6587|正式信函?|信函|写信)|\u6cd5\u8bed\u5199\u4f5c/i,
     forbiddenIdentityPattern: /\bTEF\b|\bTCF\b|\bCLB\s*\d*\b|\bNCLC\s*\d*\b|加拿大(?:移民|法语考试|法语备考)/i,
     topicScopePrompt: '当前是商品1。选题只围绕DELF B2写作：正式信、建议信、投诉/反对信、论坛投稿、评分、自查、范文迁移、词汇句法与观点展开。禁止引入TEF、TCF、CLB、NCLC、加拿大移民、口语考试、短信或简讯任务。',
     contentScopePrompt: '当前是商品1。所有用户可见内容只能写DELF B2写作，禁止出现TEF、TCF、CLB、NCLC或加拿大移民语境；面向用户时说"写作题型/文体"，不要说"写作任务"；题型只含正式信、建议信、投诉/反对信和论坛投稿，不得引入口语考试、短信或简讯。',
     editorialScopePrompt: '商品1正文与内页只能围绕DELF B2写作，不得混入TEF/TCF/CLB或加拿大移民语境。学习建议不能冒充DELF官方强制规则。',
     auditScopePrompt: '仅拦截与商品1有关的明确考试事实错误：DELF B2写作少于250词、正式信与论坛投稿混用、敬语适用范围明显错误。不要审查TEF/TCF规则，也不要做额外教研扩展。',
     examFactRules: '权威考试规则优先：DELF B2写作要求至少250词，不得写230-280词；官方没有规定必须几个论据、B2词、主题词、虚拟式、条件式、关系从句或每段一个连接词。on、à mon avis等表达不能脱离语境一律禁用。',
+    titleExamIdentity: 'DELF B2写作考试',
+    titleAudience: '正在准备DELF B2写作的中文学习者',
     seoKeywords: ['DELF B2写作', '法语写作', 'DELF B2备考'],
     tagIdentity: 'DELFB2',
     coverFallbackTitles: {
@@ -53,11 +57,13 @@ const profiles: Record<ProductId, ProductPromptProfile> = {
     shortIdentity: 'TEF/TCF',
     requiredIdentityPattern: /TEF\s*\/\s*TCF|TEF.{0,4}TCF|TCF.{0,4}TEF|TEF\s*Canada|TCF\s*Canada|\bCLB\s*\d*\b|\bNCLC\s*\d*\b|加拿大法语(?:考试|备考)?/i,
     forbiddenIdentityPattern: /\bDELF\b|\bDALF\b|B2\s*写作|法语\s*B2(?:\s*(?:写作|作文|备考))?/i,
-    topicScopePrompt: '当前是商品2。选题只围绕TEF/TCF Canada、CLB/NCLC、加拿大法语备考、听说读写四科、选考、自测、30天计划、写作句型、主题词汇、听力口语、避坑和报名查分流程。禁止出现DELF、DALF、DELF B2写作或把商品2写成法国文凭考试。',
-    contentScopePrompt: '当前是商品2。所有用户可见内容只能属于TEF/TCF Canada、CLB/NCLC或加拿大法语备考语境，禁止出现DELF、DALF或DELF B2写作。涉及报名、费用、政策和评分换算时只使用给定证据，拿不准就提示以官网为准。',
-    editorialScopePrompt: '商品2正文与内页只能围绕TEF/TCF Canada、CLB/NCLC和加拿大法语备考，不得混入DELF/DALF语境。听说读写方法可以原创，但不能冒充官方规则、押题或固定提分承诺。',
+    topicScopePrompt: '当前是商品2：面向以法语成绩服务加拿大移民/Express Entry准备的人，资料覆盖选考判断、诊断、听说读写、写作表达、主题词汇、30天计划、阶段校准、避坑和考试流程。选题可围绕写作，但必须说明是在TEF Canada还是TCF Canada语境；只有选考比较、移民政策和两场共同方法才使用两场考试。禁止出现DELF、DALF或把商品2写成法国文凭考试。',
+    contentScopePrompt: '当前是商品2：目标读者是从B1左右起步、希望达到CLB/NCLC 7并服务加拿大移民申请的法语学习者。所有用户可见内容只能属于TEF Canada或TCF Canada及其加拿大备考语境；写作专题必须二选一，不能把两场考试写成一个“TEF/TCF写作”。选考、政策、报名、费用和评分换算等硬事实只使用给定证据，拿不准就提示以官网为准。',
+    editorialScopePrompt: '商品2正文与内页要让加拿大移民备考者看出自己为什么需要这篇：可以写四科准备、选考、写作、词汇、听力、口语、计划和考场流程，但每篇要明确TEF或TCF，除非主题本身是比较/政策/共同方法。不得混入DELF/DALF语境。原创方法不能冒充官方规则、押题或固定提分承诺。',
     auditScopePrompt: '商品2只审查法语例句、释义、TEF/TCF名称、CLB/NCLC表述和给定证据支持的考试事实。报名日期、费用、政策、题型变化等时效信息没有证据时不得补写；不要套用DELF写作250词、正式信或论坛投稿规则。',
     examFactRules: 'TEF/TCF Canada、CLB/NCLC、报名、费用、政策、题型、字数、评分维度和分数换算只能使用当前证据；不得套用DELF写作规则。没有逐字证据时，不得写“官方评分标准、通常要求200-250词、三大评分维度、少于180词会影响表达”等官方规则口吻，只能写成“练习自查维度/备考复盘清单”。不得把学习建议写成官方配额，也不得承诺押题命中。',
+    titleExamIdentity: 'TEF/TCF Canada考试',
+    titleAudience: '正在准备TEF/TCF Canada的中文学习者',
     seoKeywords: ['TEF TCF Canada', 'CLB7法语', '加拿大法语备考'],
     tagIdentity: 'TEFTCFCanada',
     coverFallbackTitles: {
@@ -85,6 +91,8 @@ const profiles: Record<ProductId, ProductPromptProfile> = {
     editorialScopePrompt: '商品3正文和内页围绕考前7天写作纠错：完整作答、定位一个问题、局部重写、保留前后稿。可以原创解释和例子，但不能冒充官方真题、官方押题或官方评分承诺。',
     auditScopePrompt: '商品3只重点检查TCF Canada身份、T1/T2/T3称谓、法语例句和释义准确、前后是否围绕同一写作问题。考试规则只按给定证据表达；拿不准就写成备考建议，不要扩写成官方规则。',
     examFactRules: 'TCF Canada写作的任务、词数和时长只能按当前证据表达。7天是资料安排，不是官方考试周期；原创训练题不得称为真题、押题或预测。',
+    titleExamIdentity: 'TCF Canada写作考试',
+    titleAudience: '正在准备TCF Canada写作的中文学习者',
     seoKeywords: ['TCF Canada写作', 'TCF写作', 'TCF Canada备考', '法语写作'],
     tagIdentity: 'TCFCanada写作',
     coverFallbackTitles: {

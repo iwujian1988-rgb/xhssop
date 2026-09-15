@@ -1,6 +1,8 @@
 import { resourceCoverRefs } from './resource-cover-library';
+import { userCoverReferenceCards } from './user-cover-reference-library';
 import type { CompetitorCreativeCard, CreativeCardRenderer } from '@/types/reference-workflow';
 import { PRODUCT_SHOWCASE_ANGLES } from './product-showcase-library';
+import { coverVisualDensity } from './cover-template-specs';
 
 const rendererByReference: Record<string, CreativeCardRenderer> = {
   resource_01_grammar_parchment_red: 'parchment_dense_directory',
@@ -64,7 +66,7 @@ export const competitorCreativeCards: CompetitorCreativeCard[] = resourceCoverRe
       '高密度模板必须有足量且真正可用的内容',
     ],
     forbidden_uses: ref.forbiddenUse,
-    density: ref.density,
+    density: coverVisualDensity(rendererId),
     supported: rendererId !== 'ai_scene_overlay',
   };
 });
@@ -93,7 +95,23 @@ const showcaseCards: CompetitorCreativeCard[] = [
 }));
 
 export const productShowcaseCreativeCards = showcaseCards;
+// 今天用户新发来的母版全部进入生产卡池；原图仍只作为视觉输入，生产时由对应 renderer 重新排字。
+competitorCreativeCards.push(...userCoverReferenceCards.map(card => ({
+  ...card,
+  id: `production_${card.id}`,
+  name: `今日新增·${card.name}`,
+  density: coverVisualDensity(card.renderer_id),
+  content_mechanism: `独立生产封面：${card.content_mechanism}`,
+  forbidden_uses: [...card.forbidden_uses, '把这张母版仅当作下方对照图而不接生产链'],
+})));
 // 截图叠字是“介绍知识库”专用素材，普通知识分享模式必须排除。
+competitorCreativeCards.unshift({
+  id: 'content_note_dazibao', name: '普通内容·原生大字报图生图', reference_image: '/cover-style-refs/xhs-dazibao/ref_01.png', renderer_id: 'dazibao_html',
+  content_mechanism: '复用 Native Title 的封面短标题，参考一张真实小红书大字报封面生成视觉。', click_mechanism: '手机信息流中先读懂主标题，再决定是否点开。',
+  visual_mechanism: '3:4 图生图，参考图只提供原生大字报的字体、留白、强调和手工感。', suitable_audiences: ['法语考试备考者'],
+  suitable_pains: ['想快速判断内容是否值得点开'], required_payload: ['coverTitle', 'posterTitle'],
+  forbidden_uses: ['product_note', '商品截图素材'], density: 'low', supported: true,
+});
 export const standardCreativeCards = competitorCreativeCards.filter(card => card.renderer_id !== 'showcase_screenshot');
 export const showcaseAngleLabels = PRODUCT_SHOWCASE_ANGLES.map(item => item.label);
 

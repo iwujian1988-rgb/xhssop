@@ -1,0 +1,17 @@
+import fs from 'node:fs/promises';
+const dir='data/a-title-user-task-scope-test';
+const data=JSON.parse(await fs.readFile(`${dir}/live/summary.json`,'utf8')),r=data.results[0];
+const flags={A_TITLE_PASS:'NO',A_BLOCKER_RESOLVED:'NO',USER_TASK_SCOPE_COMBINATION_SUPPORTED:'NO',FACT_BRIEF_CALLS:1,TITLE_CALLS:1,TOTAL_AI_CALLS:2};
+let md='# A userTask + scopeNotes 语义补测\n\n';
+md+='实验只A，locked hash=149d2z1。沿用既有脚本，只在本实验模式调整userTask与scopeNotes定义，以及Title字段关系说明。模型/temperature/数量scope代码/approved去重/旧过滤器不变；未传人工参考答案。\n\n';
+md+='## 自动中间输出\n\n```json\n'+JSON.stringify(r.brief,null,2)+'\n```\n\n';
+md+='## 8条raw\n\n| # | 标题 | units | reference | 过滤 |\n|---|---|---:|---|---|\n';
+r.candidates.forEach((c:any,i:number)=>md+=`| ${i+1} | ${c.textTitle} | ${c.visibleUnits} | ${c.referenceApprovedId} | ${c.filterReasons.join(' / ')||'通过'} |\n`);
+md+='\n## 最终4条\n\n';r.humanSelectableTextTitles.forEach((c:any,i:number)=>md+=`${i+1}. ${c.textTitle}\n`);
+md+='\n## 事后验收\n\n原样值得选：最终第2条，1条。该问句自然且覆盖正式信函句型选择，但力度有限，不代表整体成功。\n\n';
+md+='7/8未超20，过滤后7条，前4中1/3/4均偏句型目录或笔记；第1条三段式误导依然存在。第3条起承转合不是当前素材明确提供的四段结构。第5条raw超长，且聚焦Cordialement局部，已由原长度规则淘汰。没有与31条approved规范化完全相等的标题。\n\n';
+md+='userTask有选择动作，但没有充分表达根据对象/关系判断语气，仍偏句型选择。scopeNotes不遵守本轮仅记录整篇范围的要求，继续记录Cordialement局部教学限制；factBrief中的该细节又被带入标题。所有自动字段原样进入Title，未人工修复。\n\n';
+md+='不能只因已有一条可选就忽略“不再大量目录化、三段式误导、整篇范围”这些并列要求。故组合测试不通过；NO不是证明该思路永远无效，也不能单独归因userTask。\n\n```text\n'+Object.entries(flags).map(([k,v])=>`${k} = ${v}`).join('\n')+'\n```\n\n';
+md+='未跑B/C/D/E，未跑Cover，未回写生产Job，humanSelectedTextTitleId=null，无重试。结束停止。\n';
+await fs.writeFile(`${dir}/REPORT.md`,md);await fs.writeFile(`${dir}/acceptance.json`,JSON.stringify({flags,publishReadyFinalIndices:[2],humanSelectedTextTitleId:null},null,2));
+const p=JSON.parse(await fs.readFile(`${dir}/live/preservation.json`,'utf8'));console.log(JSON.stringify({flags,protectedUnchanged:p.unchanged}));

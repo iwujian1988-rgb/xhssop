@@ -19,7 +19,8 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
         : '5.95cqw';
 
   const sectionsKey = payload.sections.map(s => `${s.heading}:${s.items.length}:${s.items.map(i => `${i.primary}${i.secondary || ''}`).join(',')}`).join('|');
-  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey, sectionCount], { min: 0.64, max: 1, step: 0.025 });
+  // 原图的正文虽密，但不是缩成注释字；优先用更多列和短条目承载密度，字号下限保留资料页可读性。
+  const fitRef = useAutoFitScale<HTMLDivElement>([sectionsKey, sectionCount], { min: 0.72, max: 1, step: 0.025 });
 
   return (
     <article
@@ -66,14 +67,14 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           isolation: isolate;
           width: 100%;
           aspect-ratio: 3 / 4;
-          overflow: hidden;
+          overflow: visible;
           border: 1px solid #b68f63;
           border-radius: 8px;
           background: #e9d1a6;
           box-shadow: 0 24px 55px rgba(74, 43, 22, .26);
           color: #54251e;
           container-type: inline-size;
-          font-family: "Noto Serif SC", "STSong", serif;
+          font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
         }
         .parchment-dense-cover::after {
           content: "";
@@ -96,7 +97,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
         }
         .parchment-dense-header {
           position: relative;
-          height: 14.2%;
+          min-height: 14.2%;
           padding: 2.7cqw 4.8cqw 1cqw;
           text-align: center;
         }
@@ -106,9 +107,10 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           font-family: "Source Han Serif SC Heavy", "Noto Serif SC", serif;
           font-size: var(--title-scale);
           font-weight: 900;
-          line-height: 1.02;
+          line-height: 1.08;
           letter-spacing: 0;
-          white-space: nowrap;
+          white-space: normal;
+          overflow-wrap: anywhere;
           text-shadow: 0 1px 0 rgba(255,239,204,.45);
         }
         .parchment-dense-header p {
@@ -124,9 +126,10 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           display: flex;
           flex-direction: column;
           justify-content: space-between;
-          height: 85.8%;
+          gap: 2.1cqw;
+          height: 83.8%;
           padding: 0 4.8cqw 2.7cqw;
-          overflow: hidden;
+          overflow: visible;
         }
         .parchment-dense-cover--compact .parchment-dense-sections {
           justify-content: flex-start;
@@ -144,6 +147,7 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           display: grid;
           flex-shrink: 0;
           grid-template-columns: 10.8cqw minmax(0, 1fr);
+          min-height: 0;
         }
         .parchment-dense-label {
           display: flex;
@@ -176,8 +180,8 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           font-weight: 800;
           line-height: 1.08;
           text-align: center;
-          text-overflow: ellipsis;
-          white-space: nowrap;
+          white-space: normal;
+          overflow-wrap: anywhere;
         }
         .parchment-dense-grid {
           display: grid;
@@ -191,9 +195,9 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           grid-template-columns: .88cqw minmax(0, 1fr);
           align-items: start;
           min-width: 0;
-          overflow: hidden;
+          overflow: visible;
           color: #2f2925;
-          font-family: "Noto Serif SC", "STSong", serif;
+          font-family: "PingFang SC", "Microsoft YaHei", "Noto Sans SC", sans-serif;
           font-size: clamp(13px, calc(2.6cqw * var(--fit-scale, 1)), 24px);
           font-weight: 800;
           line-height: 1.06;
@@ -213,18 +217,14 @@ export default function ParchmentDenseCover({ payload, className = '' }: Parchme
           gap: .1cqw;
         }
         .parchment-dense-primary {
-          overflow: hidden;
-          display: -webkit-box;
-          -webkit-line-clamp: 2;
-          -webkit-box-orient: vertical;
+          display: block;
+          overflow: visible;
           color: #302824;
           font-weight: 800;
         }
         .parchment-dense-secondary {
-          overflow: hidden;
-          display: -webkit-box;
-          -webkit-line-clamp: 1;
-          -webkit-box-orient: vertical;
+          display: block;
+          overflow: visible;
           color: #a33d30;
           font-family: Georgia, "Noto Serif SC", serif;
           font-size: .9em;
@@ -247,8 +247,8 @@ function adaptiveColumns(section: DenseDirectoryCoverPayload['sections'][number]
   const longestLatinToken = Math.max(0, ...section.items.flatMap(item =>
     (`${item.primary} ${item.secondary || ''}`.match(/[A-Za-zÀ-ÿ'-]+/g) || []).map(token => token.length),
   ));
-  if (averageLength > 14 || longestVisualItem > 22 || longestLatinToken > 8) return 2;
-  return Math.min(section.columns, 2);
+  if (averageLength > 18 || longestVisualItem > 28 || longestLatinToken > 10) return 2;
+  return Math.min(section.columns, 3);
 }
 
 function visualLength(value: string) {

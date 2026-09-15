@@ -23,15 +23,15 @@ function sha256(text: string): string {
   return createHash('sha256').update(text, 'utf8').digest('hex');
 }
 
-// legacy content system prompt 字节锁定基线（相对 d9063ea 现状，机械 diff 已证明
-// 基础数组 31 行字面量逐字一致、新行只经门控 spread 追加）。
+// legacy content system prompt 字节锁定基线。2026-08-23 全模板视觉实测后，基础数组只
+// 新增“整张不超过 maximum_total_items”这一条通用封面容量约束；不改变选题或正文语义。
 // standard = 商品2/3（tef_tcf_canada、tcf_canada_writing_7day）普通模式的 system prompt；
 // showcase = 商品1（delf_b2_writing）知识库介绍模式（product_showcase）的 system prompt，
 //            按现状含两行商品介绍条件行，与 standard 不同属预期，单独锁基线。
 // 改动 legacy content system 需更新对应基线并在提交说明里给理由。
 const PINNED_LEGACY_CONTENT_SYSTEM_SHA = {
-  standard: 'ebf9198e6dd7d2934d2a2530ca37ed239f855d075ec7b5c2a71eb168b7fe82d6',
-  showcase: '019abd5c02da58964f5d27f79b7035005a5c99adeb1dbf3bad744fc00e299aec',
+  standard: 'eb2994c5e92e602fc5dd77d50f5aff76e1bbda5e0f68455331f409df03120ab5',
+  showcase: 'a3be1279ec947f373d891cf1af6daf2e3ee2f16816894d9cab445ff080f22cdd',
 };
 
 // ---------------------------------------------------------------------------
@@ -163,8 +163,12 @@ async function main() {
   const user1 = JSON.parse(req1.user) as Record<string, unknown>;
   assert('consensus_brief' in user1, 'user JSON 新增 consensus_brief 键');
   assert(req1.system.includes('consensus_brief 是本篇内容任务单的增补'), 'system 含说话动作/情绪起势落地说明');
+  assert(req1.system.includes('不要把“卡在180词”扩写成“很多考生卡在180词”') && req1.system.includes('不要承诺“一段多写40词”'), 'system 明确禁止把场景数字扩成统计或效果承诺');
   assert(req1.system.includes('bridgePlan'), 'system 含 bridgePlan 四拍说明');
   assert(req1.system.includes('不得超出 consensus_brief.标题可承诺范围'), 'system 含标题承诺范围说明');
+  assert(req1.system.includes('不要把正文默认写成“首先、其次、最后、第一步、第二步”的编号说明书'), 'system 禁止把正文写成固定123提纲');
+  assert(req1.system.includes('recent_caption_endings_to_avoid'), 'system 要求 CTA 避开近期收尾');
+  assert(Array.isArray(user1.recent_caption_endings_to_avoid), 'user JSON 始终提供近期 CTA 历史字段');
   assert(art1.data.bridgePlan?.freeSolves === '这篇先解决草稿写到什么颗粒度的判断标准', '完整四拍解析进 ContentPackage.bridgePlan');
   assert(!art1.warnings.some(w => w.includes('缺失')), `完整输入不产缺失警告（实际 warnings: ${JSON.stringify(art1.warnings)}）`);
 
@@ -191,9 +195,9 @@ async function main() {
     console.log(`  content system sha256(${key}) = ${hashes[key]}`);
   }
   assert(hashes.p2 === hashes.p3, '商品2/3 system 逐字节一致（同一 legacy 数组）');
-  assert(hashes.p2 === PINNED_LEGACY_CONTENT_SYSTEM_SHA.standard, '商品2/3（standard）legacy content system prompt 字节锁定（相对 d9063ea 现状）');
+  assert(hashes.p2 === PINNED_LEGACY_CONTENT_SYSTEM_SHA.standard, '商品2/3（standard）content system prompt 字节锁定（含实测总容量上限）');
   // 商品1 showcase（知识库介绍模式）按现状含两行商品介绍条件行，与 standard 不同属预期，单独锁基线。
-  assert(hashes.p1_showcase === PINNED_LEGACY_CONTENT_SYSTEM_SHA.showcase, '商品1 showcase（product_showcase）legacy content system prompt 字节锁定（相对 d9063ea 现状）');
+  assert(hashes.p1_showcase === PINNED_LEGACY_CONTENT_SYSTEM_SHA.showcase, '商品1 showcase（product_showcase）content system prompt 字节锁定（含实测总容量上限）');
 
   // -------------------------------------------------------------------------
   console.log(`\n== 3. 软约束：缺 speechAction/openingEmotion/expandContents 不失败、只警告 ==`);
@@ -260,6 +264,28 @@ async function main() {
   const threePageContent = { ...fewPagesArt.data, innerPages: fewPagesArt.data.innerPages.slice(0, 3) };
   const inspection = inspectForPublish(threePageContent, { productId: 'delf_b2_writing', topic: consensusTopic(), capability, evidence: [] });
   assert(inspection.warnings.some(w => w.includes('补齐到 5 页') && w.includes('建议人工复核')), 'inspectForPublish.warnings 复述补页警告（pipeline.ts prepareContentForTitles 用 inspection.warnings 组装，最终进 composeV2 result.warnings）');
+
+  // -------------------------------------------------------------------------
+  console.log(`\n== 8. 正文去模板腔：识别后进入返修队列，不升级为发布拦截 ==`);
+  const styleProbe = structuredClone(art1.data);
+  styleProbe.captionParts.opening = 'DELF B2写作：你是不是一动笔就把连接词塞满整段？';
+  styleProbe.captionParts.value = [
+    '第一步先找一个连接词，第二步再找一个连接词，第三步把它们都放进去。这样像承重墙一样撑住文章。',
+    '最后再回头检查一次，避免把同一个词重复写三遍。',
+  ];
+  styleProbe.captionParts.cta = '现在挑一个相近题目练一次，并按本篇顺序逐项检查。';
+  const styleInspection = inspectForPublish(styleProbe, {
+    productId: 'delf_b2_writing',
+    topic: consensusTopic(),
+    capability,
+    evidence: [],
+    recentCaptionEndings: ['现在挑一个相近题目练一次，并按本篇顺序逐项检查。'],
+  });
+  const styleCodes = new Set(styleInspection.hardIssues.map(item => item.code));
+  for (const code of ['caption_numbered_scaffold', 'caption_decorative_metaphor', 'caption_generic_pain_opening', 'caption_generic_cta', 'caption_recent_cta_repeat']) {
+    assert(styleCodes.has(code), `识别 ${code}`);
+  }
+  assert(!styleInspection.hardIssues.some(item => item.code === 'caption_numbered_scaffold' && item.message.includes('发布闸门')), '文风问题仅触发定向返修，不升级为发布拦截');
 
   console.log(`\n${failures === 0 ? 'ALL PASS' : `${failures} FAILURES`}`);
 }

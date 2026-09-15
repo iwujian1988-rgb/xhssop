@@ -45,10 +45,11 @@ export const PRODUCT_SHOWCASE_ANGLES: ProductShowcaseAngle[] = [
 
 const PRODUCT1_ASSETS: Omit<ProductShowcaseAssetCard, 'productId'>[] = [
   {
-    id: 'showcase_delf_directory', type: 'directory', label: '知识库目录页', image: '/showcase/delf_b2_writing/pdf-pages/page-002.jpg',
+    id: 'showcase_delf_directory', type: 'directory', label: '知识库目录页',
     sourceFactIds: ['DA-001', 'DA-002', 'DA-006', 'DA-009', 'DA-011'], sourceFile: '00_使用说明与学习路径 / 02_知识库地图', sourceSection: '目录与学习路径',
     realContent: '目录包含使用说明、范文库、DELF B2评分对照、词汇库、句法库、主题观点库、组合示例库、错题对照库、36项写作检查清单和考前冲刺速查。',
-    userValue: '先看全貌，用户能快速判断资料是否覆盖自己要补的环节。', suitableAngles: ['map', 'value-density'], canBeCover: true, canBeInnerPage: true,
+    // 用户明确拒绝该目录截图的视觉质量；保留事实卡，但不再进入任何可见图片位。
+    userValue: '先看全貌，用户能快速判断资料是否覆盖自己要补的环节。', suitableAngles: ['map', 'value-density'], canBeCover: false, canBeInnerPage: false,
   },
   {
     id: 'showcase_delf_library_intro', type: 'library_intro', label: '学习路径与范文库说明页', image: '/showcase/delf_b2_writing/pdf-pages/page-003.jpg',
@@ -132,7 +133,7 @@ export function pickProductShowcasePlan(productId: ProductId, facts: ProductFact
   const pool = preferred.length >= 2 ? preferred : assets;
   const start = pool.length ? hash(`${salt}|${angle.id}`) % pool.length : 0;
   const ordered = pool.length ? [...pool.slice(start), ...pool.slice(0, start)] : [];
-  const coverAsset = ordered.find(asset => asset.canBeCover) || assets[0];
+  const coverAsset = ordered.find(asset => asset.canBeCover) || assets.find(asset => asset.canBeCover) || assets[0];
   const innerPool = assets.filter(asset => asset.id !== coverAsset?.id && asset.canBeInnerPage);
   const shuffled = [...innerPool].sort((a, b) => hash(`${salt}|${a.id}`) - hash(`${salt}|${b.id}`));
   const modules = new Map<string, ProductShowcaseAssetCard[]>();

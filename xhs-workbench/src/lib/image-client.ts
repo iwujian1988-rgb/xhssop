@@ -1,11 +1,14 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
+import { createHash } from 'node:crypto';
 
 export interface SubmitImageTaskInput {
   prompt: string;
   negativePrompt?: string;
   aspectRatio?: string;
   referenceImages?: string[];
+  /** Stable key used to prevent accidental duplicate paid submissions. */
+  idempotencyKey?: string;
 }
 
 export interface ImageTaskResult {
@@ -18,6 +21,50 @@ export interface ImageTaskResult {
   completed_at?: number;
   url?: string;
   error?: { message?: string; code?: string };
+}
+
+/**
+ * The submit request may time out after the provider has already enqueued the
+ * async task. This is deliberately distinct from a confirmed submission
+ * failure so callers never retry and accidentally create a second paid task.
+ */
+export class ImageSubmissionUncertainError extends Error {
+  readonly code = 'image_submission_uncertain' as const;
+  readonly requestHash?: string;
+
+  constructor(message: string, requestHash?: string) {
+    super(message);
+    this.name = 'ImageSubmissionUncertainError';
+    this.requestHash = requestHash;
+  }
+}
+
+export function buildImageRequestHash(input: {
+  productId?: string;
+  posterTitle?: string;
+  prompt: string;
+  referenceImageIds: string[];
+}): string {
+  return createHash('sha256').update(JSON.stringify({
+    productId: input.productId || '',
+    posterTitle: input.posterTitle || '',
+    prompt: input.prompt,
+    referenceImageIds: input.referenceImageIds,
+  })).digest('hex');
+}
+
+async function writeSubmitAudit(entry: Record<string, unknown>): Promise<void> {
+  try {
+    const directory = path.resolve(process.cwd(), 'data', 'image-submit-audit');
+    await fs.mkdir(directory, { recursive: true });
+    await fs.appendFile(
+      path.join(directory, `${new Date().toISOString().slice(0, 10)}.jsonl`),
+      `${JSON.stringify({ at: new Date().toISOString(), ...entry })}\n`,
+      'utf8',
+    );
+  } catch (error) {
+    console.warn('[image-client] 提交审计落盘失败：', error instanceof Error ? error.message : error);
+  }
 }
 
 export async function submitImageTask(input: SubmitImageTaskInput): Promise<ImageTaskResult> {
@@ -38,7 +85,26 @@ export async function submitImageTask(input: SubmitImageTaskInput): Promise<Imag
       return null;
     }
   }));
-  const validImages = images.filter(Boolean);
+  const validImages = images.filter((value): value is string => Boolean(value));
+  const requestHash = input.idempotencyKey;
+  const requestBody = {
+    model,
+    prompt: input.negativePrompt?.trim()
+      ? `${input.prompt}\n\n【硬性禁止】\n${input.negativePrompt.trim()}`
+      : input.prompt,
+    aspect_ratio: input.aspectRatio || '3:4',
+    // zexapi 文档规定图生图参考图是顶层 images 字段，不是 metadata.urls。
+    ...(validImages.length ? { images: validImages } : {}),
+  };
+  const auditBase = {
+    requestHash,
+    url: `${baseUrl}/v1/videos`,
+    method: 'POST',
+    headers: { 'content-type': 'application/json', authorization: '[REDACTED]', ...(requestHash ? { 'idempotency-key': requestHash } : {}) },
+    requestBody: { ...requestBody, images: validImages.map((value, index) => ({ index, kind: value.startsWith('data:') ? 'data_url' : 'url', length: value.length })) },
+    timeoutMs: 5 * 60 * 1000,
+  };
+  await writeSubmitAudit({ type: 'submit_start', ...auditBase });
 
   let res: Response;
   try {
@@ -47,31 +113,59 @@ export async function submitImageTask(input: SubmitImageTaskInput): Promise<Imag
       headers: {
         'Content-Type': 'application/json',
         Authorization: `Bearer ${apiKey}`,
+        ...(requestHash ? { 'Idempotency-Key': requestHash } : {}),
       },
-      body: JSON.stringify({
-        model,
-        prompt: input.negativePrompt?.trim()
-          ? `${input.prompt}\n\n【硬性禁止】\n${input.negativePrompt.trim()}`
-          : input.prompt,
-        aspect_ratio: input.aspectRatio || '3:4',
-        // 图生图参考图走 metadata.urls（官方文档：/v1/videos 复用视频接口，
-        // 图片参数放 metadata；urls 为完整 data URL 或 http URL，最多 5 张；
-        // 空/不传 = 文生图）。之前放顶层 images 字段是图生视频的参数位，
-        // gpt-image-2 会报 "doc is missing key: /message/content/text" 上游错。
-        ...(validImages.length ? { metadata: { urls: validImages } } : {}),
-      }),
-      signal: AbortSignal.timeout(60000),
+      body: JSON.stringify(requestBody),
+      // 上游是异步任务接口，但排队/返回 task_id 也可能超过 60 秒；
+      // 不能在 task_id 返回前过早中断。拿到 task_id 后由 cover-image.ts
+      // 单独负责最长 10 分钟的状态轮询。
+      signal: AbortSignal.timeout(5 * 60 * 1000),
     });
   } catch (error) {
     const detail = error instanceof Error
       ? `${error.message}${'cause' in error && error.cause instanceof Error ? ` / ${error.cause.message}` : ''}`
       : String(error);
+    const timedOut = error instanceof Error && (
+      error.name === 'AbortError'
+      || error.name === 'TimeoutError'
+      || /timeout|timed out|network timeout/i.test(detail)
+    );
+    if (timedOut) {
+      await writeSubmitAudit({ type: 'submit_network_error', ...auditBase, errorType: error instanceof Error ? error.name : 'unknown', error: detail });
+      throw new ImageSubmissionUncertainError(
+        `生图提交响应超时：任务可能已经入队，请先在服务商任务列表核对，不要重复提交（${detail}）`,
+        requestHash,
+      );
+    }
+    await writeSubmitAudit({ type: 'submit_network_error', ...auditBase, errorType: error instanceof Error ? error.name : 'unknown', error: detail });
     throw new Error(`生图任务提交网络失败：${detail}`);
   }
 
   const body = await res.text();
-  if (!res.ok) throw new Error(`生图任务提交失败：${res.status} ${body.slice(0, 500)}`);
-  return JSON.parse(body) as ImageTaskResult;
+  await writeSubmitAudit({
+    type: 'submit_response',
+    ...auditBase,
+    response: { status: res.status, headers: Object.fromEntries(['x-request-id', 'x-trace-id', 'cf-ray', 'retry-after'].flatMap(name => res.headers.has(name) ? [[name, res.headers.get(name)]] : [])), rawBody: body.slice(0, 2000) },
+  });
+  if (!res.ok) {
+    // 524/502/504 can be emitted by the proxy after the upstream accepted the
+    // task. Treat them as uncertain, not as permission to submit again.
+    if ([502, 504, 524].includes(res.status)) {
+      throw new ImageSubmissionUncertainError(
+        `生图提交网关超时（HTTP ${res.status}）：任务可能已经入队，请先在服务商任务列表核对，不要重复提交`,
+        requestHash,
+      );
+    }
+    throw new Error(`生图任务提交失败：${res.status} ${body.slice(0, 500)}`);
+  }
+  try {
+    const parsed = JSON.parse(body) as ImageTaskResult;
+    await writeSubmitAudit({ type: 'submit_parsed', requestHash, taskId: parsed.id || null, status: parsed.status || null });
+    return parsed;
+  } catch (error) {
+    await writeSubmitAudit({ type: 'submit_parse_error', requestHash, errorType: error instanceof Error ? error.name : 'unknown', error: error instanceof Error ? error.message : String(error), rawBody: body.slice(0, 2000) });
+    throw new Error(`生图任务回执解析失败：${body.slice(0, 500)}`);
+  }
 }
 
 export async function getImageTask(taskId: string): Promise<ImageTaskResult> {
@@ -85,7 +179,10 @@ export async function getImageTask(taskId: string): Promise<ImageTaskResult> {
   try {
     res = await fetch(`${baseUrl}/v1/videos/${encodeURIComponent(taskId)}`, {
       headers: { Authorization: `Bearer ${apiKey}` },
-      signal: AbortSignal.timeout(60000),
+      // 上游是异步任务接口，但排队/返回 task_id 也可能超过 60 秒；
+      // 不能在 task_id 返回前过早中断。拿到 task_id 后由 cover-image.ts
+      // 单独负责最长 10 分钟的状态轮询。
+      signal: AbortSignal.timeout(5 * 60 * 1000),
     });
   } catch (error) {
     const detail = error instanceof Error
