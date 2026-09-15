@@ -16,21 +16,36 @@ export interface CoverImageTaskHandle {
   requestHash: string;
 }
 
+export interface CoverImageReferenceSelection {
+  referenceImage?: string;
+  referenceKind?: 'dazibao_pool' | 'market_reference';
+}
+
 export async function submitCoverImageTask(
   card: CompetitorCreativeCard,
   cover: DenseDirectoryCoverPayload,
   productId: ProductId,
   examScope?: ExamScope,
+  referenceSelection: CoverImageReferenceSelection = {},
 ): Promise<CoverImageTaskHandle> {
   // 先把参考图真正读出来（缺文件会得到 null），再决定用哪种 prompt——
   // 图生图 prompt 声称"已附带参考图"，图没传上去时模型会被命令追随一张
   // 不存在的图（resource_16 缺文件时就是这个坑）。
-  const selectedCard = card.id === 'content_note_dazibao'
-    ? { ...card, reference_image: pickXhsDazibaoReference() }
-    : card;
+  const selectedReference = referenceSelection.referenceImage
+    || (card.id === 'content_note_dazibao' ? pickXhsDazibaoReference() : card.reference_image);
+  const selectedCard = selectedReference === card.reference_image
+    ? card
+    : { ...card, reference_image: selectedReference };
   const referenceImage = selectedCard.reference_image ? await loadReferenceImage(selectedCard.reference_image) : null;
   if (!referenceImage) throw new Error(`IMAGE_REFERENCE_MISSING:${card.id}`);
-  const prompt = buildReferenceImagePrompt(selectedCard, cover, Boolean(referenceImage), productId, examScope);
+  const prompt = buildReferenceImagePrompt(
+    selectedCard,
+    cover,
+    Boolean(referenceImage),
+    productId,
+    examScope,
+    referenceSelection.referenceKind || 'dazibao_pool',
+  );
   const requestHash = buildImageRequestHash({
     productId,
     posterTitle: cover.title,

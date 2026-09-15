@@ -453,7 +453,26 @@ async function finishJobWithCoverImage(
     }
     if (wait) console.info(`[image] 旧任务 ${taskId} 已判死：${wait.error}，重新提交`);
     try {
-      const handle = await submitCoverImageTask(card, draft.cover, job.product_id, job.topic.exam_scope);
+      const marketReferenceCover = draft.content_mode === 'standard'
+        && job.topic.topicSource === 'market'
+        && draft.coverRoute === 'MARKET_REFERENCE_COVER'
+        ? job.topic.marketReference?.sourceCoverUrl
+        : undefined;
+      if (draft.coverRoute === 'MARKET_REFERENCE_COVER' && !marketReferenceCover) {
+        throw new Error('MARKET_REFERENCE_COVER_MISSING:当前 Market Job 没有可用的原笔记封面');
+      }
+      const handle = await submitCoverImageTask(
+        card,
+        draft.cover,
+        job.product_id,
+        job.topic.exam_scope,
+        draft.coverRoute === 'MARKET_REFERENCE_COVER'
+          ? { referenceImage: marketReferenceCover, referenceKind: 'market_reference' }
+          : {
+              ...(draft.selectedDazibaoReferenceId ? { referenceImage: draft.selectedDazibaoReferenceId } : {}),
+              referenceKind: 'dazibao_pool',
+            },
+      );
       taskId = handle.taskId;
       requestHash = handle.requestHash;
     } catch (cause) {
