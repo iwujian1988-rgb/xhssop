@@ -1,0 +1,53 @@
+[
+  {
+    "before": "T3别再把两份材料各复述一遍了",
+    "after": "拜托🙏 T3别再把两份材料各复述一遍了",
+    "click_reason": "把两份材料分别复述不等于建立比较关系",
+    "voice_tags": ["轻请求", "真实提醒", "克制情绪"],
+    "topic_keywords": ["TCF", "T3", "材料", "比较"],
+    "track": "delf_b2_writing"
+  },
+  {
+    "before": "B2作文没少写，为什么分数就是不涨？",
+    "after": "你的B2作文没少写，为什么分数就是不涨？",
+    "click_reason": "投入了大量练习但分数没有变化",
+    "voice_tags": ["直接对用户说", "被说中", "自然追问"],
+    "topic_keywords": ["B2", "作文", "分数", "自查"],
+    "track": "delf_b2_writing"
+  },
+  {
+    "before": "范文看着都会，换道题怎么又不会写了？",
+    "after": "DELFB2范文看着会，换题又不会写了？",
+    "source_after": "DELFB2范文看着都会，换道题怎么又不会写了？",
+    "click_reason": "看懂范文不等于换题后能够迁移写法",
+    "voice_tags": ["身份自然前置", "被说中场景", "口语疑问"],
+    "topic_keywords": ["DELF", "B2", "范文", "迁移", "换题"],
+    "track": "delf_b2_writing"
+  },
+  {
+    "before": "B2正式信换题就卡？你背的是句子不是结构",
+    "after": "真的服了，B2范文背熟了，换题还是不会写",
+    "click_reason": "背范文原句导致换题后无法迁移，真正可迁移的是段落功能",
+    "voice_tags": ["轻吐槽", "备考现场", "不说教"],
+    "topic_keywords": ["B2", "正式信", "范文", "迁移", "换题"],
+    "track": "delf_b2_writing"
+  },
+  {
+    "before": "背了高级词，DELF B2写作反而更生硬？",
+    "after": "谁懂啊，B2高级词写进作文像硬塞的",
+    "source_after": "谁懂啊，高级词背了一堆，写进作文还是一股硬塞感",
+    "click_reason": "高级词按中文意思机械替换会让作文显得生硬",
+    "voice_tags": ["共鸣", "真实体感", "轻吐槽"],
+    "topic_keywords": ["B2", "高级词", "替换", "生硬", "硬塞"],
+    "track": "delf_b2_writing"
+  },
+  {
+    "before": "范文看懂≠会写DELF B2作文",
+    "after": "我终于知道为什么B2范文看懂了还是不会写",
+    "source_after": "我终于知道为什么范文都看懂了，自己还是不会写",
+    "click_reason": "看懂范文不等于能够把段落功能迁移到自己的作文",
+    "voice_tags": ["后知后觉", "第一人称", "顿悟"],
+    "topic_keywords": ["DELF", "B2", "范文", "段落功能", "迁移"],
+    "track": "delf_b2_writing"
+  }
+]

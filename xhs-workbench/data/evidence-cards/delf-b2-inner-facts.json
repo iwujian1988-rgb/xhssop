@@ -1,0 +1,340 @@
+[
+  {
+    "id": "GRAMMAR-SE-PERMETTRE-01",
+    "category": "grammar_form",
+    "fact": "在 Je me permets de... 中，permets 是动词 se permettre 的直陈式现在时第一人称单数形式。",
+    "boundary": "该表达可以产生礼貌、委婉的语用效果，但不能因此把其语法形式描述为条件式。",
+    "applicableTriggers": ["Je me permets", "se permettre", "语域与语气的适切性判断", "语域与语气适切", "语域语气适切"],
+    "source": {
+      "name": "Le Conjugueur",
+      "section": "Conjugaison du verbe permettre",
+      "url": "https://leconjugueur.lefigaro.fr/conjugaison/verbe/permettre.html",
+      "verifiedBasis": "该变位表把 je permets 列在 permettre 的 indicatif présent 下。"
+    }
+  },
+  {
+    "id": "GRAMMAR-DEVOIR-INDICATIVE-01",
+    "category": "grammar_form",
+    "fact": "在 Vous devez... 中，devez 是动词 devoir 的直陈式现在时第二人称复数形式。",
+    "boundary": "表达义务、要求或强硬态度，不等于该句使用了命令式。",
+    "applicableTriggers": ["Vous devez", "devoir", "语域与语气的适切性判断", "语域与语气适切", "语域语气适切"],
+    "source": {
+      "name": "Le Conjugueur",
+      "section": "Conjugaison du verbe devoir",
+      "url": "https://leconjugueur.lefigaro.fr/conjugaison/verbe/devoir.html",
+      "verifiedBasis": "该变位表把 vous devez 列在 devoir 的 indicatif présent 下。"
+    }
+  },
+  {
+    "id": "GRAMMAR-MOOD-FORM-01",
+    "category": "grammar_form",
+    "fact": "直陈式、条件式和命令式应根据动词的实际形态与句法结构识别，而不是根据一句话听起来礼貌、强硬或像要求来命名。",
+    "boundary": "语气强弱和交际效果只能说明语用功能，不能替代对语法语式的形式判断。",
+    "triggerGroups": [["语域", "语气"], ["语法", "语用"]],
+    "applicableTriggers": ["直陈式", "条件式", "命令式", "语法形式", "语法语式", "语域与语气的适切性判断", "语域与语气适切", "语域语气适切"],
+    "source": {
+      "name": "Le Conjugueur",
+      "section": "Modes et temps de la conjugaison française",
+      "url": "https://leconjugueur.lefigaro.fr/frlesmodes.php",
+      "verifiedBasis": "该语法页按动词形态区分 indicatif、conditionnel、impératif 等语式。"
+    }
+  },
+  {
+    "id": "PRAGMATICS-NOT-GRAMMAR-01",
+    "category": "pragmatics",
+    "fact": "同一种语法形式可以在不同语境中产生不同程度的礼貌、直接、建议或义务效果。",
+    "boundary": "不得把礼貌、委婉、强硬、施压等语用效果直接当成条件式、命令式等语法形式。",
+    "triggerGroups": [["语域", "语气"], ["语法形式", "语气效果"]],
+    "applicableTriggers": ["语用", "礼貌效果", "强硬语气", "语气效果", "语域与语气的适切性判断", "语域与语气", "语域语气"],
+    "source": {
+      "name": "Council of Europe",
+      "section": "CEFR Companion Volume - sociolinguistic appropriateness",
+      "url": "https://rm.coe.int/common-european-framework-of-reference-for-languages-learning-teaching/16809ea0d4",
+      "verifiedBasis": "CEFR把社会语言得体性按语境、关系与表达效果描述，不把礼貌或强硬本身当作动词语式名称。"
+    }
+  },
+  {
+    "id": "REGISTER-AUDIENCE-PURPOSE-01",
+    "category": "register",
+    "fact": "书面表达的语域和礼貌程度应结合写作目的、收件人关系、身份和具体交际情境选择。",
+    "boundary": "不能脱离对象和任务，把某一种表达说成所有正式写作都必须使用，或所有非正式写作都不能使用。",
+    "applicableTriggers": ["正式信", "书信", "收件人", "交际对象", "交际目的", "文体差异", "语域", "语气适切"],
+    "source": {
+      "name": "France Éducation international",
+      "section": "Manuel du candidat DELF B2 - situation et destinataire",
+      "url": "https://www.france-education-international.fr/document/manuel-candidat-delf-b2",
+      "verifiedBasis": "候选人手册要求根据任务中的情境、文本类型、对象与目的完成书面表达。"
+    }
+  },
+  {
+    "id": "PRONOUN-JE-TASK-DEPENDENT-01",
+    "category": "register",
+    "fact": "第一人称 je 是否自然，取决于题目要求、文本类型、作者身份和交际目的；表达个人立场的论证文本可以出现第一人称，书信也不要求每一句都使用第一人称。",
+    "boundary": "不得概括成“议论文不能用 je”或“书信必须用 je”的无条件规则。",
+    "applicableTriggers": ["议论文与书信", "题型文体差异", "文体差异对照", "人称选择", "使用je", "使用 je"],
+    "source": {
+      "name": "France Éducation international",
+      "section": "Manuel du candidat DELF B2 - exprimer et argumenter une prise de position",
+      "url": "https://www.france-education-international.fr/document/manuel-candidat-delf-b2",
+      "verifiedBasis": "候选人手册要求表达并论证立场，具体人称选择取决于任务情境与文本身份。"
+    }
+  },
+  {
+    "id": "DELF-B2-SCORING-DIMENSIONS-01",
+    "category": "official_exam_fact",
+    "fact": "DELF B2写作官方评分表分别考察任务完成、连贯与衔接、社会语言得体性、词汇、形态句法五个维度。",
+    "boundary": "不能把这五个整体评价维度改写成某个单词、某一句型或某一个错误对应固定得分或固定扣分。",
+    "applicableTriggers": ["评分维度", "评分尺度", "阅卷人", "任务完成的判定", "连贯要求", "语言与词汇", "形态句法"],
+    "source": {
+      "name": "France Éducation international",
+      "section": "Grille d'évaluation de la production écrite B2",
+      "url": "https://www.france-education-international.fr/document/grille-pe-b2",
+      "verifiedBasis": "官方B2写作评分表列出任务完成、连贯衔接、社会语言得体、词汇、形态句法五个评价维度。"
+    }
+  },
+  {
+    "id": "DELF-B2-NO-ATOMIC-PENALTY-01",
+    "category": "official_exam_fact",
+    "fact": "DELF B2写作评分依据各维度的整体表现档位进行评价，并非公开一张按单个错误逐项固定扣分的清单。",
+    "boundary": "没有明确官方依据时，不得声称某个词、某一句话、第三句出现某表达或缺少某连接词就会固定扣分。",
+    "exactTriggers": ["固定扣分", "逐项扣分", "单句扣分"],
+    "triggerGroups": [["DELF B2", "扣分"], ["评分", "单个错误"]],
+    "broadTriggers": ["阅卷人", "考官", "失分"],
+    "negativeTriggers": ["总分低于", "分数计算公式"],
+    "applicableTriggers": ["扣分", "失分", "评分尺度", "评分标准", "阅卷人", "考官", "达标示例", "失分示例"],
+    "source": {
+      "name": "France Éducation international",
+      "section": "Explication de la grille d'évaluation de la production écrite B2",
+      "url": "https://www.france-education-international.fr/document/explic-grille-pe-b2",
+      "verifiedBasis": "官方说明按各评价维度与能力档位整体判定，没有提供逐个词句固定扣分表。"
+    }
+  },
+  {
+    "id": "CEFR-B2-COMPETENCE-NOT-WORD-LABEL-01",
+    "category": "cefr_boundary",
+    "fact": "CEFR B2通过交际活动、策略和语言能力描述整体表现，并不为每一个孤立单词固定标注“B2高级词”或保证使用后达到B2。",
+    "boundary": "不得仅凭某个词更长、更少见或听起来正式，就断言它更高级、属于B2或使用后能够得分。",
+    "applicableTriggers": ["B2水平", "高级词", "高阶词", "词汇评分", "语言词汇评分", "表达升级", "词汇升级"],
+    "source": {
+      "name": "Council of Europe",
+      "section": "CEFR Companion Volume - communicative language competences",
+      "url": "https://rm.coe.int/common-european-framework-of-reference-for-languages-learning-teaching/16809ea0d4",
+      "verifiedBasis": "CEFR以交际活动、策略和语言能力描述等级表现，不为孤立词汇逐一授予固定等级或分值。"
+    }
+  },
+  {
+    "id": "CONNECTOR-EN-EFFET-01",
+    "category": "connector_semantics",
+    "fact": "en effet 通常用于确认、解释或补充前面的判断，常可理解为“确实、事实上、因为实际情况是”。",
+    "boundary": "不能在没有上下文的情况下，仅看到 en effet 就断言因果方向错误；也不能把它与表示结果的 par conséquent 当作无条件同义替换。",
+    "applicableTriggers": ["en effet", "解释原因", "因果关系", "连接词改写"],
+    "source": {
+      "name": "CNRTL",
+      "section": "Définition et emplois de effet - locution en effet",
+      "url": "https://www.cnrtl.fr/definition/effet",
+      "verifiedBasis": "CNRTL的 en effet 词条例证覆盖确认、解释和对前述判断的补充，而非结果连接。"
+    }
+  },
+  {
+    "id": "CONNECTOR-PAR-CONSEQUENT-01",
+    "category": "connector_semantics",
+    "fact": "par conséquent 用于引出由前文推出的结果或结论。",
+    "boundary": "把解释或原因关系改成 par conséquent 可能改变原句逻辑；替换前必须确认前后确实是结果关系。",
+    "applicableTriggers": ["par conséquent", "结果关系", "因果关系", "连接词改写"],
+    "source": {
+      "name": "CNRTL",
+      "section": "Définition et emplois de conséquent - locution par conséquent",
+      "url": "https://www.cnrtl.fr/definition/cons%C3%A9quent",
+      "verifiedBasis": "CNRTL将 par conséquent 解释为由前述内容推出的后果或结论。"
+    }
+  },
+  {
+    "id": "COHESION-EXPLICIT-CONNECTOR-01",
+    "category": "cohesion",
+    "fact": "篇章逻辑既可以通过连接词显式标记，也可以通过语义关系、指代、信息顺序和上下文建立。",
+    "boundary": "不能只因为两句之间没有显式连接词，就断言逻辑必然断裂或读者无法理解。",
+    "applicableTriggers": ["连贯", "衔接", "连接词", "逻辑关系", "段落衔接", "定向改写", "改写前后对照"],
+    "source": {
+      "name": "Council of Europe",
+      "section": "CEFR Companion Volume - coherence and cohesion",
+      "url": "https://rm.coe.int/common-european-framework-of-reference-for-languages-learning-teaching/16809ea0d4",
+      "verifiedBasis": "CEFR的连贯与衔接描述同时涉及连接手段、信息组织和语篇关系，并非只统计显式连接词。"
+    }
+  },
+  {
+    "id": "CONDITIONNEL-POLITENESS-01",
+    "category": "grammar_form",
+    "fact": "条件式可以用于弱化建议、请求或命令，使表达显得不那么直接；礼貌功能是条件式的一种语用价值，并不意味着所有礼貌表达都使用条件式。",
+    "boundary": "不能因为一句话礼貌就反推它是条件式，也不能把条件式只解释为礼貌形式。",
+    "exactTriggers": [],
+    "triggerGroups": [["条件式", "礼貌"], ["conditionnel", "politesse"]],
+    "broadTriggers": ["请求", "建议", "语气"],
+    "negativeTriggers": ["数学条件", "程序条件判断"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Valeur modale du conditionnel · Le conditionnel exprimant la politesse",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/24148/la-grammaire/le-verbe/temps-grammaticaux/conditionnel/valeur-modale-du-conditionnel",
+      "verifiedBasis": "该节说明条件式可弱化建议、请求或命令，同时列出其不确定、让步等其他语用价值。"
+    }
+  },
+  {
+    "id": "SUBJONCTIF-BIEN-QUE-01",
+    "category": "grammar_form",
+    "fact": "bien que 表示让步，标准教学与正式写作中通常接虚拟式。",
+    "boundary": "不能把 bien que 当作原因或结果连接词，也不能仅因句中出现让步意义就断言任何结构都必须使用 bien que。",
+    "exactTriggers": ["bien que"],
+    "triggerGroups": [["让步", "虚拟式"], ["concession", "subjonctif"]],
+    "broadTriggers": ["复合句", "连接词"],
+    "negativeTriggers": ["bien que的中文翻译无关"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Subjonctif ou indicatif après les subordonnants composés",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/24238/la-grammaire/le-verbe/modes/subjonctif/subjonctif-ou-indicatif-apres-les-subordonnants-composes",
+      "verifiedBasis": "该表将bien que列为通常接虚拟式的复合从属连词，并说明直陈式用法存在争议。"
+    }
+  },
+  {
+    "id": "INDICATIF-MEME-SI-01",
+    "category": "grammar_form",
+    "fact": "même si 可以引出让步关系；常规条件或让步结构中不能机械写成 si 后接条件式。",
+    "boundary": "même si 与 bien que 都可表达让步，但语法结构不同，不能无条件互换后保留原语式。",
+    "exactTriggers": ["même si"],
+    "triggerGroups": [["même si", "条件式"], ["si", "让步"]],
+    "broadTriggers": ["直陈式", "让步关系"],
+    "negativeTriggers": ["间接疑问"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Conditionnel dans les phrases hypothétiques",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/24140/la-grammaire/le-verbe/temps-grammaticaux/conditionnel/conditionnel-dans-les-phrases-hypothetiques",
+      "verifiedBasis": "该页用même si示例说明条件结构中si后的动词不能机械使用条件式，并区分其他si结构。"
+    }
+  },
+  {
+    "id": "PREPOSITION-MALGRE-01",
+    "category": "grammar_form",
+    "fact": "malgré 是介词，通常后接名词短语或代词，表示“尽管、即使有”。",
+    "boundary": "不能把 malgré 与 bien que 当作结构完全相同的连接形式；改写时需要相应调整其后的句法结构。",
+    "exactTriggers": ["malgré"],
+    "triggerGroups": [["让步", "介词"], ["malgré", "名词"]],
+    "broadTriggers": ["让步关系", "表达替换"],
+    "negativeTriggers": ["malgré que"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Les homophones malgré et mal gré",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/21904/lorthographe/homophones-lexicaux/les-homophones-malgre-et-mal-gre",
+      "verifiedBasis": "该页将malgré说明为可后接名词短语或代词的介词，并给出表示en dépit de的用法。"
+    }
+  },
+  {
+    "id": "FALLOIR-IL-FAUT-FAUDRAIT-01",
+    "category": "grammar_form",
+    "fact": "il faut 表示必要或义务；il faudrait 是条件式形式，常可使建议或要求比现在时表达更缓和。",
+    "boundary": "不能把 il faut 称为命令式，也不能把 il faudrait 的缓和效果扩大成所有语境下都更礼貌或更合适。",
+    "exactTriggers": ["il faut", "il faudrait"],
+    "triggerGroups": [["falloir", "语气"], ["必要", "条件式"]],
+    "broadTriggers": ["建议", "义务", "请求"],
+    "negativeTriggers": ["comme il faut"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Falloir et valoir; valeur modale du conditionnel",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/24148/la-grammaire/le-verbe/temps-grammaticaux/conditionnel/valeur-modale-du-conditionnel",
+      "verifiedBasis": "OQLF将il faudrait与il faut对照，说明条件式能降低建议、请求或命令的直接程度。"
+    }
+  },
+  {
+    "id": "CAUSE-CAR-PARCE-QUE-01",
+    "category": "connector_semantics",
+    "fact": "car 通常引出对前述判断的解释或论证性理由；parce que 常回答“为什么”并表达真实或逻辑原因，两者只在部分语境可互换。",
+    "boundary": "不能把 car 与 parce que 当作任何语境下都完全同义，也不能仅凭连接词判断整段论证必然成立。",
+    "exactTriggers": ["car", "parce que"],
+    "triggerGroups": [["原因", "解释"], ["原因", "理由"]],
+    "broadTriggers": ["因果", "连接词"],
+    "negativeTriggers": ["汽车car", "英文car"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Emploi de car",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/23500/la-syntaxe/les-conjonctions/emploi-de-car",
+      "verifiedBasis": "该页区分car的解释或辩护价值与parce que的原因价值，并说明二者仅在部分语境可互换。"
+    }
+  },
+  {
+    "id": "CAUSE-PARCE-QUE-PUISQUE-01",
+    "category": "connector_semantics",
+    "fact": "parce que 通常引出真实或逻辑原因；puisque 引出的解释通常被说话者视为明显、已知或可由语境接受。",
+    "boundary": "二者在部分语境可互换，但不能概括为完全同义，也不能把 puisque 固定翻译成某一种中文连接词。",
+    "exactTriggers": ["parce que", "puisque"],
+    "triggerGroups": [["原因", "已知信息"], ["解释", "听话人"]],
+    "broadTriggers": ["因果", "连接词"],
+    "negativeTriggers": ["par ce que"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Emploi de parce que et de puisque",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/23501/la-syntaxe/les-conjonctions/emploi-de-parce-que-et-de-puisque",
+      "verifiedBasis": "该页明确区分parce que的原因说明与puisque所引入的被视为明显或已知的解释。"
+    }
+  },
+  {
+    "id": "FORMAL-SAVOIR-GRE-01",
+    "category": "register",
+    "fact": "正式请求中的 je vous saurais gré de... 使用 savoir gré，saurais 是条件式；不能写成 je vous serais gré。",
+    "boundary": "这是可用的正式礼貌表达之一，不代表所有正式信都必须使用，也不能仅凭它判断整封信达到某个分数。",
+    "exactTriggers": ["je vous saurais gré", "nous vous saurions gré", "savoir gré"],
+    "triggerGroups": [["正式请求", "条件式"], ["请求表达", "saurais"]],
+    "broadTriggers": ["正式信", "礼貌"],
+    "negativeTriggers": ["je vous serais gré", "nous vous serions gré"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "L’expression savoir gré",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/22258/le-vocabulaire/alterations-dexpressions-figees/lexpression-savoir-gre",
+      "verifiedBasis": "该页说明固定表达是savoir gré，常用于条件式礼貌请求，并明确排除être gré的错误写法。"
+    }
+  },
+  {
+    "id": "FORMAL-JE-VOUS-PRIE-01",
+    "category": "register",
+    "fact": "在 je vous prie de... 中，prie 是 prier 的直陈式现在时第一人称单数；该结构可以承担正式请求或书信礼貌功能。",
+    "boundary": "不能因为这句话表达请求就把 prie 称为命令式，也不能把该公式当作所有正式信唯一正确的请求或收尾方式。",
+    "exactTriggers": ["je vous prie", "je vous prie de", "je vous prie d'agréer", "je vous prie d’agréer"],
+    "triggerGroups": [["正式请求", "je vous prie"], ["收尾", "je vous prie"]],
+    "broadTriggers": ["正式信", "礼貌公式"],
+    "negativeTriggers": ["je vous en prie"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Formules de salutation dans la lettre",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/22101/la-redaction-et-la-communication/redaction-administrative-et-commerciale/correspondance/lettre/formules-de-salutation-dans-la-lettre",
+      "verifiedBasis": "该页将je vous prie de recevoir或d’agréer列为书信礼貌收尾的可用开头，并强调需按交际情境选择。"
+    }
+  },
+  {
+    "id": "IMPERATIVE-FORM-FUNCTION-01",
+    "category": "grammar_form",
+    "fact": "命令、建议或请求属于交际功能，不足以单独证明句中动词采用命令式；语式仍需根据实际动词形式判断。",
+    "boundary": "不能把任何强硬要求句都标成命令式，也不能把命令式概括成只表达强制命令。",
+    "exactTriggers": ["命令式形式", "impératif", "imperatif"],
+    "triggerGroups": [["命令式", "动词形式"], ["命令式", "请求"]],
+    "broadTriggers": ["建议", "命令", "语气"],
+    "negativeTriggers": ["祈使句标题"],
+    "source": {
+      "name": "OQLF · Vitrine linguistique",
+      "section": "Les mots de la Vitrine linguistique · phrase de type impératif",
+      "url": "https://vitrinelinguistique.oqlf.gouv.qc.ca/a-propos-de-la-vitrine-linguistique/les-mots-de-la-vitrine-linguistique",
+      "verifiedBasis": "OQLF将祈使类型句的功能列为命令、建议、邀请或请求，说明功能并不只等于强制命令。"
+    }
+  },
+  {
+    "id": "DELF-B2-MINIMUM-WORDS-01",
+    "category": "official_exam_fact",
+    "fact": "DELF B2书面表达要求写一篇至少250词的文本，考试时长为1小时。",
+    "boundary": "250词是最低篇幅要求，不是建议目标字数；也不能由此推导出写得越长分数越高。",
+    "exactTriggers": ["250词", "250 mots", "最低篇幅", "最少词数"],
+    "triggerGroups": [["DELF B2", "篇幅"], ["B2写作", "字数"]],
+    "broadTriggers": ["考试要求", "时间"],
+    "negativeTriggers": ["口语", "阅读理解", "听力"],
+    "source": {
+      "name": "France Éducation international",
+      "section": "Manuel du candidat DELF B2 · Production écrite",
+      "url": "https://www.france-education-international.fr/document/manuel-candidat-delf-b2",
+      "verifiedBasis": "候选人手册的书面表达部分注明考试时长1小时，并要求至少完成250词。"
+    }
+  }
+]

@@ -1,0 +1,168 @@
+{
+  "productId": "delf_b2_writing",
+  "reviewStatus": "approved",
+  "reviewedBy": "user: P01–P12 全部确认可用",
+  "reviewedAt": "2026-09-06T13:41:42Z",
+  "sourceNotes": "用户在本任务中回复确认，批准P01–P12。已核对结构化商品事实与实际商品内容文件；仅使用模块存在事实，不引用旧表中可能过时的数量或考试判断。时间为本轮记录确认的时间。",
+  "sources": [
+    {
+      "id": "CM-001",
+      "asset": "范文库",
+      "factFile": "data/product_facts_delf_b2.json",
+      "factSection": "content_modules",
+      "contentSource": "D:/claude_work/xunixiangmu/deliverables/content/fanwenku_v1.md"
+    },
+    {
+      "id": "CM-002",
+      "asset": "词汇库",
+      "factFile": "data/product_facts_delf_b2.json",
+      "factSection": "content_modules",
+      "contentSource": "D:/claude_work/xunixiangmu/deliverables/content/cihuiku_v1.md"
+    },
+    {
+      "id": "CM-003",
+      "asset": "句法库",
+      "factFile": "data/product_facts_delf_b2.json",
+      "factSection": "content_modules",
+      "contentSource": "D:/claude_work/xunixiangmu/deliverables/content/jufaku_v1.md"
+    },
+    {
+      "id": "CM-004",
+      "asset": "主题观点库",
+      "factFile": "data/product_facts_delf_b2.json",
+      "factSection": "content_modules",
+      "contentSource": "D:/claude_work/xunixiangmu/deliverables/content/guandianku_v1.md"
+    },
+    {
+      "id": "CM-005",
+      "asset": "写作检查清单",
+      "factFile": "data/product_facts_delf_b2.json",
+      "factSection": "content_modules",
+      "contentSource": "D:/claude_work/xunixiangmu/deliverables/content/checklist_v1.md"
+    },
+    {
+      "id": "CM-006",
+      "asset": "错题对照库",
+      "factFile": "data/product_facts_delf_b2.json",
+      "factSection": "content_modules",
+      "contentSource": "D:/claude_work/xunixiangmu/deliverables/content/errors_v1.md"
+    },
+    {
+      "id": "CM-007",
+      "asset": "组合示例库",
+      "factFile": "data/product_facts_delf_b2.json",
+      "factSection": "content_modules",
+      "contentSource": "D:/claude_work/xunixiangmu/deliverables/content/combinations_v1.md"
+    }
+  ],
+  "items": [
+    {
+      "id": "P01",
+      "text": "我还整理了一份DELF B2写作素材库，把常用表达、句法、观点素材和写作自查内容放在一起，需要时可以按分类查。",
+      "sourceIds": [
+        "CM-002",
+        "CM-003",
+        "CM-004",
+        "CM-005"
+      ]
+    },
+    {
+      "id": "P02",
+      "text": "完整资料里放了范文、词汇和句法素材，想看完整文章或查某一类表达时，都可以按自己的需要翻对应部分。",
+      "sourceIds": [
+        "CM-001",
+        "CM-002",
+        "CM-003"
+      ]
+    },
+    {
+      "id": "P03",
+      "text": "除了日常分享的笔记，我还把写作常用的主题观点和表达整理成了资料库，准备不同话题时可以集中查找。",
+      "sourceIds": [
+        "CM-002",
+        "CM-004"
+      ]
+    },
+    {
+      "id": "P04",
+      "text": "如果写完作文后不知道从哪里检查，完整资料里也整理了写作检查清单和错题对照，方便练习时参考。",
+      "sourceIds": [
+        "CM-005",
+        "CM-006"
+      ]
+    },
+    {
+      "id": "P05",
+      "text": "这份B2写作资料按内容分了类，找词汇、句法或观点素材时可以直接看对应模块，不必每次从头翻起。",
+      "sourceIds": [
+        "CM-002",
+        "CM-003",
+        "CM-004"
+      ]
+    },
+    {
+      "id": "P06",
+      "text": "完整资料里除了单独的表达素材，还有组合示例，想看看词汇、句型和观点如何放在一段内容里时可以作参考。",
+      "sourceIds": [
+        "CM-002",
+        "CM-003",
+        "CM-004",
+        "CM-007"
+      ]
+    },
+    {
+      "id": "P07",
+      "text": "我把范文、组合示例和自查清单也收进了完整资料，写作练习前可以找参考，写完以后再翻清单检查。",
+      "sourceIds": [
+        "CM-001",
+        "CM-005",
+        "CM-007"
+      ]
+    },
+    {
+      "id": "P08",
+      "text": "备考时如果想集中整理手边的素材，这份DELF B2写作资料里有词汇、句法和主题观点，也有写完后用的检查清单。",
+      "sourceIds": [
+        "CM-002",
+        "CM-003",
+        "CM-004",
+        "CM-005"
+      ]
+    },
+    {
+      "id": "P09",
+      "text": "不想每次都到处找零散资料的话，我还准备了按模块整理的B2写作素材库，范文、表达和自查内容都能分别查找。",
+      "sourceIds": [
+        "CM-001",
+        "CM-002",
+        "CM-005"
+      ]
+    },
+    {
+      "id": "P10",
+      "text": "完整资料也收录了正式信、建议信和论坛投稿的范文，练习不同文体时可以找相应文章作参考，不用只看零散句子。",
+      "sourceIds": [
+        "CM-001"
+      ]
+    },
+    {
+      "id": "P11",
+      "text": "这套资料可以按需使用：想找话题素材就翻观点库，想查表达就翻词汇和句法部分，写完再看检查清单。",
+      "sourceIds": [
+        "CM-002",
+        "CM-003",
+        "CM-004",
+        "CM-005"
+      ]
+    },
+    {
+      "id": "P12",
+      "text": "我还把常见写作错误和对应示例整理进了完整资料，和范文、词汇素材放在一起，方便日常练习时来回对照。",
+      "sourceIds": [
+        "CM-001",
+        "CM-002",
+        "CM-006"
+      ]
+    }
+  ]
+}
